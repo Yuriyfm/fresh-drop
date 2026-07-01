@@ -23,3 +23,19 @@ export type SpotifyAlbumDto = {
   images?: SpotifyImageDto[];
   artists?: SpotifyArtistDto[];
 };
+
+export type SpotifySearchAlbumsResponseDto = {
+  albums?: {
+    items?: SpotifyAlbumDto[];
+  };
+};
+
+export type SpotifyTokenResponseDto = {
+  access_token?: string;
+  token_type?: string;
+  expires_in?: number;
+};
+
+export type SpotifyArtistsResponseDto = {
+  artists?: SpotifyArtistDto[];
+};

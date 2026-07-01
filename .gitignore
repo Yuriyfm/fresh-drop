@@ -1,5 +1,6 @@
 node_modules
 dist
+dist-server
 .yarn-cache
 .yarn-global
 .git-local
@@ -8,3 +9,4 @@ coverage
 *.tsbuildinfo
 .env
 .env.local
+NUL

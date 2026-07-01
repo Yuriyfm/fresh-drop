@@ -1,0 +1,251 @@
+import { describe, expect, it, vi } from 'vitest';
+import { SpotifyApiAdapter, SpotifyApiError } from './spotifyApiAdapter';
+
+describe('SpotifyApiAdapter', () => {
+  it('gets an app token and fetches fresh releases for ingestion through tag:new', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(makeJsonResponse({ access_token: 'token-1', expires_in: 3600 }))
+      .mockResolvedValueOnce(
+        makeJsonResponse({
+          albums: {
+            items: [
+              {
+                id: 'album-1',
+                name: 'Fresh Single',
+                album_type: 'single',
+                release_date: '2026-06-30',
+                release_date_precision: 'day',
+                external_urls: { spotify: 'https://open.spotify.com/album/album-1' },
+                images: [{ url: 'https://image.example/cover.jpg' }],
+                artists: [{ id: 'artist-1', name: 'Artist One' }],
+              },
+            ],
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        makeJsonResponse({
+          artists: [{ id: 'artist-1', name: 'Artist One', genres: ['Pop'], popularity: 64 }],
+        }),
+      );
+
+    const adapter = new SpotifyApiAdapter({
+      clientId: 'client-id',
+      clientSecret: 'client-secret',
+      fetchFn,
+    });
+
+    const releases = await adapter.fetchFreshReleasesFromSpotify({ limit: 10, market: 'US' });
+
+    expect(fetchFn).toHaveBeenNthCalledWith(
+      1,
+      'https://accounts.spotify.com/api/token',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          Authorization: `Basic ${btoa('client-id:client-secret')}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        }),
+      }),
+    );
+    expect(String(fetchFn.mock.calls[1][0])).toContain('/search?');
+    expect(String(fetchFn.mock.calls[1][0])).toContain('q=tag%3Anew');
+    expect(String(fetchFn.mock.calls[1][0])).toContain('type=album');
+    expect(String(fetchFn.mock.calls[1][0])).toContain('market=US');
+    expect(String(fetchFn.mock.calls[1][0])).toContain('offset=0');
+    expect(String(fetchFn.mock.calls[2][0])).toContain('/artists?ids=artist-1');
+
+    expect(releases).toEqual([
+      expect.objectContaining({
+        id: 'album-1',
+        title: 'Fresh Single',
+        type: 'single',
+        genres: ['pop'],
+        popularity: 64,
+      }),
+    ]);
+  });
+
+  it('fetches multiple search pages when sync pages are configured', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(makeJsonResponse({ access_token: 'token-1', expires_in: 3600 }))
+      .mockResolvedValueOnce(
+        makeJsonResponse({
+          albums: {
+            items: [
+              {
+                id: 'album-1',
+                name: 'Fresh Single',
+                album_type: 'single',
+                release_date: '2026-06-30',
+                release_date_precision: 'day',
+                artists: [{ id: 'artist-1', name: 'Artist One' }],
+              },
+            ],
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        makeJsonResponse({
+          albums: {
+            items: [
+              {
+                id: 'album-2',
+                name: 'Fresh Album',
+                album_type: 'album',
+                release_date: '2026-06-29',
+                release_date_precision: 'day',
+                artists: [{ id: 'artist-2', name: 'Artist Two' }],
+              },
+            ],
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        makeJsonResponse({
+          artists: [
+            { id: 'artist-1', name: 'Artist One', genres: ['Pop'], popularity: 64 },
+            { id: 'artist-2', name: 'Artist Two', genres: ['Rock'], popularity: 51 },
+          ],
+        }),
+      );
+
+    const adapter = new SpotifyApiAdapter({
+      clientId: 'client-id',
+      clientSecret: 'client-secret',
+      fetchFn,
+    });
+
+    const releases = await adapter.fetchFreshReleasesFromSpotify({ limit: 1, pages: 2 });
+
+    expect(String(fetchFn.mock.calls[1][0])).toContain('limit=1');
+    expect(String(fetchFn.mock.calls[1][0])).toContain('offset=0');
+    expect(String(fetchFn.mock.calls[2][0])).toContain('offset=1');
+    expect(releases.map((release) => release.id)).toEqual(['album-1', 'album-2']);
+  });
+
+  it('returns an empty list when Spotify search has no album items', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(makeJsonResponse({ access_token: 'token-1', expires_in: 3600 }))
+      .mockResolvedValueOnce(makeJsonResponse({ albums: { items: [] } }));
+
+    const adapter = new SpotifyApiAdapter({
+      clientId: 'client-id',
+      clientSecret: 'client-secret',
+      fetchFn,
+    });
+
+    await expect(adapter.fetchFreshReleasesFromSpotify()).resolves.toEqual([]);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+  });
+
+  it('skips releases that cannot be mapped to the domain model', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(makeJsonResponse({ access_token: 'token-1', expires_in: 3600 }))
+      .mockResolvedValueOnce(
+        makeJsonResponse({
+          albums: {
+            items: [
+              { id: 'album-1', name: 'Valid Album', artists: [] },
+              { id: 'album-2', artists: [] },
+            ],
+          },
+        }),
+      );
+
+    const adapter = new SpotifyApiAdapter({
+      clientId: 'client-id',
+      clientSecret: 'client-secret',
+      fetchFn,
+    });
+
+    const releases = await adapter.fetchFreshReleasesFromSpotify();
+
+    expect(releases).toHaveLength(1);
+    expect(releases[0].id).toBe('album-1');
+  });
+
+  it('maps rate limits to a retryable adapter error', async () => {
+    const fetchFn = vi.fn().mockResolvedValueOnce(
+      makeJsonResponse(
+        { error: { message: 'Too many requests' } },
+        {
+          ok: false,
+          status: 429,
+          headers: new Headers({ 'retry-after': '7' }),
+        },
+      ),
+    );
+
+    const adapter = new SpotifyApiAdapter({
+      clientId: 'client-id',
+      clientSecret: 'client-secret',
+      fetchFn,
+    });
+
+    await expect(adapter.fetchFreshReleasesFromSpotify()).rejects.toMatchObject({
+      code: 'rate_limited',
+      status: 429,
+      retryAfterSeconds: 7,
+    });
+  });
+
+  it('does not retry forever when Spotify returns a rate limit during search', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(makeJsonResponse({ access_token: 'token-1', expires_in: 3600 }))
+      .mockResolvedValueOnce(
+        makeJsonResponse(
+          { error: { message: 'Too many requests' } },
+          {
+            ok: false,
+            status: 429,
+            headers: new Headers({ 'retry-after': '7' }),
+          },
+        ),
+      );
+
+    const adapter = new SpotifyApiAdapter({
+      clientId: 'client-id',
+      clientSecret: 'client-secret',
+      fetchFn,
+    });
+
+    await expect(adapter.fetchFreshReleasesFromSpotify({ pages: 3 })).rejects.toMatchObject({
+      code: 'rate_limited',
+      status: 429,
+      retryAfterSeconds: 7,
+    });
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+  });
+
+  it('maps network failures to adapter errors', async () => {
+    const fetchFn = vi.fn().mockRejectedValueOnce(new Error('network down'));
+    const adapter = new SpotifyApiAdapter({
+      clientId: 'client-id',
+      clientSecret: 'client-secret',
+      fetchFn,
+    });
+
+    const promise = adapter.fetchFreshReleasesFromSpotify();
+
+    await expect(promise).rejects.toBeInstanceOf(SpotifyApiError);
+    await expect(promise).rejects.toMatchObject({ code: 'network' });
+  });
+});
+
+function makeJsonResponse(
+  body: unknown,
+  options: { ok?: boolean; status?: number; headers?: Headers } = {},
+): Response {
+  return {
+    ok: options.ok ?? true,
+    status: options.status ?? 200,
+    headers: options.headers ?? new Headers(),
+    json: async () => body,
+  } as Response;
+}

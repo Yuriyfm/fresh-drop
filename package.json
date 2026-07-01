@@ -6,19 +6,31 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "db:apply": "yarn db:schema",
+    "db:schema": "psql -v ON_ERROR_STOP=1 \"$DATABASE_URL\" -f db/schema.sql",
+    "db:schema:docker": "docker compose exec -T db psql -v ON_ERROR_STOP=1 -U fresh_drop -d fresh_drop -f /schema/schema.sql",
+    "db:reset": "vite-node scripts/resetDevDatabase.ts",
+    "spotify:check": "vite-node scripts/checkSpotifyApi.ts",
+    "sync:releases": "vite-node scripts/syncReleases.ts",
+    "sync:scheduled": "yarn sync:releases",
+    "sync:last": "vite-node scripts/printLatestSyncRun.ts",
+    "typecheck": "tsc --noEmit",
+    "build": "yarn typecheck && vite build && vite build --ssr src/server/productionServer.ts --outDir dist-server",
+    "start": "node dist-server/productionServer.js",
     "preview": "vite preview",
     "test": "vitest",
     "test:run": "vitest run"
   },
   "dependencies": {
+    "pg": "^8.22.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
-    "@testing-library/jest-dom": "^6.4.8",
     "@testing-library/dom": "^10.4.0",
+    "@testing-library/jest-dom": "^6.4.8",
     "@testing-library/react": "^16.0.1",
+    "@types/pg": "^8.20.0",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",

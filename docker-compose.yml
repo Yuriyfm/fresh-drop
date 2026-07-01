@@ -1,0 +1,21 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: fresh-drop-postgres
+    environment:
+      POSTGRES_DB: fresh_drop
+      POSTGRES_USER: fresh_drop
+      POSTGRES_PASSWORD: fresh_drop
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db:/schema:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fresh_drop -d fresh_drop"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:
