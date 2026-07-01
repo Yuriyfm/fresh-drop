@@ -14,6 +14,18 @@ export function filterReleases(releases: Release[], filters: ReleaseFilters): Re
   });
 }
 
+export function sortReleasesForSearch(releases: Release[]): Release[] {
+  return [...releases].sort((left, right) => {
+    const dateComparison = compareReleaseDates(left, right);
+
+    if (dateComparison !== 0) {
+      return dateComparison;
+    }
+
+    return comparePopularity(left.popularity, right.popularity);
+  });
+}
+
 export function matchesPeriod(release: Release, period: ReleasePeriod, currentDate: Date): boolean {
   if (release.releaseDatePrecision !== 'day') {
     return false;
@@ -66,7 +78,7 @@ export function matchesPopularity(release: Release, popularity: PopularityFilter
   }
 
   if (release.popularity === null) {
-    return popularity === 'less-known';
+    return false;
   }
 
   if (popularity === 'popular') {
@@ -92,6 +104,49 @@ function parseDateOnly(value: string): Date | null {
   const date = new Date(`${value}T00:00:00.000Z`);
 
   return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function compareReleaseDates(left: Release, right: Release): number {
+  const leftTime = getSortableReleaseTime(left);
+  const rightTime = getSortableReleaseTime(right);
+
+  if (leftTime === null && rightTime === null) {
+    return 0;
+  }
+
+  if (leftTime === null) {
+    return 1;
+  }
+
+  if (rightTime === null) {
+    return -1;
+  }
+
+  return rightTime - leftTime;
+}
+
+function getSortableReleaseTime(release: Release): number | null {
+  if (release.releaseDatePrecision !== 'day') {
+    return null;
+  }
+
+  return parseDateOnly(release.releaseDate)?.getTime() ?? null;
+}
+
+function comparePopularity(left: number | null, right: number | null): number {
+  if (left === null && right === null) {
+    return 0;
+  }
+
+  if (left === null) {
+    return 1;
+  }
+
+  if (right === null) {
+    return -1;
+  }
+
+  return right - left;
 }
 
 function startOfUtcDay(date: Date): Date {
