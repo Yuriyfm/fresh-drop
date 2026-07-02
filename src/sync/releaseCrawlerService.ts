@@ -74,6 +74,7 @@ export async function runReleaseCrawler(
         status: 'success',
         itemsFound: page.releases.length,
         itemsSaved: saveResult.saved,
+        nextRunAt: getNextRunAt(task, page, config, currentDate),
       });
 
       result.tasksSucceeded += 1;
@@ -97,6 +98,19 @@ export async function runReleaseCrawler(
   result.itemsDeleted = cleanup.deleted;
 
   return result;
+}
+
+function getNextRunAt(
+  task: SyncTask,
+  _page: SpotifyReleasePage,
+  config: ReleaseCrawlerConfig,
+  currentDate: Date,
+): Date | undefined {
+  if (task.source !== 'search') {
+    return undefined;
+  }
+
+  return new Date(currentDate.getTime() + config.searchTaskCooldownMinutes * 60 * 1000);
 }
 
 function getFollowUpTasks(task: SyncTask, page: SpotifyReleasePage, releases: Release[], config: ReleaseCrawlerConfig): SyncTaskInput[] {

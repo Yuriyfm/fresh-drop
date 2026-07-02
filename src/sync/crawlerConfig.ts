@@ -8,6 +8,7 @@ export type ReleaseCrawlerConfig = {
   retentionDays: number;
   searchQueries: string[];
   enableArtistExpansion: boolean;
+  searchTaskCooldownMinutes: number;
 };
 
 const DEFAULT_MARKET = 'US';
@@ -25,6 +26,7 @@ export function getReleaseCrawlerConfigFromEnv(env: CrawlerEnv, currentDate = ne
     retentionDays: normalizePositiveInteger(env.RELEASE_RETENTION_DAYS, DEFAULT_RETENTION_DAYS, 365),
     searchQueries: normalizeSearchQueries(env.SPOTIFY_CRAWLER_SEARCH_QUERIES, currentDate),
     enableArtistExpansion: normalizeBoolean(env.SPOTIFY_CRAWLER_ENABLE_ARTIST_EXPANSION, false),
+    searchTaskCooldownMinutes: normalizePositiveInteger(env.SPOTIFY_CRAWLER_SEARCH_TASK_COOLDOWN_MINUTES, 720, 10080),
   };
 }
 

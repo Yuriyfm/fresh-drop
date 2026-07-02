@@ -26,6 +26,7 @@ describe('runReleaseCrawler', () => {
       retentionDays: 30,
       searchQueries: ['tag:new'],
       enableArtistExpansion: true,
+      searchTaskCooldownMinutes: 720,
     }, new Date('2026-07-02T12:00:00.000Z'));
 
     expect(result).toMatchObject({
@@ -69,6 +70,7 @@ describe('runReleaseCrawler', () => {
       retentionDays: 30,
       searchQueries: ['tag:new'],
       enableArtistExpansion: false,
+      searchTaskCooldownMinutes: 720,
     }, new Date('2026-07-02T12:00:00.000Z'));
 
     expect(result.itemsFound).toBe(1);
@@ -95,9 +97,44 @@ describe('runReleaseCrawler', () => {
       retentionDays: 30,
       searchQueries: ['tag:new'],
       enableArtistExpansion: false,
+      searchTaskCooldownMinutes: 720,
     }, new Date('2026-07-02T12:00:00.000Z'));
 
     await expect(tasks.claimPendingTasks(10)).resolves.toEqual([]);
+  });
+
+  it('makes completed terminal search tasks recurring after the configured cooldown', async () => {
+    const source = {
+      fetchReleaseSearchPage: vi.fn().mockResolvedValue({
+        releases: [makeRelease()],
+        total: 1,
+        nextOffset: null,
+      }),
+      fetchArtistAlbumsPage: vi.fn(),
+    };
+    const releases = new InMemoryReleaseRepository();
+    const tasks = new InMemorySyncTaskRepository();
+
+    await runReleaseCrawler(source, releases, tasks, {
+      market: 'TR',
+      batchSize: 1,
+      searchLimit: 50,
+      artistAlbumsLimit: 10,
+      retentionDays: 30,
+      searchQueries: ['tag:new'],
+      enableArtistExpansion: false,
+      searchTaskCooldownMinutes: 720,
+    }, new Date('2026-07-02T12:00:00.000Z'));
+
+    const recurring = await tasks.claimPendingTasks(10, new Date('2026-07-03T00:00:00.000Z'));
+
+    expect(recurring).toEqual([
+      expect.objectContaining({
+        source: 'search',
+        query: 'tag:new',
+        offset: 0,
+      }),
+    ]);
   });
 });
 

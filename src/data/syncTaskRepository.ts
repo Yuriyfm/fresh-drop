@@ -13,6 +13,7 @@ export type SyncTask = {
   status: SyncTaskStatus;
   priority: number;
   attempts: number;
+  nextRunAt?: Date;
 };
 
 export type SyncTaskInput = {
@@ -32,6 +33,7 @@ export type CompleteSyncTaskInput = {
   itemsSaved: number;
   errorMessage?: string | null;
   retryAfterSeconds?: number | null;
+  nextRunAt?: Date;
 };
 
 export type SyncTaskRepository = {
@@ -76,6 +78,7 @@ export class InMemorySyncTaskRepository implements SyncTaskRepository {
         status: 'pending',
         priority: input.priority ?? 100,
         attempts: 0,
+        nextRunAt: input.nextRunAt,
       });
       this.nextId += 1;
       inserted += 1;
@@ -84,9 +87,9 @@ export class InMemorySyncTaskRepository implements SyncTaskRepository {
     return { inserted };
   }
 
-  async claimPendingTasks(limit: number): Promise<SyncTask[]> {
+  async claimPendingTasks(limit: number, now = new Date()): Promise<SyncTask[]> {
     const tasks = Array.from(this.tasks.values())
-      .filter((task) => task.status === 'pending')
+      .filter((task) => task.status === 'pending' && (!task.nextRunAt || task.nextRunAt <= now))
       .sort((a, b) => a.priority - b.priority || Number(a.id) - Number(b.id))
       .slice(0, limit);
 
@@ -102,7 +105,8 @@ export class InMemorySyncTaskRepository implements SyncTaskRepository {
     const task = Array.from(this.tasks.values()).find((candidate) => candidate.id === input.id);
 
     if (task) {
-      task.status = input.status;
+      task.status = input.status === 'success' && input.nextRunAt ? 'pending' : input.status;
+      task.nextRunAt = input.nextRunAt;
     }
   }
 }
@@ -166,9 +170,10 @@ export class PostgresSyncTaskRepository implements SyncTaskRepository {
   }
 
   async completeTask(input: CompleteSyncTaskInput): Promise<void> {
-    const nextRunAt = input.status === 'failed'
+    const nextRunAt = input.nextRunAt ?? (input.status === 'failed'
       ? new Date(Date.now() + Math.max(input.retryAfterSeconds ?? 300, 1) * 1000)
-      : new Date();
+      : new Date());
+    const status = input.status === 'success' && input.nextRunAt ? 'pending' : input.status;
 
     await this.pool.query(
       `
@@ -181,7 +186,7 @@ export class PostgresSyncTaskRepository implements SyncTaskRepository {
             updated_at = now()
         where id = $1
       `,
-      [input.id, input.status, input.itemsFound, input.itemsSaved, input.errorMessage ?? null, nextRunAt],
+      [input.id, status, input.itemsFound, input.itemsSaved, input.errorMessage ?? null, nextRunAt],
     );
   }
 }
