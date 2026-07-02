@@ -96,6 +96,15 @@ describeWithPostgres('PostgresReleaseRepository', () => {
     });
   });
 
+  it('finds existing release ids', async () => {
+    await repository.saveReleases([
+      makeRelease({ id: 'spotify-1' }),
+      makeRelease({ id: 'spotify-2' }),
+    ]);
+
+    await expect(repository.findExistingReleaseIds(['spotify-2', 'missing', 'spotify-2'])).resolves.toEqual(new Set(['spotify-2']));
+  });
+
   it('applies SQL filters, sorting, and pagination before returning releases', async () => {
     const swedishMetalArtist = makeArtist({ id: 'artist-metal', genres: ['Death Metal'], country: 'SE', popularity: 78 });
     const popArtist = makeArtist({ id: 'artist-pop', genres: ['Pop'], country: 'SE', popularity: 82 });

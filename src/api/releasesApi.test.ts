@@ -7,6 +7,7 @@ describe('getReleasesApiResponse', () => {
   it('uses default query parameters', async () => {
     const repository: ReleaseRepository = {
       saveReleases: vi.fn(),
+      findExistingReleaseIds: vi.fn().mockResolvedValue(new Set()),
       cleanupOldReleases: vi.fn(),
       findReleases: vi.fn().mockResolvedValue({
         items: [],
@@ -79,6 +80,7 @@ describe('getReleasesApiResponse', () => {
   ])('returns invalid_query for invalid %s', async (_name, query) => {
     const repository: ReleaseRepository = {
       saveReleases: vi.fn(),
+      findExistingReleaseIds: vi.fn().mockResolvedValue(new Set()),
       cleanupOldReleases: vi.fn(),
       findReleases: vi.fn(),
     };
@@ -96,6 +98,7 @@ describe('getReleasesApiResponse', () => {
     const release = makeRelease({ id: 'success' });
     const repository: ReleaseRepository = {
       saveReleases: vi.fn(),
+      findExistingReleaseIds: vi.fn().mockResolvedValue(new Set()),
       cleanupOldReleases: vi.fn(),
       findReleases: vi.fn().mockResolvedValue({
         items: [release],
@@ -123,6 +126,7 @@ describe('getReleasesApiResponse', () => {
   it('returns the error response format', async () => {
     const repository: ReleaseRepository = {
       saveReleases: vi.fn(),
+      findExistingReleaseIds: vi.fn().mockResolvedValue(new Set()),
       cleanupOldReleases: vi.fn(),
       findReleases: vi.fn(),
     };
@@ -145,6 +149,7 @@ describe('getReleasesApiResponse', () => {
   it('returns internal_error when the repository fails', async () => {
     const repository: ReleaseRepository = {
       saveReleases: vi.fn(),
+      findExistingReleaseIds: vi.fn().mockResolvedValue(new Set()),
       cleanupOldReleases: vi.fn(),
       findReleases: vi.fn().mockRejectedValue(new Error('Database is unavailable.')),
     };

@@ -19,6 +19,7 @@ export type ReleasePage = {
 
 export type ReleaseRepository = {
   saveReleases(releases: Release[]): Promise<{ saved: number }>;
+  findExistingReleaseIds(ids: string[]): Promise<Set<string>>;
   findReleases(query: ReleaseQuery): Promise<ReleasePage>;
   cleanupOldReleases(currentDate: Date, retentionDays: number): Promise<{ deleted: number }>;
 };
@@ -36,6 +37,10 @@ export class InMemoryReleaseRepository implements ReleaseRepository {
     }
 
     return { saved: releases.length };
+  }
+
+  async findExistingReleaseIds(ids: string[]): Promise<Set<string>> {
+    return new Set(ids.filter((id) => this.releasesBySpotifyId.has(id)));
   }
 
   async findReleases(query: ReleaseQuery): Promise<ReleasePage> {

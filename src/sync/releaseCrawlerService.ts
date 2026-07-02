@@ -66,8 +66,10 @@ export async function runReleaseCrawler(
           offset: task.offset,
         });
       const recentReleases = filterRecentDayPrecisionReleases(page.releases, currentDate, config.retentionDays);
-      const saveResult = await releases.saveReleases(recentReleases);
-      const inserted = await tasks.enqueueTasks(getFollowUpTasks(task, page, recentReleases, config));
+      const existingReleaseIds = await releases.findExistingReleaseIds(recentReleases.map((release) => release.id));
+      const newReleases = recentReleases.filter((release) => !existingReleaseIds.has(release.id));
+      const saveResult = await releases.saveReleases(newReleases);
+      const inserted = await tasks.enqueueTasks(getFollowUpTasks(task, page, newReleases, config));
 
       await tasks.completeTask({
         id: task.id,
@@ -113,17 +115,17 @@ function getNextRunAt(
   return new Date(currentDate.getTime() + config.searchTaskCooldownMinutes * 60 * 1000);
 }
 
-function getFollowUpTasks(task: SyncTask, page: SpotifyReleasePage, releases: Release[], config: ReleaseCrawlerConfig): SyncTaskInput[] {
+function getFollowUpTasks(task: SyncTask, page: SpotifyReleasePage, newReleases: Release[], config: ReleaseCrawlerConfig): SyncTaskInput[] {
   const followUps: SyncTaskInput[] = [];
 
-  if (task.source === 'search' && page.nextOffset !== null && page.nextOffset <= SEARCH_MAX_OFFSET) {
+  if (task.source === 'search' && page.nextOffset !== null && page.nextOffset <= SEARCH_MAX_OFFSET && newReleases.length > 0) {
     followUps.push({
       source: 'search',
       query: task.query,
       market: task.market,
       offset: page.nextOffset,
       limit: task.limit,
-      priority: task.priority,
+      priority: getSearchFollowUpPriority(task.priority, newReleases.length),
     });
   }
 
@@ -139,7 +141,7 @@ function getFollowUpTasks(task: SyncTask, page: SpotifyReleasePage, releases: Re
   }
 
   if (config.enableArtistExpansion) {
-    for (const artistId of getArtistIds(releases)) {
+    for (const artistId of getArtistIds(newReleases)) {
       followUps.push({
         source: 'artist_albums',
         query: artistId,
@@ -152,6 +154,10 @@ function getFollowUpTasks(task: SyncTask, page: SpotifyReleasePage, releases: Re
   }
 
   return followUps;
+}
+
+function getSearchFollowUpPriority(currentPriority: number, newReleaseCount: number): number {
+  return currentPriority - Math.min(newReleaseCount, 25);
 }
 
 function filterRecentDayPrecisionReleases(releases: Release[], currentDate: Date, retentionDays: number): Release[] {

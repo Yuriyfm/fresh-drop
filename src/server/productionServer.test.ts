@@ -121,6 +121,7 @@ function makeRepository(
 ): ReleaseRepository {
   return {
     saveReleases: vi.fn(),
+    findExistingReleaseIds: vi.fn().mockResolvedValue(new Set()),
     cleanupOldReleases: vi.fn(),
     findReleases: vi.fn().mockResolvedValue(findResult),
   };

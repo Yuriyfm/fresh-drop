@@ -20,6 +20,14 @@ describe('InMemoryReleaseRepository', () => {
     expect(result.items[0].title).toBe('New title');
   });
 
+  it('finds existing release ids', async () => {
+    const repository = new InMemoryReleaseRepository();
+
+    await repository.saveReleases([makeRelease({ id: 'spotify-1' })]);
+
+    await expect(repository.findExistingReleaseIds(['spotify-1', 'missing', 'spotify-1'])).resolves.toEqual(new Set(['spotify-1']));
+  });
+
   it('reads releases with filters and pagination', async () => {
     const repository = new InMemoryReleaseRepository();
 

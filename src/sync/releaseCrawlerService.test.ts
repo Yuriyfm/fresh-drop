@@ -77,6 +77,73 @@ describe('runReleaseCrawler', () => {
     expect(result.itemsSaved).toBe(0);
   });
 
+  it('saves only releases that are not already in the repository', async () => {
+    const existingRelease = makeRelease({ id: 'existing-release' });
+    const newRelease = makeRelease({ id: 'new-release' });
+    const source = {
+      fetchReleaseSearchPage: vi.fn().mockResolvedValue({
+        releases: [existingRelease, newRelease],
+        total: 2,
+        nextOffset: null,
+      }),
+      fetchArtistAlbumsPage: vi.fn(),
+    };
+    const releases = new InMemoryReleaseRepository();
+    const tasks = new InMemorySyncTaskRepository();
+    await releases.saveReleases([existingRelease]);
+
+    const result = await runReleaseCrawler(source, releases, tasks, {
+      market: 'TR',
+      batchSize: 1,
+      searchLimit: 50,
+      artistAlbumsLimit: 10,
+      retentionDays: 30,
+      searchQueries: ['tag:new'],
+      enableArtistExpansion: false,
+      searchTaskCooldownMinutes: 720,
+    }, new Date('2026-07-02T12:00:00.000Z'));
+
+    expect(result.itemsFound).toBe(2);
+    expect(result.itemsSaved).toBe(1);
+
+    const saved = await releases.findReleases({
+      period: '7d',
+      type: 'all',
+      popularity: 'all',
+      currentDate: new Date('2026-07-02T12:00:00.000Z'),
+    });
+    expect(saved.items.map((release) => release.id).sort()).toEqual(['existing-release', 'new-release']);
+  });
+
+  it('does not enqueue the next search offset when the page contains no new releases', async () => {
+    const release = makeRelease();
+    const source = {
+      fetchReleaseSearchPage: vi.fn().mockResolvedValue({
+        releases: [release],
+        total: 100,
+        nextOffset: 50,
+      }),
+      fetchArtistAlbumsPage: vi.fn(),
+    };
+    const releases = new InMemoryReleaseRepository();
+    const tasks = new InMemorySyncTaskRepository();
+    await releases.saveReleases([release]);
+
+    const result = await runReleaseCrawler(source, releases, tasks, {
+      market: 'TR',
+      batchSize: 1,
+      searchLimit: 50,
+      artistAlbumsLimit: 10,
+      retentionDays: 30,
+      searchQueries: ['tag:new'],
+      enableArtistExpansion: true,
+      searchTaskCooldownMinutes: 720,
+    }, new Date('2026-07-02T12:00:00.000Z'));
+
+    expect(result.itemsSaved).toBe(0);
+    await expect(tasks.claimPendingTasks(10)).resolves.toEqual([]);
+  });
+
   it('skips artist expansion tasks when disabled', async () => {
     const source = {
       fetchReleaseSearchPage: vi.fn().mockResolvedValue({

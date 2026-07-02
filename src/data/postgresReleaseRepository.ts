@@ -86,6 +86,21 @@ export class PostgresReleaseRepository implements ReleaseRepository {
     }
   }
 
+  async findExistingReleaseIds(ids: string[]): Promise<Set<string>> {
+    const uniqueIds = Array.from(new Set(ids.filter((id) => id.trim().length > 0)));
+
+    if (uniqueIds.length === 0) {
+      return new Set();
+    }
+
+    const result = await this.pool.query<{ spotify_id: string }>(
+      'select spotify_id from releases where spotify_id = any($1::text[])',
+      [uniqueIds],
+    );
+
+    return new Set(result.rows.map((row) => row.spotify_id));
+  }
+
   async findReleases(query: ReleaseQuery): Promise<ReleasePage> {
     const page = normalizeReleasePage(query.page);
     const limit = normalizeReleaseLimit(query.limit);
