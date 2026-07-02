@@ -3,7 +3,7 @@ import { Pool } from 'pg';
 import { PostgresSyncRunRepository } from '../src/data/syncRunRepository';
 
 async function main(): Promise<void> {
-  const pool = new Pool();
+  const pool = new Pool(getDatabasePoolConfig());
   const repository = new PostgresSyncRunRepository({ pool });
 
   try {
@@ -26,6 +26,10 @@ async function main(): Promise<void> {
   } finally {
     await pool.end();
   }
+}
+
+function getDatabasePoolConfig(): { connectionString: string } | undefined {
+  return process.env.DATABASE_URL ? { connectionString: process.env.DATABASE_URL } : undefined;
 }
 
 main().catch((error: unknown) => {

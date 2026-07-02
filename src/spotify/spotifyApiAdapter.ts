@@ -2,6 +2,7 @@ import type { Release } from '../domain/release';
 import { mapSpotifyAlbumToRelease } from './mapSpotifyAlbum';
 import type {
   SpotifyAlbumDto,
+  SpotifyAlbumsPageResponseDto,
   SpotifyArtistDto,
   SpotifyArtistsResponseDto,
   SpotifySearchAlbumsResponseDto,
@@ -25,6 +26,26 @@ export type FetchFreshReleasesFromSpotifyOptions = {
   limit?: number;
   market?: string;
   pages?: number;
+};
+
+export type FetchSpotifyReleaseSearchPageOptions = {
+  query: string;
+  limit?: number;
+  market?: string;
+  offset?: number;
+};
+
+export type FetchSpotifyArtistAlbumsPageOptions = {
+  artistId: string;
+  limit?: number;
+  market?: string;
+  offset?: number;
+};
+
+export type SpotifyReleasePage = {
+  releases: Release[];
+  total: number | null;
+  nextOffset: number | null;
 };
 
 export type SpotifyApiErrorCode = 'auth' | 'rate_limited' | 'api' | 'network' | 'invalid_response';
@@ -137,6 +158,61 @@ export class SpotifyApiAdapter {
       .filter((release): release is Release => release !== null);
   }
 
+  async fetchReleaseSearchPage(options: FetchSpotifyReleaseSearchPageOptions): Promise<SpotifyReleasePage> {
+    const token = await this.getAppAccessToken();
+    const limit = clampSearchLimit(options.limit ?? MAX_SEARCH_LIMIT);
+    const offset = Math.max(Math.trunc(options.offset ?? 0), 0);
+    const searchUrl = new URL(`${SPOTIFY_API_URL}/search`);
+
+    searchUrl.searchParams.set('q', options.query);
+    searchUrl.searchParams.set('type', 'album');
+    searchUrl.searchParams.set('limit', String(limit));
+    searchUrl.searchParams.set('offset', String(offset));
+
+    if (options.market) {
+      searchUrl.searchParams.set('market', options.market);
+    }
+
+    const response = await this.request(searchUrl.toString(), {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = (await response.json()) as SpotifySearchAlbumsResponseDto;
+    const albums = data.albums?.items ?? [];
+
+    return {
+      releases: await this.mapAlbumsToReleases(token, albums),
+      total: typeof data.albums?.total === 'number' ? data.albums.total : null,
+      nextOffset: data.albums?.next && albums.length > 0 ? offset + limit : null,
+    };
+  }
+
+  async fetchArtistAlbumsPage(options: FetchSpotifyArtistAlbumsPageOptions): Promise<SpotifyReleasePage> {
+    const token = await this.getAppAccessToken();
+    const limit = clampArtistAlbumsLimit(options.limit ?? 10);
+    const offset = Math.max(Math.trunc(options.offset ?? 0), 0);
+    const url = new URL(`${SPOTIFY_API_URL}/artists/${encodeURIComponent(options.artistId)}/albums`);
+
+    url.searchParams.set('include_groups', 'album,single,compilation');
+    url.searchParams.set('limit', String(limit));
+    url.searchParams.set('offset', String(offset));
+
+    if (options.market) {
+      url.searchParams.set('market', options.market);
+    }
+
+    const response = await this.request(url.toString(), {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = (await response.json()) as SpotifyAlbumsPageResponseDto;
+    const albums = data.items ?? [];
+
+    return {
+      releases: await this.mapAlbumsToReleases(token, albums),
+      total: typeof data.total === 'number' ? data.total : null,
+      nextOffset: data.next && albums.length > 0 ? offset + limit : null,
+    };
+  }
+
   private async fetchArtistsById(token: string, albums: SpotifyAlbumDto[]): Promise<Map<string, SpotifyArtistDto>> {
     const artistIds = Array.from(
       new Set(
@@ -171,6 +247,19 @@ export class SpotifyApiAdapter {
     }
 
     return artistsById;
+  }
+
+  private async mapAlbumsToReleases(token: string, albums: SpotifyAlbumDto[]): Promise<Release[]> {
+    if (albums.length === 0) {
+      return [];
+    }
+
+    const artistsById = await this.fetchArtistsById(token, albums);
+
+    return albums
+      .map((album) => enrichAlbumArtists(album, artistsById))
+      .map(mapSpotifyAlbumToRelease)
+      .filter((release): release is Release => release !== null);
   }
 
   private async request(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
@@ -211,6 +300,10 @@ function enrichAlbumArtists(album: SpotifyAlbumDto, artistsById: Map<string, Spo
 
 function clampSearchLimit(limit: number): number {
   return Math.min(Math.max(Math.trunc(limit), 1), MAX_SEARCH_LIMIT);
+}
+
+function clampArtistAlbumsLimit(limit: number): number {
+  return Math.min(Math.max(Math.trunc(limit), 1), 10);
 }
 
 function normalizePages(pages: number): number {

@@ -1,0 +1,89 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-fresh_drop}
+      POSTGRES_USER: ${POSTGRES_USER:-fresh_drop}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fresh_drop} -d ${POSTGRES_DB:-fresh_drop}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    build:
+      context: .
+    restart: "no"
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["yarn", "db:schema"]
+
+  app:
+    build:
+      context: .
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      HOST: 0.0.0.0
+      PORT: 4173
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    expose:
+      - "4173"
+
+  scheduler:
+    build:
+      context: .
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID:-}
+      SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET:-}
+      SPOTIFY_MARKET: ${SPOTIFY_MARKET:-US}
+      SPOTIFY_SYNC_LIMIT: ${SPOTIFY_SYNC_LIMIT:-50}
+      SPOTIFY_SYNC_PAGES: ${SPOTIFY_SYNC_PAGES:-1}
+      SYNC_CRON_SCHEDULE: ${SYNC_CRON_SCHEDULE:-0 3 * * *}
+      CRAWLER_CRON_SCHEDULE: ${CRAWLER_CRON_SCHEDULE:-*/30 * * * *}
+      CLEANUP_CRON_SCHEDULE: ${CLEANUP_CRON_SCHEDULE:-30 3 * * *}
+      SPOTIFY_CRAWLER_BATCH_SIZE: ${SPOTIFY_CRAWLER_BATCH_SIZE:-20}
+      SPOTIFY_CRAWLER_SEARCH_LIMIT: ${SPOTIFY_CRAWLER_SEARCH_LIMIT:-50}
+      SPOTIFY_CRAWLER_ARTIST_ALBUMS_LIMIT: ${SPOTIFY_CRAWLER_ARTIST_ALBUMS_LIMIT:-10}
+      SPOTIFY_CRAWLER_ENABLE_ARTIST_EXPANSION: ${SPOTIFY_CRAWLER_ENABLE_ARTIST_EXPANSION:-false}
+      SPOTIFY_CRAWLER_SEARCH_QUERIES: ${SPOTIFY_CRAWLER_SEARCH_QUERIES:-}
+      RELEASE_RETENTION_DAYS: ${RELEASE_RETENTION_DAYS:-30}
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    entrypoint: ["/bin/sh", "/app/docker/scheduler-entrypoint.sh"]
+
+  proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      FRESH_DROP_SITE_ADDRESS: ${FRESH_DROP_SITE_ADDRESS:-:80}
+    ports:
+      - "80:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      app:
+        condition: service_started
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:

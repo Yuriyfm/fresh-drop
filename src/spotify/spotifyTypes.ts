@@ -27,7 +27,15 @@ export type SpotifyAlbumDto = {
 export type SpotifySearchAlbumsResponseDto = {
   albums?: {
     items?: SpotifyAlbumDto[];
+    total?: number;
+    next?: string | null;
   };
+};
+
+export type SpotifyAlbumsPageResponseDto = {
+  items?: SpotifyAlbumDto[];
+  total?: number;
+  next?: string | null;
 };
 
 export type SpotifyTokenResponseDto = {

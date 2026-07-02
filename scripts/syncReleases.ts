@@ -8,7 +8,7 @@ import { getReleaseSyncConfigFromEnv } from '../src/sync/syncConfig';
 
 async function main(): Promise<void> {
   const config = getReleaseSyncConfigFromEnv(process.env);
-  const pool = new Pool();
+  const pool = new Pool(getDatabasePoolConfig());
 
   try {
     const spotify = new SpotifyApiAdapter(config.spotify);
@@ -42,6 +42,10 @@ async function main(): Promise<void> {
   } finally {
     await pool.end();
   }
+}
+
+function getDatabasePoolConfig(): { connectionString: string } | undefined {
+  return process.env.DATABASE_URL ? { connectionString: process.env.DATABASE_URL } : undefined;
 }
 
 main().catch((error: unknown) => {

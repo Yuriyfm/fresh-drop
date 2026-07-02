@@ -3,12 +3,13 @@ dist
 dist-server
 .yarn-cache
 .yarn-global
+.git
 .git-local
-.idea
 coverage
 *.tsbuildinfo
 .env
 .env.local
 .env.*
 !.env.production.example
-NUL
+Dockerfile
+docker-compose*.yml

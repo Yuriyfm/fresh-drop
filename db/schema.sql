@@ -45,6 +45,26 @@ create table if not exists sync_runs (
   check ((status = 'success' and error_message is null) or status <> 'success')
 );
 
+create table if not exists sync_tasks (
+  id bigserial primary key,
+  source text not null check (source in ('search', 'artist_albums')),
+  query text not null check (length(trim(query)) > 0),
+  market text not null check (length(trim(market)) > 0),
+  offset_value integer not null default 0 check (offset_value >= 0),
+  limit_value integer not null default 50 check (limit_value > 0),
+  status text not null default 'pending' check (status in ('pending', 'running', 'success', 'failed')),
+  priority integer not null default 100,
+  attempts integer not null default 0 check (attempts >= 0),
+  items_found integer not null default 0 check (items_found >= 0),
+  items_saved integer not null default 0 check (items_saved >= 0),
+  error_message text,
+  next_run_at timestamptz not null default now(),
+  last_run_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (source, query, market, offset_value)
+);
+
 create index if not exists idx_releases_release_date on releases(release_date);
 create index if not exists idx_releases_fresh_search on releases(release_date desc, popularity desc, spotify_id)
   where release_date_precision = 'day' and release_date is not null;
@@ -56,5 +76,6 @@ create index if not exists idx_artists_genres on artists using gin(genres);
 create index if not exists idx_release_artists_release_id on release_artists(release_id);
 create index if not exists idx_release_artists_artist_id on release_artists(artist_id);
 create index if not exists idx_sync_runs_started_at on sync_runs(started_at desc, id desc);
+create index if not exists idx_sync_tasks_pending on sync_tasks(status, next_run_at, priority, id);
 create unique index if not exists idx_release_artists_release_position on release_artists(release_id, position);
 create unique index if not exists idx_release_artists_primary on release_artists(release_id) where is_primary;
