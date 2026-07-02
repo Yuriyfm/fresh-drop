@@ -20,13 +20,13 @@ const DEFAULT_RETENTION_DAYS = 30;
 export function getReleaseCrawlerConfigFromEnv(env: CrawlerEnv, currentDate = new Date()): ReleaseCrawlerConfig {
   return {
     market: normalizeMarket(env.SPOTIFY_MARKET),
-    batchSize: normalizePositiveInteger(env.SPOTIFY_CRAWLER_BATCH_SIZE, DEFAULT_BATCH_SIZE, 200),
+    batchSize: normalizePositiveInteger(env.SPOTIFY_CRAWLER_BATCH_SIZE, DEFAULT_BATCH_SIZE, 100),
     searchLimit: normalizePositiveInteger(env.SPOTIFY_CRAWLER_SEARCH_LIMIT ?? env.SPOTIFY_SYNC_LIMIT, DEFAULT_SEARCH_LIMIT, 50),
     artistAlbumsLimit: normalizePositiveInteger(env.SPOTIFY_CRAWLER_ARTIST_ALBUMS_LIMIT, DEFAULT_ARTIST_ALBUMS_LIMIT, 10),
     retentionDays: normalizePositiveInteger(env.RELEASE_RETENTION_DAYS, DEFAULT_RETENTION_DAYS, 365),
     searchQueries: normalizeSearchQueries(env.SPOTIFY_CRAWLER_SEARCH_QUERIES, currentDate),
     enableArtistExpansion: normalizeBoolean(env.SPOTIFY_CRAWLER_ENABLE_ARTIST_EXPANSION, false),
-    searchTaskCooldownMinutes: normalizePositiveInteger(env.SPOTIFY_CRAWLER_SEARCH_TASK_COOLDOWN_MINUTES, 720, 10080),
+    searchTaskCooldownMinutes: normalizePositiveInteger(env.SPOTIFY_CRAWLER_SEARCH_TASK_COOLDOWN_MINUTES, 360, 10080),
   };
 }
 
@@ -56,9 +56,11 @@ function normalizeSearchQueries(value: string | undefined, currentDate: Date): s
   }
 
   const year = currentDate.getUTCFullYear();
-  const shards = 'abcdefghijklmnopqrstuvwxyz0123456789'.split('').map((term) => `${term} year:${year}`);
+  const terms = 'abcdefghijklmnopqrstuvwxyz0123456789'.split('');
+  const singleCharShards = terms.map((term) => `${term} year:${year}`);
+  const bigramShards = terms.flatMap((left) => terms.map((right) => `${left}${right} year:${year}`));
 
-  return ['tag:new', ...shards];
+  return ['tag:new', ...singleCharShards, ...bigramShards];
 }
 
 function normalizeBoolean(value: string | undefined, defaultValue: boolean): boolean {
