@@ -37,10 +37,26 @@
 .filterPanel {
   display: grid;
   gap: 12px;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 240px);
+  align-items: start;
   padding: 14px;
   border: 1px solid #223026;
   border-radius: 8px;
   background: #101510;
+}
+
+.filterGroup {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.filterGroupTitle {
+  margin: 0;
+  color: #8d9a8f;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
 }
 
 .primaryFilters,
@@ -56,7 +72,12 @@
 }
 
 .desktopFilters {
-  grid-template-columns: repeat(4, minmax(132px, 1fr));
+  grid-template-columns: repeat(2, minmax(132px, 1fr));
+}
+
+.desktopSortGroup {
+  border-left: 1px solid #28372f;
+  padding-left: 12px;
 }
 
 label {
@@ -154,13 +175,26 @@ button:disabled {
 }
 
 .releaseList {
+  padding-top: 14px;
+}
+
+.virtualReleaseList {
+  position: relative;
+  min-height: 0;
+}
+
+.virtualReleaseItems {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
   display: grid;
   gap: 8px;
-  padding-top: 14px;
 }
 
 .releaseItem {
   min-width: 0;
+  min-height: 84px;
   border: 1px solid #1d2821;
   border-radius: 8px;
   background: #111711;
@@ -277,6 +311,7 @@ button:disabled {
 }
 
 .inlineError {
+  margin-top: 8px;
   display: flex;
   gap: 12px;
   align-items: center;
@@ -288,9 +323,9 @@ button:disabled {
   color: #ffd6d6;
 }
 
-.loadMoreButton {
-  justify-self: center;
-  min-width: 160px;
+.scrollSentinel {
+  min-height: 1px;
+  margin-top: 8px;
 }
 
 .loadingMore,
@@ -548,6 +583,7 @@ dd {
   }
 
   .filterPanel {
+    grid-template-columns: 1fr;
     padding: 12px;
   }
 
@@ -561,6 +597,10 @@ dd {
   }
 
   .desktopFilters {
+    display: none;
+  }
+
+  .desktopSortGroup {
     display: none;
   }
 

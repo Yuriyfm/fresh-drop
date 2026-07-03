@@ -27,7 +27,7 @@ describeWithPostgres('PostgresReleaseRepository', () => {
   });
 
   beforeEach(async () => {
-    await pool.query('truncate release_artists, artists, releases restart identity cascade');
+    await pool.query('truncate genre_counts, release_genres, release_artists, artists, releases restart identity cascade');
   });
 
   afterAll(async () => {
@@ -64,18 +64,20 @@ describeWithPostgres('PostgresReleaseRepository', () => {
     const result = await repository.findReleases({
       period: '7d',
       type: 'all',
-      popularity: 'all',
+      sort: 'newest',
       currentDate: new Date('2026-07-01T12:00:00.000Z'),
     });
     const counts = await pool.query<{
       releases: number;
       artists: number;
       release_artists: number;
+      release_genres: number;
     }>(`
       select
         (select count(*)::integer from releases) as releases,
         (select count(*)::integer from artists) as artists,
-        (select count(*)::integer from release_artists) as release_artists
+        (select count(*)::integer from release_artists) as release_artists,
+        (select count(*)::integer from release_genres) as release_genres
     `);
 
     expect(result.pagination.total).toBe(1);
@@ -93,7 +95,12 @@ describeWithPostgres('PostgresReleaseRepository', () => {
       releases: 1,
       artists: 2,
       release_artists: 2,
+      release_genres: 2,
     });
+    await expect(repository.listActiveGenres()).resolves.toEqual([
+      { genre: 'ambient', releaseCount: 1 },
+      { genre: 'techno', releaseCount: 1 },
+    ]);
   });
 
   it('finds existing release ids', async () => {
@@ -162,7 +169,7 @@ describeWithPostgres('PostgresReleaseRepository', () => {
       genre: 'death metal',
       country: 'se',
       type: 'album',
-      popularity: 'popular',
+      sort: 'popular',
       page: 1,
       limit: 1,
       currentDate: new Date('2026-07-01T12:00:00.000Z'),
@@ -172,7 +179,7 @@ describeWithPostgres('PostgresReleaseRepository', () => {
       genre: 'Death Metal',
       country: 'SE',
       type: 'album',
-      popularity: 'less-known',
+      sort: 'less-popular',
       currentDate: new Date('2026-07-01T12:00:00.000Z'),
     });
 
@@ -180,10 +187,15 @@ describeWithPostgres('PostgresReleaseRepository', () => {
     expect(popularResult.pagination).toEqual({
       page: 1,
       limit: 1,
-      total: 2,
+      total: 4,
       hasNextPage: true,
     });
-    expect(lessKnownResult.items.map((release) => release.id)).toEqual(['less-known']);
+    expect(lessKnownResult.items.map((release) => release.id)).toEqual([
+      'less-known',
+      'match-2',
+      'match-1',
+      'unknown-popularity',
+    ]);
   });
 
   it('deletes old day-precision releases and cascades stale release artist links', async () => {
@@ -211,13 +223,52 @@ describeWithPostgres('PostgresReleaseRepository', () => {
     const result = await repository.findReleases({
       period: '1m',
       type: 'all',
-      popularity: 'all',
+      sort: 'newest',
       currentDate: new Date('2026-07-01T12:00:00.000Z'),
     });
     const links = await pool.query<{ total: number }>('select count(*)::integer as total from release_artists');
+    const genreCounts = await repository.listActiveGenres();
 
     expect(result.items.map((release) => release.id)).toEqual(['fresh']);
     expect(links.rows[0].total).toBe(1);
+    expect(genreCounts).toEqual([{ genre: 'pop', releaseCount: 1 }]);
+  });
+
+  it('backs active genre options with materialized release genres', async () => {
+    const technoArtist = makeArtist({ id: 'artist-techno', genres: ['Techno', 'Ambient'] });
+    const popArtist = makeArtist({ id: 'artist-pop', genres: ['Pop'] });
+
+    await repository.saveReleases([
+      makeRelease({
+        id: 'techno-1',
+        artists: [technoArtist],
+        primaryArtist: technoArtist,
+      }),
+      makeRelease({
+        id: 'techno-2',
+        artists: [technoArtist],
+        primaryArtist: technoArtist,
+      }),
+      makeRelease({
+        id: 'pop-1',
+        artists: [popArtist],
+        primaryArtist: popArtist,
+      }),
+    ]);
+
+    await repository.saveReleases([
+      makeRelease({
+        id: 'techno-2',
+        artists: [popArtist],
+        primaryArtist: popArtist,
+      }),
+    ]);
+
+    await expect(repository.listActiveGenres()).resolves.toEqual([
+      { genre: 'ambient', releaseCount: 1 },
+      { genre: 'pop', releaseCount: 2 },
+      { genre: 'techno', releaseCount: 1 },
+    ]);
   });
 });
 

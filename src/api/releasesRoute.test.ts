@@ -10,7 +10,7 @@ describe('handleGetReleasesRoute', () => {
 
     await handleGetReleasesRoute(
       repository,
-      '/api/releases?period=14d&genre=techno&country=DE&type=single&popularity=popular&page=2&limit=10',
+      '/api/releases?period=14d&genre=techno&country=DE&type=single&sort=popular&page=2&limit=10&randomStartSeed=seed-1',
       { currentDate },
     );
 
@@ -19,10 +19,11 @@ describe('handleGetReleasesRoute', () => {
       genre: 'techno',
       country: 'DE',
       type: 'single',
-      popularity: 'popular',
+      sort: 'popular',
       page: 2,
       limit: 10,
       currentDate,
+      randomStartSeed: 'seed-1',
     });
   });
 
@@ -36,10 +37,11 @@ describe('handleGetReleasesRoute', () => {
       genre: undefined,
       country: undefined,
       type: 'all',
-      popularity: 'all',
+      sort: 'newest',
       page: 1,
       limit: 20,
       currentDate: undefined,
+      randomStartSeed: undefined,
     });
   });
 
@@ -50,6 +52,7 @@ describe('handleGetReleasesRoute', () => {
 
     expect(response).toEqual({
       items: [],
+      genres: [],
       pagination: {
         page: 3,
         limit: 10,
@@ -87,6 +90,7 @@ describe('handleGetReleasesRoute', () => {
 
     await expect(handleGetReleasesRoute(repository, new URLSearchParams({ period: '7d' }))).resolves.toEqual({
       items: [release],
+      genres: [{ name: 'techno', releaseCount: 1 }],
       pagination: {
         page: 1,
         limit: 20,
@@ -104,6 +108,7 @@ describe('handleGetReleasesRoute', () => {
 
     expect(response).toEqual({
       items: [],
+      genres: [],
       pagination: {
         page: 1,
         limit: 20,
@@ -125,6 +130,7 @@ function makeRepository(
     saveReleases: vi.fn(),
     findExistingReleaseIds: vi.fn().mockResolvedValue(new Set()),
     cleanupOldReleases: vi.fn(),
+    listActiveGenres: vi.fn().mockResolvedValue([{ genre: 'techno', releaseCount: 1 }]),
     findReleases: vi.fn().mockResolvedValue(findResult),
   };
 }

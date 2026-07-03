@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Release } from './release';
-import { filterReleases, matchesPeriod, matchesPopularity, sortReleasesForSearch } from './releaseFilters';
+import { filterReleases, matchesPeriod, sortReleasesForSearch } from './releaseFilters';
 
 const currentDate = new Date('2026-06-28T12:00:00.000Z');
 
@@ -40,7 +40,7 @@ describe('filterReleases', () => {
     const result = filterReleases(releases, {
       period: '7d',
       type: 'all',
-      popularity: 'all',
+      sort: 'newest',
       currentDate,
     });
 
@@ -53,7 +53,7 @@ describe('filterReleases', () => {
       {
         period: '1m',
         type: 'all',
-        popularity: 'all',
+        sort: 'newest',
         currentDate,
       },
     );
@@ -61,7 +61,7 @@ describe('filterReleases', () => {
     expect(result).toEqual([]);
   });
 
-  it('filters by genre, country, type, and popularity', () => {
+  it('filters by genre, country, and type', () => {
     const releases = [
       makeRelease({
         id: 'match',
@@ -84,7 +84,7 @@ describe('filterReleases', () => {
       genre: 'Techno',
       country: 'de',
       type: 'album',
-      popularity: 'popular',
+      sort: 'newest',
       currentDate,
     });
 
@@ -92,38 +92,47 @@ describe('filterReleases', () => {
   });
 });
 
-describe('matchesPopularity', () => {
-  it('matches null popularity only for all releases', () => {
-    const release = makeRelease({ popularity: null });
-
-    expect(matchesPopularity(release, 'all')).toBe(true);
-    expect(matchesPopularity(release, 'popular')).toBe(false);
-    expect(matchesPopularity(release, 'less-known')).toBe(false);
-  });
-});
-
 describe('sortReleasesForSearch', () => {
-  it('sorts by release date descending and popularity descending', () => {
+  it('sorts newest releases first by default', () => {
     const releases = [
-      makeRelease({ id: 'older-popular', releaseDate: '2026-06-27', popularity: 95 }),
-      makeRelease({ id: 'newer-less-known', releaseDate: '2026-06-28', popularity: 30 }),
-      makeRelease({ id: 'newer-popular', releaseDate: '2026-06-28', popularity: 80 }),
+      makeRelease({ id: 'older', releaseDate: '2026-06-27', popularity: 95 }),
+      makeRelease({ id: 'newer-b', releaseDate: '2026-06-28', popularity: 30 }),
+      makeRelease({ id: 'newer-a', releaseDate: '2026-06-28', popularity: 80 }),
     ];
 
     const result = sortReleasesForSearch(releases);
 
-    expect(result.map((release) => release.id)).toEqual(['newer-popular', 'newer-less-known', 'older-popular']);
+    expect(result.map((release) => release.id)).toEqual(['newer-a', 'newer-b', 'older']);
   });
 
-  it('puts null popularity below known popularity on the same date', () => {
+  it('sorts oldest releases first', () => {
     const releases = [
-      makeRelease({ id: 'unknown-popularity', releaseDate: '2026-06-28', popularity: null }),
-      makeRelease({ id: 'known-popularity', releaseDate: '2026-06-28', popularity: 1 }),
+      makeRelease({ id: 'newer', releaseDate: '2026-06-28' }),
+      makeRelease({ id: 'older', releaseDate: '2026-06-01' }),
     ];
 
-    const result = sortReleasesForSearch(releases);
+    const result = sortReleasesForSearch(releases, 'oldest');
 
-    expect(result.map((release) => release.id)).toEqual(['known-popularity', 'unknown-popularity']);
+    expect(result.map((release) => release.id)).toEqual(['older', 'newer']);
+  });
+
+  it('sorts by popularity without date as the primary order', () => {
+    const releases = [
+      makeRelease({ id: 'older-popular', releaseDate: '2026-06-01', popularity: 95 }),
+      makeRelease({ id: 'newer-less-popular', releaseDate: '2026-06-28', popularity: 30 }),
+      makeRelease({ id: 'unknown-popularity', releaseDate: '2026-06-28', popularity: null }),
+    ];
+
+    expect(sortReleasesForSearch(releases, 'popular').map((release) => release.id)).toEqual([
+      'older-popular',
+      'newer-less-popular',
+      'unknown-popularity',
+    ]);
+    expect(sortReleasesForSearch(releases, 'less-popular').map((release) => release.id)).toEqual([
+      'newer-less-popular',
+      'older-popular',
+      'unknown-popularity',
+    ]);
   });
 
   it('puts imprecise or invalid dates below precise release dates', () => {

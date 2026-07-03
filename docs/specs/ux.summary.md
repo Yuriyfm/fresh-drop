@@ -64,12 +64,12 @@ Last 7 days
 
 * period: `7 days / 14 days / Month`;
 * genre;
-* country / market;
 * release type: `album / single / compilation`;
-* popularity;
 * sorting.
 
 Фильтры применяются сразу после выбора.
+
+Выбранные фильтры и сортировка сохраняются локально в браузере. `Reset filters` сбрасывает и текущий UI, и сохранённое состояние.
 
 На мобильном:
 
@@ -80,9 +80,8 @@ Last 7 days
 Ограничения MVP:
 
 * только один жанр;
-* только одна страна;
-* popularity: `Any / Popular only`;
-* sorting default: `Newest first`.
+* sorting default: `Newest first`;
+* popularity is a sorting mode, not a filter.
 
 ## Список релизов
 
@@ -107,7 +106,9 @@ Last 7 days
 128 releases found · Death Metal · Sweden · Last 7 days
 ```
 
-Для списка используется infinite scroll.
+Для списка используется automatic infinite scroll без кнопки `Load more`.
+
+Чтобы не перегружать страницу при долгом скролле, UI виртуализирует список: загруженные релизы остаются в состоянии, но в DOM отрисовывается только видимый диапазон с запасом. При прокрутке вверх ранее загруженные релизы снова появляются.
 
 Обязательные состояния:
 

@@ -25,9 +25,9 @@ Returns normalized releases from the application database.
 ```text
 period=7d | 14d | 1m
 genre=string
-country=string
 type=all | single | album | compilation
-popularity=all | popular | less-known
+sort=newest | oldest | popular | less-popular
+randomStartSeed=string
 page=number
 limit=number
 ```
@@ -36,17 +36,19 @@ Rules:
 
 * `period` is required and defaults to `7d` if omitted by the client.
 * `type` defaults to `all`.
-* `popularity` defaults to `all`.
+* `sort` defaults to `newest`.
+* `randomStartSeed` is optional and is used only to keep the default unfiltered start offset stable across pagination.
 * `page` starts at `1`.
 * `limit` has a safe backend default and a backend maximum.
 * filtering is performed by backend code against PostgreSQL data.
 
 Sorting:
 
-* MVP supports one default sort only: `Newest first`.
-* The API does not accept a `sort` query parameter in the MVP.
-* Popularity is used only as a tie-breaker for releases with the same date.
-* If a UI sort switch is added later, this spec and `docs/specs/release-search.spec.md` must be updated first.
+* `newest` sorts by release date descending.
+* `oldest` sorts by release date ascending.
+* `popular` sorts by popularity descending without date as the primary order.
+* `less-popular` sorts by popularity ascending without date as the primary order.
+* Only one sort is active at a time.
 
 ### Success response
 

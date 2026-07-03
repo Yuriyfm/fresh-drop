@@ -1,4 +1,4 @@
-import type { PopularityFilter, Release, ReleaseFilters, ReleasePeriod, ReleaseTypeFilter } from './release';
+import type { Release, ReleaseFilters, ReleasePeriod, ReleaseSort, ReleaseTypeFilter } from './release';
 
 const millisecondsInDay = 24 * 60 * 60 * 1000;
 
@@ -8,21 +8,30 @@ export function filterReleases(releases: Release[], filters: ReleaseFilters): Re
       matchesPeriod(release, filters.period, filters.currentDate) &&
       matchesGenre(release, filters.genre) &&
       matchesCountry(release, filters.country) &&
-      matchesType(release, filters.type) &&
-      matchesPopularity(release, filters.popularity)
+      matchesType(release, filters.type)
     );
   });
 }
 
-export function sortReleasesForSearch(releases: Release[]): Release[] {
+export function sortReleasesForSearch(releases: Release[], sort: ReleaseSort = 'newest'): Release[] {
   return [...releases].sort((left, right) => {
-    const dateComparison = compareReleaseDates(left, right);
+    if (sort === 'popular' || sort === 'less-popular') {
+      const popularityComparison = comparePopularity(left.popularity, right.popularity, sort);
+
+      if (popularityComparison !== 0) {
+        return popularityComparison;
+      }
+
+      return left.id.localeCompare(right.id);
+    }
+
+    const dateComparison = compareReleaseDates(left, right, sort);
 
     if (dateComparison !== 0) {
       return dateComparison;
     }
 
-    return comparePopularity(left.popularity, right.popularity);
+    return left.id.localeCompare(right.id);
   });
 }
 
@@ -72,22 +81,6 @@ export function matchesType(release: Release, type: ReleaseTypeFilter): boolean 
   return type === 'all' || release.type === type;
 }
 
-export function matchesPopularity(release: Release, popularity: PopularityFilter): boolean {
-  if (popularity === 'all') {
-    return true;
-  }
-
-  if (release.popularity === null) {
-    return false;
-  }
-
-  if (popularity === 'popular') {
-    return release.popularity >= 60;
-  }
-
-  return release.popularity < 60;
-}
-
 function getPeriodDays(period: ReleasePeriod): number {
   if (period === '7d') {
     return 7;
@@ -106,7 +99,7 @@ function parseDateOnly(value: string): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-function compareReleaseDates(left: Release, right: Release): number {
+function compareReleaseDates(left: Release, right: Release, sort: ReleaseSort): number {
   const leftTime = getSortableReleaseTime(left);
   const rightTime = getSortableReleaseTime(right);
 
@@ -122,7 +115,7 @@ function compareReleaseDates(left: Release, right: Release): number {
     return -1;
   }
 
-  return rightTime - leftTime;
+  return sort === 'oldest' ? leftTime - rightTime : rightTime - leftTime;
 }
 
 function getSortableReleaseTime(release: Release): number | null {
@@ -133,7 +126,7 @@ function getSortableReleaseTime(release: Release): number | null {
   return parseDateOnly(release.releaseDate)?.getTime() ?? null;
 }
 
-function comparePopularity(left: number | null, right: number | null): number {
+function comparePopularity(left: number | null, right: number | null, sort: ReleaseSort): number {
   if (left === null && right === null) {
     return 0;
   }
@@ -146,7 +139,7 @@ function comparePopularity(left: number | null, right: number | null): number {
     return -1;
   }
 
-  return right - left;
+  return sort === 'less-popular' ? left - right : right - left;
 }
 
 function startOfUtcDay(date: Date): Date {

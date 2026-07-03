@@ -1,10 +1,11 @@
-import type { ArtistSummary, PopularityFilter, Release, ReleaseFilters, ReleaseTypeFilter } from '../domain/release';
+import type { ArtistSummary, Release, ReleaseFilters, ReleaseTypeFilter } from '../domain/release';
 import { filterReleases, sortReleasesForSearch } from '../domain/releaseFilters';
 
 export type ReleaseQuery = Omit<ReleaseFilters, 'currentDate'> & {
   page?: number;
   limit?: number;
   currentDate?: Date;
+  randomStartSeed?: string;
 };
 
 export type ReleasePage = {
@@ -17,10 +18,16 @@ export type ReleasePage = {
   };
 };
 
+export type GenreCount = {
+  genre: string;
+  releaseCount: number;
+};
+
 export type ReleaseRepository = {
   saveReleases(releases: Release[]): Promise<{ saved: number }>;
   findExistingReleaseIds(ids: string[]): Promise<Set<string>>;
   findReleases(query: ReleaseQuery): Promise<ReleasePage>;
+  listActiveGenres(): Promise<GenreCount[]>;
   cleanupOldReleases(currentDate: Date, retentionDays: number): Promise<{ deleted: number }>;
 };
 
@@ -52,10 +59,15 @@ export class InMemoryReleaseRepository implements ReleaseRepository {
       genre: query.genre,
       country: query.country,
       type: query.type ?? 'all',
-      popularity: query.popularity ?? 'all',
+      sort: query.sort ?? 'newest',
       currentDate,
-    }));
-    const offset = (page - 1) * limit;
+    }), query.sort ?? 'newest');
+    const offset = getReleaseOffset({
+      page,
+      limit,
+      total: filtered.length,
+      randomStartSeed: query.randomStartSeed,
+    });
     const items = filtered.slice(offset, offset + limit).map(cloneRelease);
 
     return {
@@ -67,6 +79,21 @@ export class InMemoryReleaseRepository implements ReleaseRepository {
         hasNextPage: offset + items.length < filtered.length,
       },
     };
+  }
+
+  async listActiveGenres(): Promise<GenreCount[]> {
+    const counts = new Map<string, number>();
+
+    for (const release of this.releasesBySpotifyId.values()) {
+      for (const genre of normalizeGenres(release.genres)) {
+        counts.set(genre, (counts.get(genre) ?? 0) + 1);
+      }
+    }
+
+    return Array.from(counts.entries())
+      .filter(([, releaseCount]) => releaseCount > 0)
+      .map(([genre, releaseCount]) => ({ genre, releaseCount }))
+      .sort((left, right) => left.genre.localeCompare(right.genre));
   }
 
   async cleanupOldReleases(currentDate: Date, retentionDays: number): Promise<{ deleted: number }> {
@@ -100,6 +127,34 @@ export function normalizeReleaseLimit(limit?: number): number {
     : DEFAULT_RELEASE_LIMIT;
 }
 
+export function getReleaseOffset(options: {
+  page: number;
+  limit: number;
+  total: number;
+  randomStartSeed?: string;
+}): number {
+  const baseOffset = (options.page - 1) * options.limit;
+
+  if (!options.randomStartSeed || options.total <= options.limit) {
+    return baseOffset;
+  }
+
+  const maxStartOffset = Math.max(options.total - options.limit, 0);
+  const randomStartOffset = hashString(options.randomStartSeed) % (maxStartOffset + 1);
+
+  return randomStartOffset + baseOffset;
+}
+
+function hashString(value: string): number {
+  let hash = 0;
+
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+  }
+
+  return hash;
+}
+
 function startOfUtcDay(date: Date): Date {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
 }
@@ -122,7 +177,16 @@ function cloneArtist(artist: ArtistSummary): ArtistSummary {
   };
 }
 
+function normalizeGenres(genres: string[]): string[] {
+  return Array.from(
+    new Set(
+      genres
+        .map((genre) => genre.trim().toLowerCase())
+        .filter((genre) => genre.length > 0),
+    ),
+  );
+}
+
 export type ReleaseRepositoryFilters = {
   type: ReleaseTypeFilter;
-  popularity: PopularityFilter;
 };

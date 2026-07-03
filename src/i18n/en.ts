@@ -14,20 +14,20 @@ export const en = {
     aria: 'Release filters',
     period: 'Period',
     genre: 'Genre',
-    country: 'Country / market',
     type: 'Type',
-    popularity: 'Popularity',
     sorting: 'Sorting',
     allGenres: 'All genres',
-    allCountries: 'All countries / markets',
     allTypes: 'All',
     filters: 'Filters',
     reset: 'Reset filters',
     close: 'Close filters',
     additional: 'Additional filters',
-    newestFirst: 'Newest first',
-    any: 'Any',
-    popularOnly: 'Popular only',
+  },
+  sorts: {
+    newest: 'Newest first',
+    oldest: 'Oldest first',
+    popular: 'Most popular',
+    lessPopular: 'Least popular',
   },
   periods: {
     '7d': 'Last 7 days',
@@ -50,7 +50,6 @@ export const en = {
     errorDescription: 'Unable to load releases.',
     retry: 'Retry',
     loadingMore: 'Loading more releases...',
-    loadMore: 'Load more',
     end: 'End of results',
   },
   release: {
@@ -76,10 +75,10 @@ export const en = {
     eyebrow: 'How it works',
     title: 'Fresh Drop is a filtered catalog, not recommendations.',
     intro:
-      'It helps you scan fresh Spotify releases by period, genre, country or market, release type, and popularity. Results come from the filters you choose, not from personal taste, listening history, or an algorithmic profile.',
+      'It helps you scan fresh Spotify releases by period, genre, release type, and sorting. Results come from the filters you choose, not from personal taste, listening history, or an algorithmic profile.',
     filtersTitle: 'What the filters use',
     filtersDescription:
-      'Release dates, release types, artist genres, market or country signals, and popularity can come from different Spotify metadata fields. When a field is missing or unreliable, Fresh Drop shows it as Unknown instead of guessing.',
+      'Release dates, release types, artist genres, and popularity can come from different Spotify metadata fields. When a field is missing or unreliable, Fresh Drop shows it as Unknown instead of guessing.',
     limitsTitle: 'Spotify metadata limits',
     limits: [
       'Genres are usually attached to artists, not directly to releases.',

@@ -9,6 +9,7 @@ describe('fetchReleases', () => {
       new Response(
         JSON.stringify({
           items: [release],
+          genres: [{ name: 'indie pop', releaseCount: 1 }],
           pagination: {
             page: 2,
             limit: 20,
@@ -24,9 +25,8 @@ describe('fetchReleases', () => {
       {
         period: '14d',
         genre: 'indie pop',
-        country: 'SE',
         type: 'single',
-        popularity: 'popular',
+        sort: 'popular',
         page: 2,
         limit: 20,
       },
@@ -34,7 +34,7 @@ describe('fetchReleases', () => {
     );
 
     expect(fetchFn).toHaveBeenCalledWith(
-      '/api/releases?period=14d&type=single&popularity=popular&page=2&limit=20&genre=indie+pop&country=SE',
+      '/api/releases?period=14d&type=single&sort=popular&page=2&limit=20&genre=indie+pop',
       expect.objectContaining({
         headers: {
           Accept: 'application/json',
@@ -49,6 +49,7 @@ describe('fetchReleases', () => {
       new Response(
         JSON.stringify({
           items: [],
+          genres: [],
           pagination: {
             page: 1,
             limit: 20,
@@ -69,7 +70,7 @@ describe('fetchReleases', () => {
         {
           period: '7d',
           type: 'all',
-          popularity: 'all',
+          sort: 'newest',
           page: 1,
           limit: 20,
         },

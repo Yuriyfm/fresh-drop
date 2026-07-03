@@ -1,10 +1,16 @@
-import type { PopularityFilter, Release, ReleasePeriod, ReleaseTypeFilter } from '../domain/release';
+import type { Release, ReleasePeriod, ReleaseSort, ReleaseTypeFilter } from '../domain/release';
 import type { ReleaseQuery, ReleaseRepository } from '../data/releaseRepository';
+
+export type GenreOption = {
+  name: string;
+  releaseCount: number;
+};
 
 export type ReleasesApiQuery = Record<string, string | number | undefined>;
 
 export type ReleasesApiResponse = {
   items: Release[];
+  genres: GenreOption[];
   pagination: {
     page: number;
     limit: number;
@@ -16,6 +22,7 @@ export type ReleasesApiResponse = {
 
 export type ReleasesApiErrorResponse = {
   items: [];
+  genres: [];
   pagination: {
     page: number;
     limit: number;
@@ -36,14 +43,14 @@ export type ReleasesApiHandlerOptions = {
 
 const DEFAULT_PERIOD = '7d';
 const DEFAULT_TYPE = 'all';
-const DEFAULT_POPULARITY = 'all';
+const DEFAULT_SORT = 'newest';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 50;
 
 const allowedPeriods = ['7d', '14d', '1m'] as const;
 const allowedTypes = ['all', 'single', 'album', 'compilation'] as const;
-const allowedPopularity = ['all', 'popular', 'less-known'] as const;
+const allowedSorts = ['newest', 'oldest', 'popular', 'less-popular'] as const;
 
 export async function getReleasesApiResponse(
   repository: ReleaseRepository,
@@ -57,10 +64,17 @@ export async function getReleasesApiResponse(
   }
 
   try {
-    const result = await repository.findReleases(normalized.query);
+    const [result, genres] = await Promise.all([
+      repository.findReleases(normalized.query),
+      repository.listActiveGenres(),
+    ]);
 
     return {
       items: result.items,
+      genres: genres.map((genre) => ({
+        name: genre.genre,
+        releaseCount: genre.releaseCount,
+      })),
       pagination: result.pagination,
       error: null,
     };
@@ -91,7 +105,7 @@ function normalizeReleasesQuery(query: ReleasesApiQuery, currentDate?: Date): No
   const limit = parsePositiveInteger(query.limit, DEFAULT_LIMIT);
   const period = query.period ?? DEFAULT_PERIOD;
   const type = query.type ?? DEFAULT_TYPE;
-  const popularity = query.popularity ?? DEFAULT_POPULARITY;
+  const sort = query.sort ?? DEFAULT_SORT;
 
   if (!isAllowedValue(period, allowedPeriods)) {
     return createInvalidQueryResult(page.value, limit.value, 'Invalid period query parameter.');
@@ -101,8 +115,8 @@ function normalizeReleasesQuery(query: ReleasesApiQuery, currentDate?: Date): No
     return createInvalidQueryResult(page.value, limit.value, 'Invalid type query parameter.');
   }
 
-  if (!isAllowedValue(popularity, allowedPopularity)) {
-    return createInvalidQueryResult(page.value, limit.value, 'Invalid popularity query parameter.');
+  if (!isAllowedValue(sort, allowedSorts)) {
+    return createInvalidQueryResult(page.value, limit.value, 'Invalid sort query parameter.');
   }
 
   if (!page.ok) {
@@ -120,10 +134,11 @@ function normalizeReleasesQuery(query: ReleasesApiQuery, currentDate?: Date): No
       genre: normalizeOptionalText(query.genre),
       country: normalizeOptionalText(query.country),
       type,
-      popularity,
+      sort,
       page: page.value,
       limit: limit.value,
       currentDate,
+      randomStartSeed: normalizeOptionalText(query.randomStartSeed),
     },
   };
 }
@@ -145,6 +160,7 @@ function createErrorResponse(
 ): ReleasesApiErrorResponse {
   return {
     items: [],
+    genres: [],
     pagination: {
       page,
       limit,
@@ -184,7 +200,7 @@ function normalizeOptionalText(value: string | number | undefined): string | und
 
 function isAllowedValue(value: string | number, allowed: readonly ReleasePeriod[]): value is ReleasePeriod;
 function isAllowedValue(value: string | number, allowed: readonly ReleaseTypeFilter[]): value is ReleaseTypeFilter;
-function isAllowedValue(value: string | number, allowed: readonly PopularityFilter[]): value is PopularityFilter;
+function isAllowedValue(value: string | number, allowed: readonly ReleaseSort[]): value is ReleaseSort;
 function isAllowedValue(value: string | number, allowed: readonly string[]): boolean {
   return typeof value === 'string' && allowed.includes(value);
 }

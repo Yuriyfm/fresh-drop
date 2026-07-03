@@ -32,6 +32,18 @@ create table if not exists release_artists (
   primary key (release_id, artist_id)
 );
 
+create table if not exists release_genres (
+  release_id bigint not null references releases(id) on delete cascade,
+  genre text not null check (length(trim(genre)) > 0),
+  primary key (release_id, genre)
+);
+
+create table if not exists genre_counts (
+  genre text primary key check (length(trim(genre)) > 0),
+  release_count integer not null default 0 check (release_count >= 0),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists sync_runs (
   id bigserial primary key,
   started_at timestamptz not null,
@@ -73,9 +85,38 @@ create index if not exists idx_releases_country on releases(country);
 create index if not exists idx_releases_country_normalized on releases(lower(trim(country)));
 create index if not exists idx_releases_popularity on releases(popularity);
 create index if not exists idx_artists_genres on artists using gin(genres);
+create index if not exists idx_release_genres_genre on release_genres(genre);
+create index if not exists idx_genre_counts_release_count on genre_counts(release_count desc, genre);
 create index if not exists idx_release_artists_release_id on release_artists(release_id);
 create index if not exists idx_release_artists_artist_id on release_artists(artist_id);
 create index if not exists idx_sync_runs_started_at on sync_runs(started_at desc, id desc);
 create index if not exists idx_sync_tasks_pending on sync_tasks(status, next_run_at, priority, id);
 create unique index if not exists idx_release_artists_release_position on release_artists(release_id, position);
 create unique index if not exists idx_release_artists_primary on release_artists(release_id) where is_primary;
+
+insert into release_genres (release_id, genre)
+select distinct
+  ra.release_id,
+  lower(trim(genre)) as genre
+from release_artists ra
+join artists a on a.id = ra.artist_id
+cross join unnest(a.genres) as genre
+where length(trim(genre)) > 0
+on conflict do nothing;
+
+insert into genre_counts (genre, release_count, updated_at)
+select genre, count(*)::integer as release_count, now()
+from release_genres
+group by genre
+on conflict (genre) do update set
+  release_count = excluded.release_count,
+  updated_at = now();
+
+update genre_counts gc
+set release_count = 0,
+    updated_at = now()
+where not exists (
+  select 1
+  from release_genres rg
+  where rg.genre = gc.genre
+);

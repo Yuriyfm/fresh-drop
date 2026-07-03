@@ -24,15 +24,17 @@ describe('createProductionRequestHandler', () => {
       genre: undefined,
       country: undefined,
       type: 'all',
-      popularity: 'all',
+      sort: 'newest',
       page: 2,
       limit: 10,
       currentDate,
+      randomStartSeed: undefined,
     });
     expect(response.nodeResponse.statusCode).toBe(200);
     expect(response.headers.get('Content-Type')).toBe('application/json; charset=utf-8');
     expect(JSON.parse(response.body)).toEqual({
       items: [],
+      genres: [],
       pagination: {
         page: 1,
         limit: 20,
@@ -123,6 +125,7 @@ function makeRepository(
     saveReleases: vi.fn(),
     findExistingReleaseIds: vi.fn().mockResolvedValue(new Set()),
     cleanupOldReleases: vi.fn(),
+    listActiveGenres: vi.fn().mockResolvedValue([]),
     findReleases: vi.fn().mockResolvedValue(findResult),
   };
 }

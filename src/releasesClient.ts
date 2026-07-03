@@ -1,14 +1,14 @@
-import type { PopularityFilter, ReleasePeriod, ReleaseTypeFilter } from './domain/release';
+import type { ReleasePeriod, ReleaseSort, ReleaseTypeFilter } from './domain/release';
 import type { ReleasesApiResponse, ReleasesApiResult } from './api/releasesApi';
 
 export type FetchReleasesQuery = {
   period: ReleasePeriod;
   genre?: string;
-  country?: string;
   type: ReleaseTypeFilter;
-  popularity: PopularityFilter;
+  sort: ReleaseSort;
   page: number;
   limit: number;
+  randomStartSeed?: string;
 };
 
 export type FetchReleasesOptions = {
@@ -54,13 +54,13 @@ function toSearchParams(query: FetchReleasesQuery): URLSearchParams {
   const params = new URLSearchParams({
     period: query.period,
     type: query.type,
-    popularity: query.popularity,
+    sort: query.sort,
     page: String(query.page),
     limit: String(query.limit),
   });
 
   appendOptionalParam(params, 'genre', query.genre);
-  appendOptionalParam(params, 'country', query.country);
+  appendOptionalParam(params, 'randomStartSeed', query.randomStartSeed);
 
   return params;
 }

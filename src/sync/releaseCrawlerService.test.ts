@@ -109,7 +109,7 @@ describe('runReleaseCrawler', () => {
     const saved = await releases.findReleases({
       period: '7d',
       type: 'all',
-      popularity: 'all',
+      sort: 'newest',
       currentDate: new Date('2026-07-02T12:00:00.000Z'),
     });
     expect(saved.items.map((release) => release.id).sort()).toEqual(['existing-release', 'new-release']);

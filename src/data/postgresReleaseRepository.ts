@@ -1,15 +1,17 @@
 import { Pool, type PoolClient } from 'pg';
 import type {
   ArtistSummary,
-  PopularityFilter,
   Release,
   ReleaseDatePrecision,
   ReleasePeriod,
+  ReleaseSort,
   ReleaseType,
 } from '../domain/release';
 import {
+  getReleaseOffset,
   normalizeReleaseLimit,
   normalizeReleasePage,
+  type GenreCount,
   type ReleasePage,
   type ReleaseQuery,
   type ReleaseRepository,
@@ -29,6 +31,7 @@ type ReleaseRow = {
   cover_url: string | null;
   popularity: number | null;
   country: string;
+  genres: string[];
   artists: DbArtist[];
 };
 
@@ -47,6 +50,11 @@ type IdRow = {
 
 type CountRow = {
   total: number;
+};
+
+type GenreCountRow = {
+  genre: string;
+  release_count: number;
 };
 
 type SqlFilter = {
@@ -104,13 +112,18 @@ export class PostgresReleaseRepository implements ReleaseRepository {
   async findReleases(query: ReleaseQuery): Promise<ReleasePage> {
     const page = normalizeReleasePage(query.page);
     const limit = normalizeReleaseLimit(query.limit);
-    const offset = (page - 1) * limit;
     const filter = buildSqlFilter(query);
     const countResult = await this.pool.query<CountRow>(
       `select count(*)::integer as total from releases r ${filter.whereSql}`,
       filter.params,
     );
     const total = countResult.rows[0]?.total ?? 0;
+    const offset = getReleaseOffset({
+      page,
+      limit,
+      total,
+      randomStartSeed: query.randomStartSeed,
+    });
     const itemsResult = await this.pool.query<ReleaseRow>(
       `
         select
@@ -123,6 +136,11 @@ export class PostgresReleaseRepository implements ReleaseRepository {
           r.cover_url,
           r.popularity,
           r.country,
+          (
+            select coalesce(array_agg(rg.genre order by rg.genre), '{}'::text[])
+            from release_genres rg
+            where rg.release_id = r.id
+          ) as genres,
           coalesce(
             json_agg(
               json_build_object(
@@ -142,7 +160,7 @@ export class PostgresReleaseRepository implements ReleaseRepository {
         left join artists a on a.id = ra.artist_id
         ${filter.whereSql}
         group by r.id
-        order by r.release_date desc nulls last, r.popularity desc nulls last, r.spotify_id asc
+        ${getOrderBySql(query.sort ?? 'newest')}
         limit $${filter.params.length + 1}
         offset $${filter.params.length + 2}
       `,
@@ -160,18 +178,58 @@ export class PostgresReleaseRepository implements ReleaseRepository {
     };
   }
 
-  async cleanupOldReleases(currentDate: Date, retentionDays: number): Promise<{ deleted: number }> {
-    const result = await this.pool.query(
+  async listActiveGenres(): Promise<GenreCount[]> {
+    const result = await this.pool.query<GenreCountRow>(
       `
-        delete from releases
-        where release_date_precision = 'day'
-          and release_date is not null
-          and release_date < ($1::date - $2::integer)
+        select genre, release_count
+        from genre_counts
+        where release_count > 0
+        order by genre asc
       `,
-      [toDateOnlyString(startOfUtcDay(currentDate)), retentionDays],
     );
 
-    return { deleted: result.rowCount ?? 0 };
+    return result.rows.map((row) => ({
+      genre: row.genre,
+      releaseCount: row.release_count,
+    }));
+  }
+
+  async cleanupOldReleases(currentDate: Date, retentionDays: number): Promise<{ deleted: number }> {
+    const client = await this.pool.connect();
+
+    try {
+      await client.query('begin');
+
+      const releaseIdsResult = await client.query<IdRow>(
+        `
+          select id
+          from releases
+          where release_date_precision = 'day'
+            and release_date is not null
+            and release_date < ($1::date - $2::integer)
+        `,
+        [toDateOnlyString(startOfUtcDay(currentDate)), retentionDays],
+      );
+      const releaseIds = releaseIdsResult.rows.map((row) => row.id);
+
+      if (releaseIds.length === 0) {
+        await client.query('commit');
+        return { deleted: 0 };
+      }
+
+      await decrementGenreCountsForReleaseIds(client, releaseIds);
+
+      const result = await client.query('delete from releases where id = any($1::bigint[])', [releaseIds]);
+
+      await client.query('commit');
+
+      return { deleted: result.rowCount ?? 0 };
+    } catch (error) {
+      await client.query('rollback');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   private async saveRelease(client: PoolClient, release: Release): Promise<void> {
@@ -220,6 +278,8 @@ export class PostgresReleaseRepository implements ReleaseRepository {
       throw new Error(`Failed to save release ${release.id}.`);
     }
 
+    await decrementGenreCountsForReleaseIds(client, [releaseId]);
+    await client.query('delete from release_genres where release_id = $1', [releaseId]);
     await client.query('delete from release_artists where release_id = $1', [releaseId]);
 
     for (const [index, artist] of release.artists.entries()) {
@@ -236,6 +296,21 @@ export class PostgresReleaseRepository implements ReleaseRepository {
         [releaseId, artistId, index, index === 0],
       );
     }
+
+    const releaseGenres = normalizeGenres(release.artists.flatMap((artist) => artist.genres));
+
+    for (const genre of releaseGenres) {
+      await client.query(
+        `
+          insert into release_genres (release_id, genre)
+          values ($1, $2)
+          on conflict do nothing
+        `,
+        [releaseId, genre],
+      );
+    }
+
+    await incrementGenreCounts(client, releaseGenres);
   }
 
   private async saveArtist(client: PoolClient, artist: ArtistSummary): Promise<string> {
@@ -282,17 +357,15 @@ function buildSqlFilter(query: ReleaseQuery): SqlFilter {
   const genre = normalizeTextFilter(query.genre);
   const country = normalizeTextFilter(query.country);
   const type = query.type ?? 'all';
-  const popularity = query.popularity ?? 'all';
 
   if (genre) {
     params.push(genre);
     where.push(`
       exists (
         select 1
-        from release_artists genre_ra
-        join artists genre_artist on genre_artist.id = genre_ra.artist_id
-        where genre_ra.release_id = r.id
-          and genre_artist.genres @> array[$${params.length}]::text[]
+        from release_genres rg
+        where rg.release_id = r.id
+          and rg.genre = $${params.length}
       )
     `);
   }
@@ -307,27 +380,26 @@ function buildSqlFilter(query: ReleaseQuery): SqlFilter {
     where.push(`r.type = $${params.length}`);
   }
 
-  applyPopularityFilter(where, params, popularity);
-
   return {
     whereSql: `where ${where.join(' and ')}`,
     params,
   };
 }
 
-function applyPopularityFilter(where: string[], params: unknown[], popularity: PopularityFilter): void {
-  if (popularity === 'all') {
-    return;
+function getOrderBySql(sort: ReleaseSort): string {
+  if (sort === 'oldest') {
+    return 'order by r.release_date asc nulls last, r.spotify_id asc';
   }
 
-  where.push('r.popularity is not null');
-
-  if (popularity === 'popular') {
-    where.push('r.popularity >= 60');
-    return;
+  if (sort === 'popular') {
+    return 'order by r.popularity desc nulls last, r.spotify_id asc';
   }
 
-  where.push('r.popularity < 60');
+  if (sort === 'less-popular') {
+    return 'order by r.popularity asc nulls last, r.spotify_id asc';
+  }
+
+  return 'order by r.release_date desc nulls last, r.spotify_id asc';
 }
 
 function mapReleaseRow(row: ReleaseRow): Release {
@@ -343,7 +415,7 @@ function mapReleaseRow(row: ReleaseRow): Release {
     type: row.type,
     releaseDate: formatReleaseDate(row.release_date),
     releaseDatePrecision: row.release_date_precision,
-    genres: normalizeGenres(artists.flatMap((artist) => artist.genres)),
+    genres: normalizeGenres(row.genres),
     country: row.country,
     popularity: row.popularity,
   };
@@ -357,6 +429,44 @@ function mapArtist(artist: DbArtist): ArtistSummary {
     country: artist.country,
     popularity: artist.popularity,
   };
+}
+
+async function decrementGenreCountsForReleaseIds(client: PoolClient, releaseIds: string[]): Promise<void> {
+  if (releaseIds.length === 0) {
+    return;
+  }
+
+  await client.query(
+    `
+      with deleted_counts as (
+        select genre, count(*)::integer as release_count
+        from release_genres
+        where release_id = any($1::bigint[])
+        group by genre
+      )
+      update genre_counts gc
+      set release_count = greatest(gc.release_count - deleted_counts.release_count, 0),
+          updated_at = now()
+      from deleted_counts
+      where gc.genre = deleted_counts.genre
+    `,
+    [releaseIds],
+  );
+}
+
+async function incrementGenreCounts(client: PoolClient, genres: string[]): Promise<void> {
+  for (const genre of normalizeGenres(genres)) {
+    await client.query(
+      `
+        insert into genre_counts (genre, release_count, updated_at)
+        values ($1, 1, now())
+        on conflict (genre) do update set
+          release_count = genre_counts.release_count + 1,
+          updated_at = now()
+      `,
+      [genre],
+    );
+  }
 }
 
 function getDatabaseReleaseDate(release: Release): string | null {

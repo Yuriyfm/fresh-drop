@@ -40,7 +40,7 @@ MVP должен проверить один главный вопрос:
 ```ts
 type ReleasePeriod = '7d' | '14d' | '1m';
 type ReleaseTypeFilter = 'all' | 'single' | 'album' | 'compilation';
-type PopularityFilter = 'all' | 'popular' | 'less-known';
+type ReleaseSort = 'newest' | 'oldest' | 'popular' | 'less-popular';
 ```
 
 Фильтры по жанру и стране строятся по значениям, которые реально удалось получить из данных Spotify после нормализации.

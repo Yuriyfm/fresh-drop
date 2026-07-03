@@ -24,6 +24,7 @@ export function getStatusCode(result: unknown): number {
 export function createInternalErrorResponse(): ReleasesApiErrorResponse {
   return {
     items: [],
+    genres: [],
     pagination: {
       page: 1,
       limit: 20,

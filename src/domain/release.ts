@@ -6,7 +6,7 @@ export type ReleasePeriod = '7d' | '14d' | '1m';
 
 export type ReleaseTypeFilter = 'all' | 'single' | 'album' | 'compilation';
 
-export type PopularityFilter = 'all' | 'popular' | 'less-known';
+export type ReleaseSort = 'newest' | 'oldest' | 'popular' | 'less-popular';
 
 export type ArtistSummary = {
   id: string;
@@ -36,6 +36,6 @@ export type ReleaseFilters = {
   genre?: string;
   country?: string;
   type: ReleaseTypeFilter;
-  popularity: PopularityFilter;
+  sort: ReleaseSort;
   currentDate: Date;
 };

@@ -44,7 +44,7 @@ describe('createReleaseSyncService', () => {
     const saved = await repository.findReleases({
       period: '7d',
       type: 'all',
-      popularity: 'all',
+      sort: 'newest',
       currentDate: new Date('2026-07-01T12:00:00.000Z'),
     });
     expect(saved.items.map((release) => release.id).sort()).toEqual(['spotify-1', 'spotify-2']);
@@ -123,6 +123,7 @@ describe('createReleaseSyncService', () => {
       saveReleases: vi.fn().mockResolvedValue({ saved: 1 }),
       findExistingReleaseIds: vi.fn().mockResolvedValue(new Set()),
       findReleases: vi.fn(),
+      listActiveGenres: vi.fn().mockResolvedValue([]),
       cleanupOldReleases: vi.fn().mockResolvedValue({ deleted: 3 }),
     };
     const service = createReleaseSyncService(source, repository, makeSyncRunRepository());
@@ -153,6 +154,7 @@ describe('createReleaseSyncService', () => {
       saveReleases: vi.fn().mockResolvedValue({ saved: 1 }),
       findExistingReleaseIds: vi.fn().mockResolvedValue(new Set()),
       findReleases: vi.fn(),
+      listActiveGenres: vi.fn().mockResolvedValue([]),
       cleanupOldReleases: vi.fn().mockRejectedValue(new Error('Cleanup failed.')),
     };
     const syncRuns = makeSyncRunRepository();
@@ -190,6 +192,7 @@ describe('createReleaseSyncService', () => {
       saveReleases: vi.fn(),
       findExistingReleaseIds: vi.fn().mockResolvedValue(new Set()),
       findReleases: vi.fn(),
+      listActiveGenres: vi.fn().mockResolvedValue([]),
       cleanupOldReleases: vi.fn(),
     };
     const syncRuns = makeSyncRunRepository();
