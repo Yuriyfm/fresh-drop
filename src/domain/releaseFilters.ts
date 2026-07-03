@@ -1,4 +1,5 @@
 import type { Release, ReleaseFilters, ReleasePeriod, ReleaseSort, ReleaseTypeFilter } from './release';
+import { isNoGenreFilter, matchesGenreValue, normalizeGenreText } from './topLevelGenres';
 
 const millisecondsInDay = 24 * 60 * 60 * 1000;
 
@@ -6,7 +7,7 @@ export function filterReleases(releases: Release[], filters: ReleaseFilters): Re
   return releases.filter((release) => {
     return (
       matchesPeriod(release, filters.period, filters.currentDate) &&
-      matchesGenre(release, filters.genre) &&
+      matchesGenres(release, filters.genres ?? toGenreArray(filters.genre)) &&
       matchesCountry(release, filters.country) &&
       matchesType(release, filters.type)
     );
@@ -58,13 +59,25 @@ export function matchesPeriod(release: Release, period: ReleasePeriod, currentDa
 }
 
 export function matchesGenre(release: Release, genre?: string): boolean {
-  const normalizedGenre = normalizeTextFilter(genre);
+  return matchesGenres(release, toGenreArray(genre));
+}
 
-  if (!normalizedGenre) {
+export function matchesGenres(release: Release, genres?: string[]): boolean {
+  const normalizedGenres = normalizeGenreFilters(genres);
+
+  if (normalizedGenres.length === 0) {
     return true;
   }
 
-  return release.genres.some((releaseGenre) => normalizeTextFilter(releaseGenre) === normalizedGenre);
+  const releaseGenres = release.genres.map(normalizeGenreText).filter(Boolean);
+
+  return normalizedGenres.some((genre) => {
+    if (isNoGenreFilter(genre)) {
+      return releaseGenres.length === 0;
+    }
+
+    return releaseGenres.some((releaseGenre) => matchesGenreValue(releaseGenre, genre));
+  });
 }
 
 export function matchesCountry(release: Release, country?: string): boolean {
@@ -148,4 +161,12 @@ function startOfUtcDay(date: Date): Date {
 
 function normalizeTextFilter(value?: string): string {
   return value?.trim().toLowerCase() ?? '';
+}
+
+function toGenreArray(genre?: string): string[] {
+  return genre ? [genre] : [];
+}
+
+function normalizeGenreFilters(genres?: string[]): string[] {
+  return Array.from(new Set((genres ?? []).map(normalizeGenreText).filter(Boolean)));
 }

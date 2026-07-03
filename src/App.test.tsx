@@ -59,7 +59,7 @@ describe('App', () => {
     render(<App />);
 
     expect(await screen.findByText('Release One')).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: 'indie pop (1)' })).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'indie pop 1' })).toBeInTheDocument();
     expect(screen.queryByLabelText('Country / market')).not.toBeInTheDocument();
     expect(fetchSpy).toHaveBeenCalledWith(
       expect.stringMatching(
@@ -119,8 +119,7 @@ describe('App', () => {
 
     render(<App />);
 
-    await screen.findByRole('option', { name: 'techno (1)' });
-    fireEvent.change(screen.getByLabelText('Genre'), { target: { value: 'techno' } });
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'techno 1' }));
 
     await waitFor(() => {
       expect(fetchSpy).toHaveBeenLastCalledWith(
@@ -132,7 +131,7 @@ describe('App', () => {
   });
 
   it('sends filters and sorting to the API', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.resolve(
       makeResponse({
         items: [makeRelease({ genres: ['techno'], country: 'DE', type: 'album', popularity: 80 })],
         pagination: {
@@ -143,12 +142,11 @@ describe('App', () => {
         },
         error: null,
       }),
-    );
+    ));
 
     render(<App />);
 
-    await screen.findByRole('option', { name: 'techno (1)' });
-    fireEvent.change(screen.getByLabelText('Genre'), { target: { value: 'techno' } });
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'techno 1' }));
     fireEvent.change(screen.getAllByLabelText('Type')[0], { target: { value: 'album' } });
     fireEvent.change(screen.getAllByLabelText('Sorting')[0], { target: { value: 'popular' } });
 
@@ -188,7 +186,7 @@ describe('App', () => {
   });
 
   it('resets saved filters and sorting in local storage', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.resolve(
       makeResponse({
         items: [makeRelease({ genres: ['techno'], type: 'album' })],
         pagination: {
@@ -199,7 +197,7 @@ describe('App', () => {
         },
         error: null,
       }),
-    );
+    ));
     window.localStorage.setItem(
       RELEASE_SEARCH_STORAGE_KEY,
       JSON.stringify({ period: '14d', genre: 'techno', type: 'album', sort: 'popular' }),
@@ -212,7 +210,7 @@ describe('App', () => {
     await waitFor(() => {
       expect(JSON.parse(window.localStorage.getItem(RELEASE_SEARCH_STORAGE_KEY) ?? '{}')).toEqual({
         period: '7d',
-        genre: '',
+        genres: [],
         type: 'all',
         sort: 'newest',
       });
@@ -553,7 +551,7 @@ function withDefaultGenres(body: unknown): unknown {
 
   return {
     ...body,
-    genres: Array.from(counts.entries()).map(([name, releaseCount]) => ({ name, releaseCount })),
+    genres: Array.from(counts.entries()).map(([name, releaseCount]) => ({ name, releaseCount, kind: 'exact' })),
   };
 }
 

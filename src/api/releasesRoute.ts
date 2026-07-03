@@ -48,8 +48,10 @@ function queryFromString(input: string): ReleasesApiQuery {
 function queryFromSearchParams(searchParams: URLSearchParams): ReleasesApiQuery {
   const query: ReleasesApiQuery = {};
 
-  searchParams.forEach((value, key) => {
-    query[key] = value;
+  searchParams.forEach((_value, key) => {
+    const values = searchParams.getAll(key);
+
+    query[key] = values.length > 1 ? values : values[0];
   });
 
   return query;

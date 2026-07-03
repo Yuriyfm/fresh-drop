@@ -9,7 +9,7 @@ describe('fetchReleases', () => {
       new Response(
         JSON.stringify({
           items: [release],
-          genres: [{ name: 'indie pop', releaseCount: 1 }],
+          genres: [{ name: 'indie pop', releaseCount: 1, kind: 'exact' }],
           pagination: {
             page: 2,
             limit: 20,
@@ -24,7 +24,7 @@ describe('fetchReleases', () => {
     const response = await fetchReleases(
       {
         period: '14d',
-        genre: 'indie pop',
+        genres: ['indie pop', 'pop'],
         type: 'single',
         sort: 'popular',
         page: 2,
@@ -34,7 +34,7 @@ describe('fetchReleases', () => {
     );
 
     expect(fetchFn).toHaveBeenCalledWith(
-      '/api/releases?period=14d&type=single&sort=popular&page=2&limit=20&genre=indie+pop',
+      '/api/releases?period=14d&type=single&sort=popular&page=2&limit=20&genre=indie+pop&genre=pop',
       expect.objectContaining({
         headers: {
           Accept: 'application/json',

@@ -8,6 +8,13 @@ import type {
   ReleaseType,
 } from '../domain/release';
 import {
+  isNoGenreFilter,
+  NO_GENRE_FILTER,
+  normalizeGenreText,
+  TOP_LEVEL_GENRES,
+  type GenreOptionKind,
+} from '../domain/topLevelGenres';
+import {
   getReleaseOffset,
   normalizeReleaseLimit,
   normalizeReleasePage,
@@ -55,6 +62,7 @@ type CountRow = {
 type GenreCountRow = {
   genre: string;
   release_count: number;
+  kind?: GenreOptionKind;
 };
 
 type SqlFilter = {
@@ -179,7 +187,7 @@ export class PostgresReleaseRepository implements ReleaseRepository {
   }
 
   async listActiveGenres(): Promise<GenreCount[]> {
-    const result = await this.pool.query<GenreCountRow>(
+    const exactResult = await this.pool.query<GenreCountRow>(
       `
         select genre, release_count
         from genre_counts
@@ -187,11 +195,48 @@ export class PostgresReleaseRepository implements ReleaseRepository {
         order by genre asc
       `,
     );
-
-    return result.rows.map((row) => ({
+    const exactGenres = exactResult.rows.map((row) => ({
       genre: row.genre,
       releaseCount: row.release_count,
+      kind: 'exact' as const,
     }));
+    const generalResult = await this.pool.query<GenreCountRow>(
+      `
+        select selected.genre, count(distinct rg.release_id)::integer as release_count
+        from unnest($1::text[]) with ordinality as selected(genre, position)
+        join release_genres rg on rg.genre like '%' || selected.genre || '%'
+        group by selected.genre, selected.position
+        having count(distinct rg.release_id) > 0
+        order by selected.position asc
+      `,
+      [TOP_LEVEL_GENRES],
+    );
+    const generalGenres = generalResult.rows.map((row) => ({
+      genre: row.genre,
+      releaseCount: row.release_count,
+      kind: 'general' as const,
+    }));
+    const missingResult = await this.pool.query<{ release_count: number }>(
+      `
+        select count(*)::integer as release_count
+        from releases r
+        where not exists (
+          select 1
+          from release_genres rg
+          where rg.release_id = r.id
+        )
+      `,
+    );
+    const missingGenreCount = missingResult.rows[0]?.release_count ?? 0;
+    const missingGenre = missingGenreCount > 0
+      ? [{ genre: NO_GENRE_FILTER, releaseCount: missingGenreCount, kind: 'missing' as const }]
+      : [];
+
+    return [
+      ...generalGenres,
+      ...missingGenre,
+      ...exactGenres.filter((option) => !generalGenres.some((general) => general.genre === option.genre)),
+    ];
   }
 
   async cleanupOldReleases(currentDate: Date, retentionDays: number): Promise<{ deleted: number }> {
@@ -354,20 +399,47 @@ function buildSqlFilter(query: ReleaseQuery): SqlFilter {
     'r.release_date >= ($1::date - $2::integer)',
     'r.release_date <= $1::date',
   ];
-  const genre = normalizeTextFilter(query.genre);
+  const genres = normalizeGenreFilters(query.genres ?? (query.genre ? [query.genre] : []));
   const country = normalizeTextFilter(query.country);
   const type = query.type ?? 'all';
 
-  if (genre) {
-    params.push(genre);
-    where.push(`
-      exists (
-        select 1
-        from release_genres rg
-        where rg.release_id = r.id
-          and rg.genre = $${params.length}
-      )
-    `);
+  if (genres.length > 0) {
+    const selectedGenres = genres.filter((genre) => !isNoGenreFilter(genre));
+    const hasNoGenreFilter = genres.some(isNoGenreFilter);
+    const genreClauses: string[] = [];
+
+    if (selectedGenres.length > 0) {
+      params.push(selectedGenres);
+      genreClauses.push(`
+        exists (
+          select 1
+          from release_genres rg
+          where rg.release_id = r.id
+            and exists (
+              select 1
+              from unnest($${params.length}::text[]) as selected(genre)
+              where rg.genre = selected.genre
+                 or (
+                   selected.genre = any($${params.length + 1}::text[])
+                   and rg.genre like '%' || selected.genre || '%'
+                 )
+            )
+        )
+      `);
+      params.push(TOP_LEVEL_GENRES);
+    }
+
+    if (hasNoGenreFilter) {
+      genreClauses.push(`
+        not exists (
+          select 1
+          from release_genres rg
+          where rg.release_id = r.id
+        )
+      `);
+    }
+
+    where.push(`(${genreClauses.join(' or ')})`);
   }
 
   if (country) {
@@ -503,6 +575,10 @@ function normalizeGenres(genres: string[]): string[] {
 
 function normalizeTextFilter(value?: string): string {
   return value?.trim().toLowerCase() ?? '';
+}
+
+function normalizeGenreFilters(genres: string[]): string[] {
+  return Array.from(new Set(genres.map(normalizeGenreText).filter(Boolean)));
 }
 
 function startOfUtcDay(date: Date): Date {

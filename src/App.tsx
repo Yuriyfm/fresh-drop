@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import './App.css';
 import type { GenreOption } from './api/releasesApi';
 import type { Release, ReleasePeriod, ReleaseSort, ReleaseTypeFilter } from './domain/release';
+import { NO_GENRE_FILTER } from './domain/topLevelGenres';
 import {
   getStoredLanguage,
   LANGUAGE_STORAGE_KEY,
@@ -19,7 +20,7 @@ const ABOUT_ROUTE = '/about';
 const RELEASE_SEARCH_STORAGE_KEY = 'fresh-drop-release-search-state';
 const DEFAULT_SEARCH_STATE: ReleaseSearchState = {
   period: '7d',
-  genre: '',
+  genres: [],
   type: 'all',
   sort: 'newest',
 };
@@ -47,7 +48,7 @@ type AppRoute =
 
 type ReleaseSearchState = {
   period: ReleasePeriod;
-  genre: string;
+  genres: string[];
   type: ReleaseTypeFilter;
   sort: ReleaseSort;
 };
@@ -69,7 +70,7 @@ function App() {
   const [language, setLanguage] = useState<Language>(() => getStoredLanguage());
   const [storedSearchState] = useState<ReleaseSearchState>(() => getStoredReleaseSearchState());
   const [period, setPeriod] = useState<ReleasePeriod>(storedSearchState.period);
-  const [genre, setGenre] = useState(storedSearchState.genre);
+  const [genres, setGenres] = useState<string[]>(storedSearchState.genres);
   const [type, setType] = useState<ReleaseTypeFilter>(storedSearchState.type);
   const [sort, setSort] = useState<ReleaseSort>(storedSearchState.sort);
   const [randomStartSeed] = useState(() => createRandomStartSeed());
@@ -96,8 +97,8 @@ function App() {
   }, [language]);
 
   useEffect(() => {
-    window.localStorage.setItem(RELEASE_SEARCH_STORAGE_KEY, JSON.stringify({ period, genre, type, sort }));
-  }, [genre, period, sort, type]);
+    window.localStorage.setItem(RELEASE_SEARCH_STORAGE_KEY, JSON.stringify({ period, genres, type, sort }));
+  }, [genres, period, sort, type]);
 
   useEffect(() => {
     function handlePopState(): void {
@@ -120,12 +121,12 @@ function App() {
     fetchReleases(
       {
         period,
-        genre,
+        genres,
         type,
         sort,
         page,
         limit: PAGE_LIMIT,
-        randomStartSeed: isDefaultSearch(period, genre, type, sort) ? randomStartSeed : undefined,
+        randomStartSeed: isDefaultSearch(period, genres, type, sort) ? randomStartSeed : undefined,
       },
       { signal: controller.signal },
     )
@@ -147,7 +148,7 @@ function App() {
     return () => {
       controller.abort();
     };
-  }, [genre, page, period, randomStartSeed, retryCount, sort, type]);
+  }, [genres, page, period, randomStartSeed, retryCount, sort, type]);
 
   useEffect(() => {
     function updateScrollPosition(): void {
@@ -195,12 +196,12 @@ function App() {
   const summaryFilters = useMemo(
     () =>
       [
-        genre || undefined,
+        ...genres.map((selectedGenre) => getGenreLabel(selectedGenre, t)),
         getPeriodLabel(period, t),
         type === 'all' ? undefined : getReleaseTypeLabel(type, t),
         sort === 'newest' ? undefined : getReleaseSortLabel(sort, t),
       ].filter(isPresent),
-    [genre, period, sort, t, type],
+    [genres, period, sort, t, type],
   );
   const summaryText = t.results.summary(pagination.total, summaryFilters);
   const virtualRange = getVirtualReleaseRange(releases.length, scrollPosition, releaseListRef.current);
@@ -246,7 +247,7 @@ function App() {
           <p className="filterGroupTitle">{t.filters.filters}</p>
           <div className="primaryFilters">
             <PeriodFilter period={period} t={t} onChange={updatePeriod} />
-            <GenreFilter genre={genre} genreOptions={genreOptions} t={t} onChange={updateGenre} />
+            <GenreFilter selectedGenres={genres} genreOptions={genreOptions} t={t} onChange={updateGenres} />
             <button type="button" className="secondaryButton mobileFilterButton" onClick={() => setIsFiltersOpen(true)}>
               {t.filters.filters}
             </button>
@@ -269,7 +270,7 @@ function App() {
 
       <section className="resultsHeader" aria-live="polite">
         <p>{status === 'loading' ? t.results.loading : summaryText}</p>
-        {hasActiveFilters(period, genre, type, sort) && (
+        {hasActiveFilters(period, genres, type, sort) && (
           <button type="button" className="ghostButton" onClick={resetFilters}>
             {t.filters.reset}
           </button>
@@ -345,8 +346,8 @@ function App() {
     resetResults();
   }
 
-  function updateGenre(nextGenre: string): void {
-    setGenre(nextGenre);
+  function updateGenres(nextGenres: string[]): void {
+    setGenres(nextGenres);
     resetResults();
   }
 
@@ -364,7 +365,7 @@ function App() {
 
   function resetFilters(): void {
     setPeriod(DEFAULT_SEARCH_STATE.period);
-    setGenre(DEFAULT_SEARCH_STATE.genre);
+    setGenres(DEFAULT_SEARCH_STATE.genres);
     setType(DEFAULT_SEARCH_STATE.type);
     setSort(DEFAULT_SEARCH_STATE.sort);
     window.localStorage.setItem(RELEASE_SEARCH_STORAGE_KEY, JSON.stringify(DEFAULT_SEARCH_STATE));
@@ -430,26 +431,63 @@ function PeriodFilter({ period, t, onChange }: PeriodFilterProps) {
 }
 
 type GenreFilterProps = {
-  genre: string;
+  selectedGenres: string[];
   genreOptions: GenreOption[];
   t: Translation;
-  onChange: (genre: string) => void;
+  onChange: (genres: string[]) => void;
 };
 
-function GenreFilter({ genre, genreOptions, t, onChange }: GenreFilterProps) {
+function GenreFilter({ selectedGenres, genreOptions, t, onChange }: GenreFilterProps) {
+  const [query, setQuery] = useState('');
+  const normalizedQuery = query.trim().toLowerCase();
+  const visibleOptions = genreOptions.filter((option) => getGenreLabel(option.name, t).toLowerCase().includes(normalizedQuery));
+
   return (
-    <label>
-      {t.filters.genre}
-      <select value={genre} onChange={(event) => onChange(event.target.value)}>
-        <option value="">{t.filters.allGenres}</option>
-        {genreOptions.map((option) => (
-          <option key={option.name} value={option.name}>
-            {option.name} ({option.releaseCount})
-          </option>
+    <div className="genreSelector">
+      <label>
+        {t.filters.genre}
+        <input
+          type="search"
+          value={query}
+          placeholder={t.filters.searchGenres}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+      </label>
+      <div className="selectedGenreChips" aria-label={t.filters.selectedGenres}>
+        {selectedGenres.length === 0 ? (
+          <span className="emptyGenreChip">{t.filters.allGenres}</span>
+        ) : (
+          selectedGenres.map((genre) => (
+            <button type="button" className="genreChip" key={genre} onClick={() => toggleGenre(genre)}>
+              {getGenreLabel(genre, t)} x
+            </button>
+          ))
+        )}
+      </div>
+      <div className="genreOptionList">
+        {visibleOptions.map((option) => (
+          <label className="genreOption" key={`${option.kind}-${option.name}`}>
+            <input
+              type="checkbox"
+              checked={selectedGenres.includes(option.name)}
+              onChange={() => toggleGenre(option.name)}
+            />
+            <span>{getGenreLabel(option.name, t)}</span>
+            <span className="genreCount">{option.releaseCount}</span>
+          </label>
         ))}
-      </select>
-    </label>
+      </div>
+    </div>
   );
+
+  function toggleGenre(nextGenre: string): void {
+    if (selectedGenres.includes(nextGenre)) {
+      onChange(selectedGenres.filter((genre) => genre !== nextGenre));
+      return;
+    }
+
+    onChange([...selectedGenres, nextGenre]);
+  }
 }
 
 type AdditionalFiltersProps = {
@@ -773,20 +811,20 @@ function getVirtualReleaseRange(
 
 function hasActiveFilters(
   period: ReleasePeriod,
-  genre: string,
+  genres: string[],
   type: ReleaseTypeFilter,
   sort: ReleaseSort,
 ): boolean {
-  return period !== '7d' || genre !== '' || type !== 'all' || sort !== 'newest';
+  return period !== '7d' || genres.length > 0 || type !== 'all' || sort !== 'newest';
 }
 
 function isDefaultSearch(
   period: ReleasePeriod,
-  genre: string,
+  genres: string[],
   type: ReleaseTypeFilter,
   sort: ReleaseSort,
 ): boolean {
-  return period === '7d' && genre === '' && type === 'all' && sort === 'newest';
+  return period === '7d' && genres.length === 0 && type === 'all' && sort === 'newest';
 }
 
 function getPeriodLabel(period: ReleasePeriod, t: Translation): string {
@@ -813,13 +851,21 @@ function getStoredReleaseSearchState(storage: Storage = window.localStorage): Re
 
     return {
       period: isReleasePeriod(parsedValue.period) ? parsedValue.period : DEFAULT_SEARCH_STATE.period,
-      genre: typeof parsedValue.genre === 'string' ? parsedValue.genre : DEFAULT_SEARCH_STATE.genre,
+      genres: getStoredGenres(parsedValue),
       type: isReleaseTypeFilter(parsedValue.type) ? parsedValue.type : DEFAULT_SEARCH_STATE.type,
       sort: isReleaseSort(parsedValue.sort) ? parsedValue.sort : DEFAULT_SEARCH_STATE.sort,
     };
   } catch {
     return DEFAULT_SEARCH_STATE;
   }
+}
+
+function getStoredGenres(value: Partial<ReleaseSearchState> & { genre?: unknown }): string[] {
+  if (Array.isArray(value.genres)) {
+    return value.genres.filter((genre): genre is string => typeof genre === 'string' && genre.trim().length > 0);
+  }
+
+  return typeof value.genre === 'string' && value.genre.trim().length > 0 ? [value.genre] : DEFAULT_SEARCH_STATE.genres;
 }
 
 function isReleasePeriod(value: unknown): value is ReleasePeriod {
@@ -860,6 +906,10 @@ function formatUnknown(value: string, t: Translation): string {
 
 function isPresent(value: string | undefined): value is string {
   return value !== undefined && value !== '';
+}
+
+function getGenreLabel(genre: string, t: Translation): string {
+  return genre === NO_GENRE_FILTER ? t.filters.noGenre : genre;
 }
 
 function getReleasePath(releaseId: string): string {

@@ -27,6 +27,7 @@ describe('getReleasesApiResponse', () => {
     expect(repository.findReleases).toHaveBeenCalledWith({
       period: '7d',
       genre: undefined,
+      genres: undefined,
       country: undefined,
       type: 'all',
       sort: 'newest',
@@ -50,7 +51,7 @@ describe('getReleasesApiResponse', () => {
       repository,
       {
         period: '7d',
-        genre: 'techno',
+        genres: ['techno'],
         country: 'DE',
         type: 'single',
         sort: 'oldest',
@@ -62,7 +63,7 @@ describe('getReleasesApiResponse', () => {
 
     expect(response).toEqual({
       items: [makeRelease({ id: 'newer', releaseDate: '2026-06-30', genres: ['techno'], country: 'DE', type: 'single', popularity: 72 })],
-      genres: [{ name: 'techno', releaseCount: 3 }],
+      genres: [{ name: 'techno', releaseCount: 3, kind: 'general' }],
       pagination: {
         page: 2,
         limit: 1,
@@ -104,7 +105,7 @@ describe('getReleasesApiResponse', () => {
       saveReleases: vi.fn(),
       findExistingReleaseIds: vi.fn().mockResolvedValue(new Set()),
       cleanupOldReleases: vi.fn(),
-      listActiveGenres: vi.fn().mockResolvedValue([{ genre: 'pop', releaseCount: 1 }]),
+      listActiveGenres: vi.fn().mockResolvedValue([{ genre: 'pop', releaseCount: 1, kind: 'exact' }]),
       findReleases: vi.fn().mockResolvedValue({
         items: [release],
         pagination: {
@@ -118,7 +119,7 @@ describe('getReleasesApiResponse', () => {
 
     await expect(getReleasesApiResponse(repository, { period: '7d' })).resolves.toEqual({
       items: [release],
-      genres: [{ name: 'pop', releaseCount: 1 }],
+      genres: [{ name: 'pop', releaseCount: 1, kind: 'exact' }],
       pagination: {
         page: 1,
         limit: 20,

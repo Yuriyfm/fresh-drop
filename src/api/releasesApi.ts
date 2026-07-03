@@ -4,9 +4,10 @@ import type { ReleaseQuery, ReleaseRepository } from '../data/releaseRepository'
 export type GenreOption = {
   name: string;
   releaseCount: number;
+  kind: 'general' | 'exact' | 'missing';
 };
 
-export type ReleasesApiQuery = Record<string, string | number | undefined>;
+export type ReleasesApiQuery = Record<string, string | string[] | number | undefined>;
 
 export type ReleasesApiResponse = {
   items: Release[];
@@ -74,6 +75,7 @@ export async function getReleasesApiResponse(
       genres: genres.map((genre) => ({
         name: genre.genre,
         releaseCount: genre.releaseCount,
+        kind: genre.kind,
       })),
       pagination: result.pagination,
       error: null,
@@ -103,9 +105,9 @@ type NormalizedReleasesQueryResult =
 function normalizeReleasesQuery(query: ReleasesApiQuery, currentDate?: Date): NormalizedReleasesQueryResult {
   const page = parsePositiveInteger(query.page, DEFAULT_PAGE);
   const limit = parsePositiveInteger(query.limit, DEFAULT_LIMIT);
-  const period = query.period ?? DEFAULT_PERIOD;
-  const type = query.type ?? DEFAULT_TYPE;
-  const sort = query.sort ?? DEFAULT_SORT;
+  const period = getSingleQueryValue(query.period) ?? DEFAULT_PERIOD;
+  const type = getSingleQueryValue(query.type) ?? DEFAULT_TYPE;
+  const sort = getSingleQueryValue(query.sort) ?? DEFAULT_SORT;
 
   if (!isAllowedValue(period, allowedPeriods)) {
     return createInvalidQueryResult(page.value, limit.value, 'Invalid period query parameter.');
@@ -132,6 +134,7 @@ function normalizeReleasesQuery(query: ReleasesApiQuery, currentDate?: Date): No
     query: {
       period,
       genre: normalizeOptionalText(query.genre),
+      genres: normalizeOptionalTextList(query.genres ?? query.genre),
       country: normalizeOptionalText(query.country),
       type,
       sort,
@@ -174,9 +177,16 @@ function createErrorResponse(
   };
 }
 
-function parsePositiveInteger(value: string | number | undefined, defaultValue: number): { ok: boolean; value: number } {
+function parsePositiveInteger(
+  value: string | string[] | number | undefined,
+  defaultValue: number,
+): { ok: boolean; value: number } {
   if (value === undefined) {
     return { ok: true, value: defaultValue };
+  }
+
+  if (Array.isArray(value)) {
+    return { ok: false, value: defaultValue };
   }
 
   const normalized = typeof value === 'number' ? value : Number(value);
@@ -188,7 +198,7 @@ function parsePositiveInteger(value: string | number | undefined, defaultValue: 
   return { ok: true, value: normalized };
 }
 
-function normalizeOptionalText(value: string | number | undefined): string | undefined {
+function normalizeOptionalText(value: string | string[] | number | undefined): string | undefined {
   if (typeof value !== 'string') {
     return undefined;
   }
@@ -198,9 +208,27 @@ function normalizeOptionalText(value: string | number | undefined): string | und
   return normalized === '' ? undefined : normalized;
 }
 
+function normalizeOptionalTextList(value: string | string[] | number | undefined): string[] | undefined {
+  const values = Array.isArray(value) ? value : typeof value === 'string' ? [value] : [];
+  const normalized = Array.from(
+    new Set(
+      values
+        .flatMap((item) => item.split(','))
+        .map((item) => item.trim())
+        .filter(Boolean),
+    ),
+  );
+
+  return normalized.length > 0 ? normalized : undefined;
+}
+
 function isAllowedValue(value: string | number, allowed: readonly ReleasePeriod[]): value is ReleasePeriod;
 function isAllowedValue(value: string | number, allowed: readonly ReleaseTypeFilter[]): value is ReleaseTypeFilter;
 function isAllowedValue(value: string | number, allowed: readonly ReleaseSort[]): value is ReleaseSort;
 function isAllowedValue(value: string | number, allowed: readonly string[]): boolean {
   return typeof value === 'string' && allowed.includes(value);
+}
+
+function getSingleQueryValue(value: string | string[] | number | undefined): string | number | undefined {
+  return Array.isArray(value) ? value[0] : value;
 }

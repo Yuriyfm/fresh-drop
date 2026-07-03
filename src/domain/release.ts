@@ -34,6 +34,7 @@ export type Release = {
 export type ReleaseFilters = {
   period: ReleasePeriod;
   genre?: string;
+  genres?: string[];
   country?: string;
   type: ReleaseTypeFilter;
   sort: ReleaseSort;

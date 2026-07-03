@@ -17,6 +17,7 @@ describe('handleGetReleasesRoute', () => {
     expect(repository.findReleases).toHaveBeenCalledWith({
       period: '14d',
       genre: 'techno',
+      genres: ['techno'],
       country: 'DE',
       type: 'single',
       sort: 'popular',
@@ -35,6 +36,7 @@ describe('handleGetReleasesRoute', () => {
     expect(repository.findReleases).toHaveBeenCalledWith({
       period: '7d',
       genre: undefined,
+      genres: undefined,
       country: undefined,
       type: 'all',
       sort: 'newest',
@@ -90,7 +92,7 @@ describe('handleGetReleasesRoute', () => {
 
     await expect(handleGetReleasesRoute(repository, new URLSearchParams({ period: '7d' }))).resolves.toEqual({
       items: [release],
-      genres: [{ name: 'techno', releaseCount: 1 }],
+      genres: [{ name: 'techno', releaseCount: 1, kind: 'exact' }],
       pagination: {
         page: 1,
         limit: 20,
@@ -130,7 +132,7 @@ function makeRepository(
     saveReleases: vi.fn(),
     findExistingReleaseIds: vi.fn().mockResolvedValue(new Set()),
     cleanupOldReleases: vi.fn(),
-    listActiveGenres: vi.fn().mockResolvedValue([{ genre: 'techno', releaseCount: 1 }]),
+    listActiveGenres: vi.fn().mockResolvedValue([{ genre: 'techno', releaseCount: 1, kind: 'exact' }]),
     findReleases: vi.fn().mockResolvedValue(findResult),
   };
 }

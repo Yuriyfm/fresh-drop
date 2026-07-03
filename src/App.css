@@ -89,7 +89,8 @@ label {
   font-weight: 700;
 }
 
-select {
+select,
+input[type="search"] {
   width: 100%;
   min-height: 42px;
   padding: 0 34px 0 12px;
@@ -103,6 +104,76 @@ select {
 select:disabled {
   color: #89948b;
   opacity: 1;
+}
+
+.genreSelector {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.selectedGenreChips {
+  display: flex;
+  min-height: 30px;
+  gap: 6px;
+  align-items: center;
+  overflow-x: auto;
+}
+
+.emptyGenreChip,
+.genreChip {
+  flex: 0 0 auto;
+  min-height: 28px;
+  padding: 0 9px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.emptyGenreChip {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid #314038;
+  color: #8d9a8f;
+}
+
+.genreChip {
+  border-color: #1ed760;
+  background: #17351f;
+  color: #dffce7;
+}
+
+.genreOptionList {
+  display: grid;
+  max-height: 164px;
+  overflow: auto;
+  border: 1px solid #314038;
+  border-radius: 6px;
+  background: #080d09;
+}
+
+.genreOption {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-height: 34px;
+  padding: 7px 10px;
+  border-bottom: 1px solid #172119;
+  font-size: 13px;
+}
+
+.genreOption:last-child {
+  border-bottom: 0;
+}
+
+.genreOption input {
+  margin: 0;
+}
+
+.genreCount {
+  color: #8d9a8f;
+  font-size: 12px;
 }
 
 button,

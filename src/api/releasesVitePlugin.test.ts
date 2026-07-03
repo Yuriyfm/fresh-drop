@@ -20,6 +20,7 @@ describe('createReleasesApiMiddleware', () => {
     expect(repository.findReleases).toHaveBeenCalledWith({
       period: '14d',
       genre: undefined,
+      genres: undefined,
       country: undefined,
       type: 'all',
       sort: 'newest',

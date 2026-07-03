@@ -169,8 +169,9 @@ describe('InMemoryReleaseRepository', () => {
     await repository.cleanupOldReleases(new Date('2026-07-01T12:00:00.000Z'), 30);
 
     await expect(repository.listActiveGenres()).resolves.toEqual([
-      { genre: 'ambient', releaseCount: 1 },
-      { genre: 'techno', releaseCount: 2 },
+      { genre: 'ambient', releaseCount: 1, kind: 'general' },
+      { genre: 'techno', releaseCount: 2, kind: 'general' },
+      { genre: '__no_genre__', releaseCount: 1, kind: 'missing' },
     ]);
   });
 });

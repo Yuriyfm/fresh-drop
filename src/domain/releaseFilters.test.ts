@@ -61,11 +61,11 @@ describe('filterReleases', () => {
     expect(result).toEqual([]);
   });
 
-  it('filters by genre, country, and type', () => {
+  it('filters by any selected genre, country, and type', () => {
     const releases = [
       makeRelease({
         id: 'match',
-        genres: ['techno'],
+        genres: ['deep techno'],
         country: 'DE',
         type: 'album',
         popularity: 80,
@@ -81,7 +81,7 @@ describe('filterReleases', () => {
 
     const result = filterReleases(releases, {
       period: '14d',
-      genre: 'Techno',
+      genres: ['Techno', 'house'],
       country: 'de',
       type: 'album',
       sort: 'newest',
@@ -89,6 +89,24 @@ describe('filterReleases', () => {
     });
 
     expect(result.map((release) => release.id)).toEqual(['match']);
+  });
+
+  it('supports the no genre filter option', () => {
+    const result = filterReleases(
+      [
+        makeRelease({ id: 'missing-genres', genres: [] }),
+        makeRelease({ id: 'with-genres', genres: ['pop'] }),
+      ],
+      {
+        period: '14d',
+        genres: ['__no_genre__'],
+        type: 'all',
+        sort: 'newest',
+        currentDate,
+      },
+    );
+
+    expect(result.map((release) => release.id)).toEqual(['missing-genres']);
   });
 });
 

@@ -1,5 +1,12 @@
 import type { ArtistSummary, Release, ReleaseFilters, ReleaseTypeFilter } from '../domain/release';
 import { filterReleases, sortReleasesForSearch } from '../domain/releaseFilters';
+import {
+  matchesGenreValue,
+  NO_GENRE_FILTER,
+  normalizeGenreText,
+  TOP_LEVEL_GENRES,
+  type GenreOptionKind,
+} from '../domain/topLevelGenres';
 
 export type ReleaseQuery = Omit<ReleaseFilters, 'currentDate'> & {
   page?: number;
@@ -21,6 +28,7 @@ export type ReleasePage = {
 export type GenreCount = {
   genre: string;
   releaseCount: number;
+  kind: GenreOptionKind;
 };
 
 export type ReleaseRepository = {
@@ -57,6 +65,7 @@ export class InMemoryReleaseRepository implements ReleaseRepository {
     const filtered = sortReleasesForSearch(filterReleases(Array.from(this.releasesBySpotifyId.values()), {
       period: query.period,
       genre: query.genre,
+      genres: query.genres,
       country: query.country,
       type: query.type ?? 'all',
       sort: query.sort ?? 'newest',
@@ -82,18 +91,31 @@ export class InMemoryReleaseRepository implements ReleaseRepository {
   }
 
   async listActiveGenres(): Promise<GenreCount[]> {
-    const counts = new Map<string, number>();
+    const releases = Array.from(this.releasesBySpotifyId.values());
+    const exactCounts = new Map<string, number>();
 
-    for (const release of this.releasesBySpotifyId.values()) {
+    for (const release of releases) {
       for (const genre of normalizeGenres(release.genres)) {
-        counts.set(genre, (counts.get(genre) ?? 0) + 1);
+        exactCounts.set(genre, (exactCounts.get(genre) ?? 0) + 1);
       }
     }
 
-    return Array.from(counts.entries())
+    const generalGenres = TOP_LEVEL_GENRES.map((genre) => ({
+      genre,
+      kind: 'general' as const,
+      releaseCount: releases.filter((release) => release.genres.some((releaseGenre) => matchesGenreValue(releaseGenre, genre))).length,
+    })).filter((option) => option.releaseCount > 0);
+    const exactGenres = Array.from(exactCounts.entries())
       .filter(([, releaseCount]) => releaseCount > 0)
-      .map(([genre, releaseCount]) => ({ genre, releaseCount }))
+      .map(([genre, releaseCount]) => ({ genre, releaseCount, kind: 'exact' as const }))
+      .filter((option) => !generalGenres.some((general) => general.genre === option.genre))
       .sort((left, right) => left.genre.localeCompare(right.genre));
+    const missingGenreCount = releases.filter((release) => normalizeGenres(release.genres).length === 0).length;
+    const missingGenre = missingGenreCount > 0
+      ? [{ genre: NO_GENRE_FILTER, releaseCount: missingGenreCount, kind: 'missing' as const }]
+      : [];
+
+    return [...generalGenres, ...missingGenre, ...exactGenres];
   }
 
   async cleanupOldReleases(currentDate: Date, retentionDays: number): Promise<{ deleted: number }> {
@@ -178,13 +200,7 @@ function cloneArtist(artist: ArtistSummary): ArtistSummary {
 }
 
 function normalizeGenres(genres: string[]): string[] {
-  return Array.from(
-    new Set(
-      genres
-        .map((genre) => genre.trim().toLowerCase())
-        .filter((genre) => genre.length > 0),
-    ),
-  );
+  return Array.from(new Set(genres.map(normalizeGenreText).filter(Boolean)));
 }
 
 export type ReleaseRepositoryFilters = {

@@ -4,6 +4,7 @@ import type { ReleasesApiResponse, ReleasesApiResult } from './api/releasesApi';
 export type FetchReleasesQuery = {
   period: ReleasePeriod;
   genre?: string;
+  genres?: string[];
   type: ReleaseTypeFilter;
   sort: ReleaseSort;
   page: number;
@@ -59,10 +60,20 @@ function toSearchParams(query: FetchReleasesQuery): URLSearchParams {
     limit: String(query.limit),
   });
 
-  appendOptionalParam(params, 'genre', query.genre);
+  appendOptionalParams(params, 'genre', query.genres ?? (query.genre ? [query.genre] : []));
   appendOptionalParam(params, 'randomStartSeed', query.randomStartSeed);
 
   return params;
+}
+
+function appendOptionalParams(params: URLSearchParams, name: string, values: string[]): void {
+  for (const value of values) {
+    const normalized = value.trim();
+
+    if (normalized) {
+      params.append(name, normalized);
+    }
+  }
 }
 
 function appendOptionalParam(params: URLSearchParams, name: string, value?: string): void {

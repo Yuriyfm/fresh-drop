@@ -98,8 +98,8 @@ describeWithPostgres('PostgresReleaseRepository', () => {
       release_genres: 2,
     });
     await expect(repository.listActiveGenres()).resolves.toEqual([
-      { genre: 'ambient', releaseCount: 1 },
-      { genre: 'techno', releaseCount: 1 },
+      { genre: 'ambient', releaseCount: 1, kind: 'general' },
+      { genre: 'techno', releaseCount: 1, kind: 'general' },
     ]);
   });
 
@@ -231,7 +231,7 @@ describeWithPostgres('PostgresReleaseRepository', () => {
 
     expect(result.items.map((release) => release.id)).toEqual(['fresh']);
     expect(links.rows[0].total).toBe(1);
-    expect(genreCounts).toEqual([{ genre: 'pop', releaseCount: 1 }]);
+    expect(genreCounts).toEqual([{ genre: 'pop', releaseCount: 1, kind: 'general' }]);
   });
 
   it('backs active genre options with materialized release genres', async () => {
@@ -265,9 +265,9 @@ describeWithPostgres('PostgresReleaseRepository', () => {
     ]);
 
     await expect(repository.listActiveGenres()).resolves.toEqual([
-      { genre: 'ambient', releaseCount: 1 },
-      { genre: 'pop', releaseCount: 2 },
-      { genre: 'techno', releaseCount: 1 },
+      { genre: 'pop', releaseCount: 2, kind: 'general' },
+      { genre: 'ambient', releaseCount: 1, kind: 'general' },
+      { genre: 'techno', releaseCount: 1, kind: 'general' },
     ]);
   });
 });

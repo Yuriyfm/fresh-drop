@@ -63,7 +63,7 @@ Last 7 days
 ## Фильтры MVP
 
 * period: `7 days / 14 days / Month`;
-* genre;
+* genres;
 * release type: `album / single / compilation`;
 * sorting.
 
@@ -79,7 +79,9 @@ Last 7 days
 
 Ограничения MVP:
 
-* только один жанр;
+* можно выбрать несколько жанров;
+* в списке жанров есть вариант `No genre` / `Без жанра` для релизов без жанров Spotify metadata;
+* общие верхнеуровневые жанры показываются выше узких жанров, если по ним есть релизы;
 * sorting default: `Newest first`;
 * popularity is a sorting mode, not a filter.
 
@@ -215,6 +217,5 @@ Dark theme по умолчанию.
 * отдельное мобильное приложение;
 * audio preview/player;
 * сложную иерархию жанров;
-* выбор нескольких жанров;
 * выбор нескольких стран;
 * автоприменение сохранённых фильтров при следующем открытии.
