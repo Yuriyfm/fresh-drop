@@ -226,6 +226,8 @@ Sync job отвечает за загрузку свежих релизов из
 * сохранять информацию о запуске в `sync_runs`;
 * корректно обрабатывать ошибки и rate limit.
 
+Правила поведения crawler при `429`, временных `5xx` и retry описаны в `docs/specs/crawler-rate-limit.spec.md`.
+
 ## Spotify sync smoke output
 
 После ручного запуска sync job должен выводить короткую smoke-сводку:

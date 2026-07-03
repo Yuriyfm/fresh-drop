@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Release } from '../domain/release';
 import { InMemoryReleaseRepository } from '../data/releaseRepository';
 import { InMemorySyncTaskRepository } from '../data/syncTaskRepository';
+import { SpotifyApiError } from '../spotify/spotifyApiAdapter';
 import { runReleaseCrawler } from './releaseCrawlerService';
 
 describe('runReleaseCrawler', () => {
@@ -43,7 +44,7 @@ describe('runReleaseCrawler', () => {
       offset: 0,
     });
 
-    const nextTasks = await tasks.claimPendingTasks(10);
+    const nextTasks = await tasks.claimPendingTasks(10, new Date('2026-07-02T12:00:01.000Z'));
     expect(nextTasks.map((task) => `${task.source}:${task.query}:${task.offset}`).sort()).toEqual([
       'artist_albums:artist-1:0',
       'search:tag:new:50',
@@ -141,7 +142,7 @@ describe('runReleaseCrawler', () => {
     }, new Date('2026-07-02T12:00:00.000Z'));
 
     expect(result.itemsSaved).toBe(0);
-    await expect(tasks.claimPendingTasks(10)).resolves.toEqual([]);
+    await expect(tasks.claimPendingTasks(10, new Date('2026-07-02T12:00:01.000Z'))).resolves.toEqual([]);
   });
 
   it('skips artist expansion tasks when disabled', async () => {
@@ -167,7 +168,7 @@ describe('runReleaseCrawler', () => {
       searchTaskCooldownMinutes: 720,
     }, new Date('2026-07-02T12:00:00.000Z'));
 
-    await expect(tasks.claimPendingTasks(10)).resolves.toEqual([]);
+    await expect(tasks.claimPendingTasks(10, new Date('2026-07-02T12:00:01.000Z'))).resolves.toEqual([]);
   });
 
   it('makes completed terminal search tasks recurring after the configured cooldown', async () => {
@@ -201,6 +202,134 @@ describe('runReleaseCrawler', () => {
         query: 'tag:new',
         offset: 0,
       }),
+    ]);
+  });
+
+  it('requeues retryable crawler failures after backoff', async () => {
+    const source = {
+      fetchReleaseSearchPage: vi.fn().mockRejectedValue(new SpotifyApiError('Rate limited.', 'rate_limited', 429, 120)),
+      fetchArtistAlbumsPage: vi.fn(),
+    };
+    const releases = new InMemoryReleaseRepository();
+    const tasks = new InMemorySyncTaskRepository();
+
+    const result = await runReleaseCrawler(source, releases, tasks, {
+      market: 'TR',
+      batchSize: 1,
+      searchLimit: 50,
+      artistAlbumsLimit: 10,
+      retentionDays: 30,
+      searchQueries: ['tag:new'],
+      enableArtistExpansion: false,
+      searchTaskCooldownMinutes: 720,
+    }, new Date('2026-07-03T12:00:00.000Z'));
+
+    expect(result).toMatchObject({
+      tasksClaimed: 1,
+      tasksSucceeded: 0,
+      tasksFailed: 1,
+      itemsFound: 0,
+      itemsSaved: 0,
+    });
+    await expect(tasks.claimPendingTasks(1, new Date('2026-07-03T12:01:59.000Z'))).resolves.toEqual([]);
+    await expect(tasks.claimPendingTasks(1, new Date('2026-07-03T12:02:00.000Z'))).resolves.toEqual([
+      expect.objectContaining({
+        source: 'search',
+        query: 'tag:new',
+        offset: 0,
+        attempts: 2,
+      }),
+    ]);
+  });
+
+  it('stops the batch after the first rate limit and requeues the remaining claimed tasks', async () => {
+    const source = {
+      fetchReleaseSearchPage: vi
+        .fn()
+        .mockResolvedValueOnce({
+          releases: [makeRelease({ id: 'release-1' })],
+          total: 10,
+          nextOffset: null,
+        })
+        .mockRejectedValueOnce(new SpotifyApiError('Rate limited.', 'rate_limited', 429, 120)),
+      fetchArtistAlbumsPage: vi.fn(),
+    };
+    const releases = new InMemoryReleaseRepository();
+    const tasks = new InMemorySyncTaskRepository();
+
+    const result = await runReleaseCrawler(source, releases, tasks, {
+      market: 'TR',
+      batchSize: 3,
+      searchLimit: 50,
+      artistAlbumsLimit: 10,
+      retentionDays: 30,
+      searchQueries: ['tag:new', 'ab year:2026', 'cd year:2026'],
+      enableArtistExpansion: false,
+      searchTaskCooldownMinutes: 720,
+    }, new Date('2026-07-03T12:00:00.000Z'));
+
+    expect(result).toMatchObject({
+      tasksClaimed: 3,
+      tasksSucceeded: 1,
+      tasksFailed: 1,
+      tasksDeferred: 1,
+      itemsFound: 1,
+      itemsSaved: 1,
+      stoppedDueToRateLimit: true,
+    });
+    expect(source.fetchReleaseSearchPage).toHaveBeenCalledTimes(2);
+
+    await expect(tasks.claimPendingTasks(10, new Date('2026-07-03T12:01:59.000Z'))).resolves.toEqual([]);
+    await expect(tasks.claimPendingTasks(10, new Date('2026-07-03T12:02:00.000Z'))).resolves.toEqual([
+      expect.objectContaining({
+        query: 'ab year:2026',
+        attempts: 2,
+      }),
+      expect.objectContaining({
+        query: 'cd year:2026',
+        attempts: 2,
+      }),
+    ]);
+  });
+
+  it('postpones pending tasks that were not part of the claimed batch after a rate limit', async () => {
+    const source = {
+      fetchReleaseSearchPage: vi.fn().mockRejectedValue(new SpotifyApiError('Rate limited.', 'rate_limited', 429, 120)),
+      fetchArtistAlbumsPage: vi.fn(),
+    };
+    const releases = new InMemoryReleaseRepository();
+    const tasks = new InMemorySyncTaskRepository();
+    const currentDate = new Date('2026-07-03T12:00:00.000Z');
+
+    await tasks.enqueueTasks([
+      { source: 'search', query: 'tag:new', market: 'TR', priority: 0, nextRunAt: currentDate },
+      { source: 'search', query: 'ab year:2026', market: 'TR', priority: 1, nextRunAt: currentDate },
+      { source: 'search', query: 'cd year:2026', market: 'TR', priority: 2, nextRunAt: currentDate },
+    ]);
+
+    const result = await runReleaseCrawler(source, releases, tasks, {
+      market: 'TR',
+      batchSize: 1,
+      searchLimit: 50,
+      artistAlbumsLimit: 10,
+      retentionDays: 30,
+      searchQueries: ['tag:new', 'ab year:2026', 'cd year:2026'],
+      enableArtistExpansion: false,
+      searchTaskCooldownMinutes: 720,
+    }, currentDate);
+
+    expect(result).toMatchObject({
+      tasksClaimed: 1,
+      tasksFailed: 1,
+      tasksDeferred: 2,
+      stoppedDueToRateLimit: true,
+      retryAt: new Date('2026-07-03T12:02:00.000Z'),
+    });
+    await expect(tasks.claimPendingTasks(10, new Date('2026-07-03T12:01:59.000Z'))).resolves.toEqual([]);
+    await expect(tasks.claimPendingTasks(10, new Date('2026-07-03T12:02:00.000Z'))).resolves.toEqual([
+      expect.objectContaining({ query: 'tag:new', attempts: 2 }),
+      expect.objectContaining({ query: 'ab year:2026', attempts: 1 }),
+      expect.objectContaining({ query: 'cd year:2026', attempts: 1 }),
     ]);
   });
 });

@@ -1,6 +1,7 @@
 import type { Release } from '../domain/release';
 import type { ReleaseRepository } from '../data/releaseRepository';
 import type { SyncTask, SyncTaskInput, SyncTaskRepository } from '../data/syncTaskRepository';
+import { SpotifyApiError } from '../spotify/spotifyApiAdapter';
 import type { SpotifyReleasePage } from '../spotify/spotifyApiAdapter';
 import type { ReleaseCrawlerConfig } from './crawlerConfig';
 
@@ -14,9 +15,12 @@ export type ReleaseCrawlerResult = {
   tasksSucceeded: number;
   tasksFailed: number;
   tasksInserted: number;
+  tasksDeferred: number;
   itemsFound: number;
   itemsSaved: number;
   itemsDeleted: number;
+  stoppedDueToRateLimit: boolean;
+  retryAt?: Date;
 };
 
 const SEARCH_MAX_OFFSET = 1000;
@@ -45,9 +49,11 @@ export async function runReleaseCrawler(
     tasksSucceeded: 0,
     tasksFailed: 0,
     tasksInserted: seedResult.inserted,
+    tasksDeferred: 0,
     itemsFound: 0,
     itemsSaved: 0,
     itemsDeleted: 0,
+    stoppedDueToRateLimit: false,
   };
 
   for (const task of claimed) {
@@ -84,15 +90,32 @@ export async function runReleaseCrawler(
       result.itemsFound += page.releases.length;
       result.itemsSaved += saveResult.saved;
     } catch (error) {
+      const retryDelaySeconds = getRetryDelaySeconds(error);
+      const retryNextRunAt = getRetryNextRunAt(error, currentDate);
+
       await tasks.completeTask({
         id: task.id,
         status: 'failed',
         itemsFound: 0,
         itemsSaved: 0,
         errorMessage: formatCrawlerError(error),
-        retryAfterSeconds: getRetryAfterSeconds(error),
+        retryAfterSeconds: retryDelaySeconds,
+        nextRunAt: retryNextRunAt,
       });
       result.tasksFailed += 1;
+
+      if (isRateLimitError(error) && retryNextRunAt) {
+        const remainingTaskIds = claimed
+          .slice(claimed.indexOf(task) + 1)
+          .map((claimedTask) => claimedTask.id);
+
+        await tasks.releaseTasks(remainingTaskIds, retryNextRunAt, formatCrawlerError(error));
+        result.tasksDeferred += remainingTaskIds.length;
+        result.tasksDeferred += await tasks.postponePendingTasks(retryNextRunAt, formatCrawlerError(error));
+        result.stoppedDueToRateLimit = true;
+        result.retryAt = retryNextRunAt;
+        break;
+      }
     }
   }
 
@@ -190,8 +213,32 @@ function formatCrawlerError(error: unknown): string {
   return error instanceof Error ? error.message : 'Release crawler task failed.';
 }
 
-function getRetryAfterSeconds(error: unknown): number | null {
-  return error && typeof error === 'object' && 'retryAfterSeconds' in error && typeof error.retryAfterSeconds === 'number'
-    ? error.retryAfterSeconds
-    : null;
+function getRetryDelaySeconds(error: unknown): number | null {
+  if (error instanceof SpotifyApiError) {
+    if (error.code === 'rate_limited') {
+      return Math.max(error.retryAfterSeconds ?? 60, 1);
+    }
+
+    if (error.code === 'network' || (error.status !== null && error.status >= 500)) {
+      return 300;
+    }
+
+    return null;
+  }
+
+  return null;
+}
+
+function getRetryNextRunAt(error: unknown, currentDate: Date): Date | undefined {
+  const retryDelaySeconds = getRetryDelaySeconds(error);
+
+  if (retryDelaySeconds === null) {
+    return undefined;
+  }
+
+  return new Date(currentDate.getTime() + retryDelaySeconds * 1000);
+}
+
+function isRateLimitError(error: unknown): boolean {
+  return error instanceof SpotifyApiError && error.code === 'rate_limited';
 }

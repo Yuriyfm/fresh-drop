@@ -31,12 +31,15 @@ async function main(): Promise<void> {
         ` tasksSucceeded=${result.tasksSucceeded}` +
         ` tasksFailed=${result.tasksFailed}` +
         ` tasksInserted=${result.tasksInserted}` +
+        ` tasksDeferred=${result.tasksDeferred}` +
         ` found=${result.itemsFound}` +
         ` saved=${result.itemsSaved}` +
-        ` deleted=${result.itemsDeleted}`,
+        ` deleted=${result.itemsDeleted}` +
+        ` rateLimited=${result.stoppedDueToRateLimit}` +
+        ` retryAt=${result.retryAt?.toISOString() ?? 'n/a'}`,
     );
 
-    if (result.tasksFailed > 0) {
+    if (result.tasksFailed > 0 && !result.stoppedDueToRateLimit) {
       process.exitCode = 1;
     }
   } finally {

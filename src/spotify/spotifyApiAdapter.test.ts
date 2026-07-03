@@ -236,6 +236,106 @@ describe('SpotifyApiAdapter', () => {
     await expect(promise).rejects.toBeInstanceOf(SpotifyApiError);
     await expect(promise).rejects.toMatchObject({ code: 'network' });
   });
+
+  it('waits between Spotify requests when a minimum interval is configured', async () => {
+    let now = 0;
+    const sleepFn = vi.fn().mockImplementation(async (delayMs: number) => {
+      now += delayMs;
+    });
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(makeJsonResponse({ access_token: 'token-1', expires_in: 3600 }))
+      .mockImplementation(async () => {
+        now += 10;
+        return makeJsonResponse({
+          albums: {
+            items: [],
+          },
+        });
+      });
+
+    const adapter = new SpotifyApiAdapter({
+      clientId: 'client-id',
+      clientSecret: 'client-secret',
+      fetchFn,
+      minRequestIntervalMs: 1_000,
+      nowFn: () => now,
+      sleepFn,
+    });
+
+    await adapter.fetchReleaseSearchPage({ query: 'tag:new', market: 'US', limit: 50, offset: 0 });
+    await adapter.fetchReleaseSearchPage({ query: 'tag:new', market: 'US', limit: 50, offset: 50 });
+
+    expect(sleepFn).toHaveBeenNthCalledWith(1, 1000);
+    expect(sleepFn).toHaveBeenNthCalledWith(2, 1000);
+  });
+
+  it('waits for the full retry-after window before the next Spotify request', async () => {
+    let now = 0;
+    const sleepFn = vi.fn().mockImplementation(async (delayMs: number) => {
+      now += delayMs;
+    });
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(makeJsonResponse({ access_token: 'token-1', expires_in: 3600 }))
+      .mockResolvedValueOnce(
+        makeJsonResponse(
+          { error: { message: 'Too many requests' } },
+          {
+            ok: false,
+            status: 429,
+            headers: new Headers({ 'retry-after': '7' }),
+          },
+        ),
+      )
+      .mockResolvedValueOnce(makeJsonResponse({ albums: { items: [] } }));
+
+    const adapter = new SpotifyApiAdapter({
+      clientId: 'client-id',
+      clientSecret: 'client-secret',
+      fetchFn,
+      minRequestIntervalMs: 1_000,
+      nowFn: () => now,
+      sleepFn,
+    });
+
+    await expect(adapter.fetchReleaseSearchPage({ query: 'tag:new', market: 'US', limit: 50, offset: 0 })).rejects.toMatchObject({
+      code: 'rate_limited',
+      retryAfterSeconds: 7,
+    });
+
+    await adapter.fetchReleaseSearchPage({ query: 'tag:new', market: 'US', limit: 50, offset: 0 });
+
+    expect(sleepFn).toHaveBeenNthCalledWith(1, 1000);
+    expect(sleepFn).toHaveBeenNthCalledWith(2, 7000);
+  });
+
+  it('uses a conservative fallback delay when Spotify omits retry-after', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(makeJsonResponse({ access_token: 'token-1', expires_in: 3600 }))
+      .mockResolvedValueOnce(
+        makeJsonResponse(
+          { error: { message: 'Too many requests' } },
+          {
+            ok: false,
+            status: 429,
+          },
+        ),
+      );
+
+    const adapter = new SpotifyApiAdapter({
+      clientId: 'client-id',
+      clientSecret: 'client-secret',
+      fetchFn,
+    });
+
+    await expect(adapter.fetchFreshReleasesFromSpotify()).rejects.toMatchObject({
+      code: 'rate_limited',
+      status: 429,
+      retryAfterSeconds: null,
+    });
+  });
 });
 
 function makeJsonResponse(

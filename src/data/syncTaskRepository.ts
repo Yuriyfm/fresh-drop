@@ -40,6 +40,8 @@ export type SyncTaskRepository = {
   enqueueTasks(tasks: SyncTaskInput[]): Promise<{ inserted: number }>;
   claimPendingTasks(limit: number, now?: Date): Promise<SyncTask[]>;
   completeTask(input: CompleteSyncTaskInput): Promise<void>;
+  releaseTasks(taskIds: string[], nextRunAt: Date, errorMessage?: string | null): Promise<void>;
+  postponePendingTasks(nextRunAt: Date, errorMessage?: string | null): Promise<number>;
 };
 
 type SyncTaskRow = {
@@ -105,9 +107,42 @@ export class InMemorySyncTaskRepository implements SyncTaskRepository {
     const task = Array.from(this.tasks.values()).find((candidate) => candidate.id === input.id);
 
     if (task) {
-      task.status = input.status === 'success' && input.nextRunAt ? 'pending' : input.status;
-      task.nextRunAt = input.nextRunAt;
+      const nextRunAt = getNextRunAt(input);
+      task.status = getStoredTaskStatus(input, nextRunAt);
+      task.nextRunAt = nextRunAt;
     }
+  }
+
+  async releaseTasks(taskIds: string[], nextRunAt: Date, _errorMessage?: string | null): Promise<void> {
+    for (const taskId of taskIds) {
+      const task = Array.from(this.tasks.values()).find((candidate) => candidate.id === taskId);
+
+      if (!task || task.status !== 'running') {
+        continue;
+      }
+
+      task.status = 'pending';
+      task.nextRunAt = nextRunAt;
+    }
+  }
+
+  async postponePendingTasks(nextRunAt: Date, _errorMessage?: string | null): Promise<number> {
+    let updated = 0;
+
+    for (const task of this.tasks.values()) {
+      if (task.status !== 'pending') {
+        continue;
+      }
+
+      if (task.nextRunAt && task.nextRunAt >= nextRunAt) {
+        continue;
+      }
+
+      task.nextRunAt = nextRunAt;
+      updated += 1;
+    }
+
+    return updated;
   }
 }
 
@@ -170,10 +205,8 @@ export class PostgresSyncTaskRepository implements SyncTaskRepository {
   }
 
   async completeTask(input: CompleteSyncTaskInput): Promise<void> {
-    const nextRunAt = input.nextRunAt ?? (input.status === 'failed'
-      ? new Date(Date.now() + Math.max(input.retryAfterSeconds ?? 300, 1) * 1000)
-      : new Date());
-    const status = input.status === 'success' && input.nextRunAt ? 'pending' : input.status;
+    const nextRunAt = getNextRunAt(input);
+    const status = getStoredTaskStatus(input, nextRunAt);
 
     await this.pool.query(
       `
@@ -188,6 +221,41 @@ export class PostgresSyncTaskRepository implements SyncTaskRepository {
       `,
       [input.id, status, input.itemsFound, input.itemsSaved, input.errorMessage ?? null, nextRunAt],
     );
+  }
+
+  async releaseTasks(taskIds: string[], nextRunAt: Date, errorMessage?: string | null): Promise<void> {
+    if (taskIds.length === 0) {
+      return;
+    }
+
+    await this.pool.query(
+      `
+        update sync_tasks
+        set status = 'pending',
+            next_run_at = $2,
+            error_message = coalesce($3, error_message),
+            updated_at = now()
+        where id = any($1::bigint[])
+          and status = 'running'
+      `,
+      [taskIds, nextRunAt, errorMessage ?? null],
+    );
+  }
+
+  async postponePendingTasks(nextRunAt: Date, errorMessage?: string | null): Promise<number> {
+    const result = await this.pool.query(
+      `
+        update sync_tasks
+        set next_run_at = $1,
+            error_message = coalesce($2, error_message),
+            updated_at = now()
+        where status = 'pending'
+          and next_run_at < $1
+      `,
+      [nextRunAt, errorMessage ?? null],
+    );
+
+    return result.rowCount ?? 0;
   }
 }
 
@@ -207,4 +275,24 @@ function mapTaskRow(row: SyncTaskRow): SyncTask {
 
 function getTaskKey(task: SyncTaskInput): string {
   return `${task.source}:${task.query}:${task.market}:${task.offset ?? 0}`;
+}
+
+function getStoredTaskStatus(input: CompleteSyncTaskInput, nextRunAt?: Date): SyncTaskStatus {
+  if (input.status === 'success') {
+    return nextRunAt ? 'pending' : 'success';
+  }
+
+  return nextRunAt ? 'pending' : 'failed';
+}
+
+function getNextRunAt(input: CompleteSyncTaskInput): Date | undefined {
+  if (input.nextRunAt) {
+    return input.nextRunAt;
+  }
+
+  if (input.status === 'failed' && input.retryAfterSeconds !== null && input.retryAfterSeconds !== undefined) {
+    return new Date(Date.now() + Math.max(input.retryAfterSeconds, 1) * 1000);
+  }
+
+  return undefined;
 }

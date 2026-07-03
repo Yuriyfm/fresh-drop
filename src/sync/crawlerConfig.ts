@@ -12,7 +12,7 @@ export type ReleaseCrawlerConfig = {
 };
 
 const DEFAULT_MARKET = 'US';
-const DEFAULT_BATCH_SIZE = 20;
+const DEFAULT_BATCH_SIZE = 5;
 const DEFAULT_SEARCH_LIMIT = 50;
 const DEFAULT_ARTIST_ALBUMS_LIMIT = 10;
 const DEFAULT_RETENTION_DAYS = 30;

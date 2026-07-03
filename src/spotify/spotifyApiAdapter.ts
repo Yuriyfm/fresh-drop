@@ -19,7 +19,10 @@ type FetchLike = typeof fetch;
 export type SpotifyApiAdapterConfig = {
   clientId: string;
   clientSecret: string;
+  minRequestIntervalMs?: number;
   fetchFn?: FetchLike;
+  nowFn?: () => number;
+  sleepFn?: (delayMs: number) => Promise<void>;
 };
 
 export type FetchFreshReleasesFromSpotifyOptions = {
@@ -68,12 +71,19 @@ export class SpotifyApiAdapter {
   private readonly clientId: string;
   private readonly clientSecret: string;
   private readonly fetchFn: FetchLike;
+  private readonly minRequestIntervalMs: number;
+  private readonly nowFn: () => number;
+  private readonly sleepFn: (delayMs: number) => Promise<void>;
   private token: { value: string; expiresAt: number } | null = null;
+  private nextRequestAt = 0;
 
   constructor(config: SpotifyApiAdapterConfig) {
     this.clientId = config.clientId;
     this.clientSecret = config.clientSecret;
     this.fetchFn = config.fetchFn ?? fetch;
+    this.minRequestIntervalMs = normalizeMinRequestIntervalMs(config.minRequestIntervalMs);
+    this.nowFn = config.nowFn ?? Date.now;
+    this.sleepFn = config.sleepFn ?? sleep;
   }
 
   async getAppAccessToken(): Promise<string> {
@@ -263,17 +273,23 @@ export class SpotifyApiAdapter {
   }
 
   private async request(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+    await this.waitForRequestWindow();
+
     let response: Response;
 
     try {
       response = await this.fetchFn(input, init);
     } catch (error) {
+      this.deferNextRequest(this.minRequestIntervalMs);
       throw new SpotifyApiError(error instanceof Error ? error.message : 'Spotify network request failed.', 'network');
     }
 
     if (response.ok) {
+      this.deferNextRequest(this.minRequestIntervalMs);
       return response;
     }
+
+    this.deferNextRequest(getRetryDelayMs(response) ?? this.minRequestIntervalMs);
 
     throw new SpotifyApiError(
       `Spotify API request failed with status ${response.status}.`,
@@ -281,6 +297,18 @@ export class SpotifyApiAdapter {
       response.status,
       parseRetryAfter(response.headers),
     );
+  }
+
+  private async waitForRequestWindow(): Promise<void> {
+    const delayMs = this.nextRequestAt - this.nowFn();
+
+    if (delayMs > 0) {
+      await this.sleepFn(delayMs);
+    }
+  }
+
+  private deferNextRequest(delayMs: number): void {
+    this.nextRequestAt = Math.max(this.nextRequestAt, this.nowFn()) + Math.max(delayMs, 0);
   }
 }
 
@@ -335,4 +363,32 @@ function parseRetryAfter(headers: Headers): number | null {
 
   const parsed = Number.parseInt(value, 10);
   return Number.isNaN(parsed) ? null : parsed;
+}
+
+function getRetryDelayMs(response: Response): number | null {
+  const retryAfterSeconds = parseRetryAfter(response.headers);
+
+  if (retryAfterSeconds === null) {
+    return response.status === 429 ? 60_000 : null;
+  }
+
+  return Math.max(retryAfterSeconds, 1) * 1000;
+}
+
+function normalizeMinRequestIntervalMs(value: number | undefined): number {
+  if (value === undefined) {
+    return 0;
+  }
+
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error('Spotify API min request interval must be a non-negative number.');
+  }
+
+  return Math.trunc(value);
+}
+
+function sleep(delayMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, delayMs);
+  });
 }

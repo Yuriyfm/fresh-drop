@@ -12,6 +12,8 @@ const DEFAULT_LIMIT = 50;
 const DEFAULT_PAGES = 1;
 const MAX_LIMIT = 50;
 const MAX_PAGES = 10;
+const DEFAULT_MIN_REQUEST_INTERVAL_MS = 1_000;
+const MAX_MIN_REQUEST_INTERVAL_MS = 60_000;
 
 export function getReleaseSyncConfigFromEnv(env: SyncEnv): ReleaseSyncConfig {
   const clientId = getRequiredEnv(env, 'SPOTIFY_CLIENT_ID');
@@ -21,6 +23,7 @@ export function getReleaseSyncConfigFromEnv(env: SyncEnv): ReleaseSyncConfig {
     spotify: {
       clientId,
       clientSecret,
+      minRequestIntervalMs: normalizeMinRequestIntervalMs(env.SPOTIFY_API_MIN_REQUEST_INTERVAL_MS),
     },
     fetchOptions: {
       market: normalizeMarket(env.SPOTIFY_MARKET),
@@ -72,4 +75,18 @@ function normalizePages(value: string | undefined): number {
   }
 
   return Math.min(parsed, MAX_PAGES);
+}
+
+function normalizeMinRequestIntervalMs(value: string | undefined): number {
+  if (!value) {
+    return DEFAULT_MIN_REQUEST_INTERVAL_MS;
+  }
+
+  const parsed = Number(value);
+
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new Error('SPOTIFY_API_MIN_REQUEST_INTERVAL_MS must be a non-negative integer.');
+  }
+
+  return Math.min(parsed, MAX_MIN_REQUEST_INTERVAL_MS);
 }

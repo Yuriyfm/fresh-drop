@@ -15,6 +15,7 @@ describe('getReleaseSyncConfigFromEnv', () => {
       spotify: {
         clientId: 'client-id',
         clientSecret: 'client-secret',
+        minRequestIntervalMs: 1000,
       },
       fetchOptions: {
         market: 'DE',
@@ -35,6 +36,12 @@ describe('getReleaseSyncConfigFromEnv', () => {
       limit: 50,
       pages: 1,
     });
+    expect(
+      getReleaseSyncConfigFromEnv({
+        SPOTIFY_CLIENT_ID: 'client-id',
+        SPOTIFY_CLIENT_SECRET: 'client-secret',
+      }).spotify.minRequestIntervalMs,
+    ).toBe(1000);
   });
 
   it('requires Spotify credentials', () => {
@@ -78,5 +85,31 @@ describe('getReleaseSyncConfigFromEnv', () => {
         SPOTIFY_SYNC_PAGES: '0',
       }),
     ).toThrow('SPOTIFY_SYNC_PAGES must be a positive integer.');
+  });
+
+  it('reads and validates the Spotify request interval', () => {
+    expect(
+      getReleaseSyncConfigFromEnv({
+        SPOTIFY_CLIENT_ID: 'client-id',
+        SPOTIFY_CLIENT_SECRET: 'client-secret',
+        SPOTIFY_API_MIN_REQUEST_INTERVAL_MS: '1500',
+      }).spotify.minRequestIntervalMs,
+    ).toBe(1500);
+
+    expect(
+      getReleaseSyncConfigFromEnv({
+        SPOTIFY_CLIENT_ID: 'client-id',
+        SPOTIFY_CLIENT_SECRET: 'client-secret',
+        SPOTIFY_API_MIN_REQUEST_INTERVAL_MS: '999999',
+      }).spotify.minRequestIntervalMs,
+    ).toBe(60000);
+
+    expect(() =>
+      getReleaseSyncConfigFromEnv({
+        SPOTIFY_CLIENT_ID: 'client-id',
+        SPOTIFY_CLIENT_SECRET: 'client-secret',
+        SPOTIFY_API_MIN_REQUEST_INTERVAL_MS: '-1',
+      }),
+    ).toThrow('SPOTIFY_API_MIN_REQUEST_INTERVAL_MS must be a non-negative integer.');
   });
 });
