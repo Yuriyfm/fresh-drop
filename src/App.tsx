@@ -943,7 +943,13 @@ function ReleaseRow({ release, t, onSelect }: ReleaseRowProps) {
         <ReleaseCover coverUrl={release.coverUrl} title={release.title} t={t} />
         <span className="releaseInfo">
           <span className="releaseTitle">{release.title}</span>
-          <span className="releaseArtist">{formatArtists(release, t)}</span>
+          <span className="releaseSubtitle">
+            <span className="releaseArtist">{formatArtists(release, t)}</span>
+            <span className="releaseSubtitleDivider" aria-hidden="true">
+              &middot;
+            </span>
+            <span className="releaseGenresPreview">{getCompactReleaseGenreSummary(release, t)}</span>
+          </span>
           <span className="releaseMeta">
             <span className="releaseDateMeta">{formatUnknown(release.releaseDate, t)}</span>
             <span className="releaseTypeBadge">{getReleaseTypeLabel(release.type, t)}</span>
@@ -1474,6 +1480,16 @@ function getReleaseGenres(release: Release, t: Translation): string[] {
   const normalized = release.genres.map((genre) => genre.trim()).filter(Boolean);
 
   return normalized.length > 0 ? normalized : [t.release.unknown];
+}
+
+function getCompactReleaseGenreSummary(release: Release, t: Translation): string {
+  const genres = getReleaseGenres(release, t);
+
+  if (genres.length <= 2) {
+    return genres.join(', ');
+  }
+
+  return `${genres.slice(0, 2).join(', ')} +${genres.length - 2}`;
 }
 
 function formatNullableNumber(value: number | null, t: Translation): string {

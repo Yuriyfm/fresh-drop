@@ -128,6 +128,7 @@ Last 7 days
 * cover;
 * title;
 * artist;
+* compact genres preview from `release.genres`;
 * release date;
 * release type badge;
 * chevron/индикатор перехода.
@@ -140,6 +141,7 @@ Last 7 days
 * использует обложку `64x64` или `72x72`;
 * показывает placeholder/skeleton, пока cover ещё загружается;
 * имеет более заметный title и читаемые вторичные metadata;
+* жанры остаются в одну компактную строку и не раздувают карточку по высоте;
 * имеет pressed state, а на десктопе hover/focus state.
 
 Кнопки Spotify в списке нет.

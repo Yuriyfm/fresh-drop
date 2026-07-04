@@ -72,6 +72,28 @@ describe('App', () => {
     );
   });
 
+  it('shows a compact genre preview in the release list item', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      makeResponse({
+        items: [makeRelease({ genres: ['hip hop', 'rap', 'trap'] })],
+        pagination: {
+          page: 1,
+          limit: 20,
+          total: 1,
+          hasNextPage: false,
+        },
+        error: null,
+      }),
+    );
+
+    render(<App />);
+
+    const releaseRow = await screen.findByRole('button', { name: 'Open Release One' });
+
+    expect(within(releaseRow).getByText('Artist One')).toBeInTheDocument();
+    expect(within(releaseRow).getByText('hip hop, rap +1')).toBeInTheDocument();
+  });
+
   it('shows an empty state when the database has no matching releases', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       makeResponse({
