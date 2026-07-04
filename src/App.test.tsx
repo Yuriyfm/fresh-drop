@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
 import type { Release } from './domain/release';
@@ -88,8 +88,11 @@ describe('App', () => {
 
     render(<App />);
 
-    expect(await screen.findByText('No releases found')).toBeInTheDocument();
-    expect(screen.getByText('Try a wider period or fewer filters.')).toBeInTheDocument();
+    expect(await screen.findByText('No releases found for these filters')).toBeInTheDocument();
+    expect(screen.getByText('Try removing one genre or increasing the period.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Clear genres' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Reset all filters' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Use Month' })).toBeInTheDocument();
   });
 
   it('reloads from page one when filters change', async () => {
@@ -132,7 +135,7 @@ describe('App', () => {
         expect.any(Object),
       );
     });
-    expect(await screen.findByText('No releases found')).toBeInTheDocument();
+    expect(await screen.findByText('No releases found for these filters')).toBeInTheDocument();
   });
 
   it('sends filters and sorting to the API', async () => {
@@ -197,6 +200,58 @@ describe('App', () => {
         expect.any(Object),
       );
     });
+  });
+
+  it('opens language settings from the mobile header instead of showing the switcher inline', async () => {
+    setViewportWidth(390);
+
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      makeResponse({
+        items: [makeRelease()],
+        pagination: {
+          page: 1,
+          limit: 20,
+          total: 1,
+          hasNextPage: false,
+        },
+        error: null,
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByText('Release One')).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Language' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+
+    expect(screen.getByRole('dialog', { name: 'Settings' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Language' })).toBeInTheDocument();
+  });
+
+  it('uses desktop sidebar layout with sorting above the results on wide screens', async () => {
+    setViewportWidth(1280);
+
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      makeResponse({
+        items: [makeRelease()],
+        pagination: {
+          page: 1,
+          limit: 20,
+          total: 1,
+          hasNextPage: false,
+        },
+        error: null,
+      }),
+    );
+
+    const { container } = render(<App />);
+
+    expect(await screen.findByText('Release One')).toBeInTheDocument();
+    expect(container.querySelector('.searchLayout.isDesktopSidebar')).not.toBeNull();
+    expect(container.querySelector('.searchSidebar .filterPanel')).not.toBeNull();
+    expect(container.querySelector('.searchSidebar select')).toBeNull();
+    expect(container.querySelector('.resultsToolbar select')).not.toBeNull();
   });
 
   it('shows a sticky mobile summary bar with filter actions', async () => {
@@ -286,6 +341,35 @@ describe('App', () => {
     );
   });
 
+  it('uses URL params before local storage preferences', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      makeResponse({
+        items: [makeRelease({ genres: ['rap'], type: 'single' })],
+        pagination: {
+          page: 1,
+          limit: 20,
+          total: 1,
+          hasNextPage: false,
+        },
+        error: null,
+      }),
+    );
+    window.localStorage.setItem(
+      RELEASE_SEARCH_STORAGE_KEY,
+      JSON.stringify({ period: '7d', genres: ['techno'], type: 'album', sort: 'newest' }),
+    );
+    window.history.pushState(null, '', '/?period=14d&type=single&sort=popular&genre=rap&lang=ru');
+
+    render(<App />);
+
+    expect(await screen.findByText('Release One')).toBeInTheDocument();
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/releases?period=14d&type=single&sort=popular&page=1&limit=20&genre=rap',
+      expect.any(Object),
+    );
+    expect(screen.getByRole('button', { name: 'Как это работает' })).toBeInTheDocument();
+  });
+
   it('resets saved filters and sorting in local storage', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.resolve(
       makeResponse({
@@ -315,6 +399,32 @@ describe('App', () => {
         type: 'all',
         sort: 'newest',
       });
+    });
+    expect(window.location.search).toBe('?period=7d&type=all&sort=newest');
+  });
+
+  it('syncs active filters to the URL query params', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      makeResponse({
+        items: [makeRelease({ genres: ['techno'], type: 'album' })],
+        pagination: {
+          page: 1,
+          limit: 20,
+          total: 1,
+          hasNextPage: false,
+        },
+        error: null,
+      }),
+    );
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole('checkbox', { name: /techno/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Albums' }));
+    fireEvent.change(screen.getAllByLabelText('Sorting')[0], { target: { value: 'popular' } });
+
+    await waitFor(() => {
+      expect(window.location.search).toBe('?period=7d&type=album&sort=popular&genre=techno');
     });
   });
 
@@ -352,7 +462,8 @@ describe('App', () => {
     render(<App />);
 
     expect(await screen.findByText('Could not load releases')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(screen.queryByText('Internal server error.')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
 
     expect(await screen.findByText('Release One')).toBeInTheDocument();
     expect(fetchSpy).toHaveBeenCalledTimes(2);
@@ -364,8 +475,111 @@ describe('App', () => {
     render(<App />);
 
     expect(await screen.findByText('Could not load releases')).toBeInTheDocument();
-    expect(screen.getByText('Failed to fetch')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    expect(screen.getByText('We could not load releases right now. Your filters are still here.')).toBeInTheDocument();
+    expect(screen.queryByText('Failed to fetch')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+  });
+
+  it('keeps the previous list visible while refetching filters and shows a loading indicator', async () => {
+    let resolveSecondRequest: ((value: Response) => void) | undefined;
+    const secondRequest = new Promise<Response>((resolve) => {
+      resolveSecondRequest = resolve;
+    });
+
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        makeResponse({
+          items: [makeRelease({ genres: ['techno'], title: 'Release One' })],
+          pagination: {
+            page: 1,
+            limit: 20,
+            total: 1,
+            hasNextPage: false,
+          },
+          error: null,
+        }),
+      )
+      .mockImplementationOnce(() => secondRequest);
+
+    render(<App />);
+
+    expect(await screen.findByText('Release One')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('checkbox', { name: /techno/i }));
+
+    expect(screen.getByText('Release One')).toBeInTheDocument();
+    expect(screen.getAllByText('Updating').length).toBeGreaterThan(0);
+
+    resolveSecondRequest?.(
+      makeResponse({
+        items: [makeRelease({ id: 'release-2', title: 'Release Two', genres: ['techno'] })],
+        pagination: {
+          page: 1,
+          limit: 20,
+          total: 1,
+          hasNextPage: false,
+        },
+        error: null,
+      }),
+    );
+
+    expect(await screen.findByText('Release Two')).toBeInTheDocument();
+  });
+
+  it('uses empty-state shortcuts to recover from narrow filters', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        makeResponse({
+          items: [makeRelease({ genres: ['techno'] })],
+          pagination: {
+            page: 1,
+            limit: 20,
+            total: 1,
+            hasNextPage: false,
+          },
+          error: null,
+        }),
+      )
+      .mockResolvedValueOnce(
+        makeResponse({
+          items: [],
+          pagination: {
+            page: 1,
+            limit: 20,
+            total: 0,
+            hasNextPage: false,
+          },
+          error: null,
+        }),
+      )
+      .mockResolvedValueOnce(
+        makeResponse({
+          items: [makeRelease({ id: 'release-2', title: 'Release Two' })],
+          pagination: {
+            page: 1,
+            limit: 20,
+            total: 1,
+            hasNextPage: false,
+          },
+          error: null,
+        }),
+      );
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole('checkbox', { name: /techno/i }));
+    expect(await screen.findByText('No releases found for these filters')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Use Month' }));
+
+    await waitFor(() => {
+      expect(fetchSpy).toHaveBeenLastCalledWith(
+        '/api/releases?period=1m&type=all&sort=newest&page=1&limit=20&genre=techno',
+        expect.any(Object),
+      );
+    });
+    expect(await screen.findByText('Release Two')).toBeInTheDocument();
   });
 
   it('loads the next page when the list bottom enters the viewport', async () => {
@@ -553,27 +767,75 @@ describe('App', () => {
         error: null,
       }),
     );
+    window.history.pushState(null, '', '/?period=14d&type=all&sort=newest&genre=hip-hop');
 
     render(<App />);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Open Release One' }));
 
     expect(window.location.pathname).toBe('/releases/release-1');
+    expect(window.location.search).toBe('?period=14d&type=all&sort=newest&genre=hip-hop');
     expect(screen.getByRole('link', { name: 'Open in Spotify' })).toHaveAttribute(
       'href',
       'https://open.spotify.com/album/release-1',
     );
     expect(screen.getAllByText('Unknown').length).toBeGreaterThanOrEqual(3);
 
-    fireEvent.click(screen.getByRole('button', { name: /back/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Back to results' }));
 
     await waitFor(() => {
-      expect(window.location.pathname).toBe('/');
+      expect(`${window.location.pathname}${window.location.search}`).toBe('/?period=14d&type=all&sort=newest&genre=hip-hop');
     });
     expect(await screen.findByRole('button', { name: 'Open Release One' })).toBeInTheDocument();
   });
 
-  it('opens About / How it works and explains metadata limits', async () => {
+  it('renders a mobile-first release detail layout with sticky actions and genre chips', async () => {
+    setViewportWidth(390);
+
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      makeResponse({
+        items: [
+          makeRelease({
+            genres: ['hip hop', 'rap'],
+            type: 'album',
+          }),
+        ],
+        pagination: {
+          page: 1,
+          limit: 20,
+          total: 1,
+          hasNextPage: false,
+        },
+        error: null,
+      }),
+    );
+
+    const { container } = render(<App />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Open Release One' }));
+
+    expect(container.querySelector('.releaseTopBar')).not.toBeNull();
+    expect(screen.getByRole('heading', { name: 'Release One' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open' })).toHaveAttribute(
+      'href',
+      'https://open.spotify.com/album/release-1',
+    );
+    expect(screen.getByRole('link', { name: 'Open in Spotify' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Back to results' })).toBeInTheDocument();
+    expect(screen.getByText('Type')).toBeInTheDocument();
+    expect(screen.getByText('Genres')).toBeInTheDocument();
+    expect(screen.getByText('hip hop')).toHaveClass('genreChip');
+    expect(screen.getByText('rap')).toHaveClass('genreChip');
+    expect(screen.getAllByText('Album').length).toBeGreaterThanOrEqual(2);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Back to results' }));
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe('/');
+    });
+  });
+
+  it('opens How it works in a desktop modal without changing the search route', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       makeResponse({
         items: [makeRelease()],
@@ -589,19 +851,67 @@ describe('App', () => {
 
     render(<App />);
 
+    Object.defineProperty(window, 'scrollY', {
+      configurable: true,
+      value: 320,
+    });
+    act(() => {
+      window.dispatchEvent(new Event('scroll'));
+    });
+
     fireEvent.click(screen.getByRole('button', { name: 'How it works' }));
 
-    expect(window.location.pathname).toBe('/about');
+    const dialog = screen.getByRole('dialog', { name: 'How it works' });
+
+    expect(window.location.pathname).toBe('/');
+    expect(dialog).toHaveClass('dialogPanel', 'helpModal');
     expect(screen.getByRole('heading', { name: /not recommendations/i })).toBeInTheDocument();
     expect(screen.getByText(/Genres are usually attached to artists/i)).toBeInTheDocument();
     expect(screen.getByText(/Unknown instead of guessing/i)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /back/i }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
 
     await waitFor(() => {
-      expect(window.location.pathname).toBe('/');
+      expect(screen.queryByRole('dialog', { name: 'How it works' })).toBeNull();
     });
+    expect(window.location.pathname).toBe('/');
+    expect(window.scrollY).toBe(320);
     expect(await screen.findByText('Fresh Spotify releases, filtered for quick discovery.')).toBeInTheDocument();
+  });
+
+  it('opens How it works as a mobile bottom sheet', async () => {
+    setViewportWidth(390);
+
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      makeResponse({
+        items: [makeRelease()],
+        pagination: {
+          page: 1,
+          limit: 20,
+          total: 1,
+          hasNextPage: false,
+        },
+        error: null,
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByText('Release One')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'How it works' }));
+
+    const dialog = screen.getByRole('dialog', { name: 'How it works' });
+
+    expect(window.location.pathname).toBe('/');
+    expect(dialog).toHaveClass('bottomSheet', 'helpSheet');
+    expect(screen.getByText('What the filters use')).toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'How it works' })).toBeNull();
+    });
   });
 
   it('switches UI language to Russian and saves the choice', async () => {
