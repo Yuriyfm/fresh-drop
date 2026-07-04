@@ -16,7 +16,6 @@ const PAGE_LIMIT = 20;
 const MOBILE_BREAKPOINT = 768;
 const DESKTOP_SIDEBAR_BREAKPOINT = 1024;
 const GENRE_SEARCH_DEBOUNCE_MS = 180;
-const COMPACT_HEADER_SCROLL_THRESHOLD = 56;
 const VIRTUAL_RELEASE_ROW_HEIGHT = 92;
 const VIRTUAL_RELEASE_OVERSCAN = 8;
 const RELEASE_ROUTE_PREFIX = '/releases/';
@@ -97,7 +96,7 @@ function App() {
   const t = translations[language];
   const isMobile = viewportWidth < MOBILE_BREAKPOINT;
   const isDesktopSidebar = viewportWidth >= DESKTOP_SIDEBAR_BREAKPOINT;
-  const isCompactHeaderVisible = scrollPosition.top > COMPACT_HEADER_SCROLL_THRESHOLD;
+  const isBackToTopVisible = scrollPosition.top > scrollPosition.height * 2;
 
   useEffect(() => {
     window.localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
@@ -260,10 +259,12 @@ function App() {
   const isRefreshing = status === 'loading' && releases.length > 0;
   const isSummaryUpdating = status === 'loading' || status === 'loadingMore';
   const desktopSummaryText = isInitialLoading ? t.results.loadingSummary(summaryFilters) : summaryText;
+  const mobileSummaryDetails = getMobileSummaryDetails(period, genres, type, sort, t);
   const mobileSummaryText = isInitialLoading
-    ? t.results.loadingSummary(getMobileSummaryContext(period, genres, t))
-    : getMobileSummaryText(pagination.total, period, genres, t);
-  const mobileActiveFilterCount = getMobileActiveFilterCount(period, genres, type, sort);
+    ? t.results.loadingSummary(mobileSummaryDetails)
+    : getMobileSummaryText(pagination.total, mobileSummaryDetails, t);
+  const hasActiveSearchFilters = hasActiveFilters(period, genres, type, sort);
+  const isMobileFilterPanelVisible = isMobile && isElementVisible(filterPanelRef.current, scrollPosition);
   const virtualRange = getVirtualReleaseRange(releases.length, scrollPosition, releaseListRef.current);
   const visibleReleases = releases.slice(virtualRange.startIndex, virtualRange.endIndex);
 
@@ -284,16 +285,7 @@ function App() {
   }
 
   return (
-    <main className={isCompactHeaderVisible ? 'appShell hasCompactHeader' : 'appShell'}>
-      {isCompactHeaderVisible && (
-        <section className="compactTopBar" aria-label={t.app.title}>
-          <span className="compactTopBarTitle">{t.app.title}</span>
-          <button type="button" className="secondaryButton compactTopBarButton" onClick={openFilterControls}>
-            {t.filters.filters}
-          </button>
-        </section>
-      )}
-
+    <main className="appShell">
       <header className="appHeader">
         <div className="headerBrand">
           {!isMobile && <p className="eyebrow">{t.app.eyebrow}</p>}
@@ -329,13 +321,12 @@ function App() {
               {isMobile && (
                 <button
                   type="button"
-                  className="secondaryButton compactFilterButton"
+                  className="secondaryButton filterPanelHeaderButton"
                   aria-haspopup="dialog"
                   aria-expanded={isFiltersOpen}
-                  onClick={() => setIsFiltersOpen(true)}
+                  onClick={openFiltersSheet}
                 >
-                  <span>{t.filters.moreFilters}</span>
-                  <span className="compactFilterValue">{getMobileFilterSummary(type, sort, t)}</span>
+                  {t.filters.filters}
                 </button>
               )}
             </div>
@@ -357,6 +348,12 @@ function App() {
                 {!isDesktopSidebar && <SortFilter sort={sort} t={t} onChange={updateSort} />}
               </div>
             )}
+
+            {!isMobile && hasActiveSearchFilters && (
+              <button type="button" className="ghostButton sidebarResetButton" onClick={resetFilters}>
+                {t.filters.reset}
+              </button>
+            )}
           </section>
         </aside>
 
@@ -371,11 +368,6 @@ function App() {
               </div>
               <div className="resultsToolbar">
                 {isDesktopSidebar && <SortFilter sort={sort} t={t} onChange={updateSort} />}
-                {hasActiveFilters(period, genres, type, sort) && (
-                  <button type="button" className="ghostButton resultsResetButton" onClick={resetFilters}>
-                    {t.filters.reset}
-                  </button>
-                )}
               </div>
             </section>
           )}
@@ -385,97 +377,103 @@ function App() {
               <div className="stickySummaryContent">
                 <p className="stickySummaryText">{mobileSummaryText}</p>
                 {isSummaryUpdating && <span className="summaryLoadingIndicator">{t.results.updating}</span>}
-                {mobileActiveFilterCount > 0 && (
-                  <span className="stickySummaryIndicator">{t.filters.activeFilters(mobileActiveFilterCount)}</span>
-                )}
               </div>
-              <div className="stickySummaryActions">
-                <button
-                  type="button"
-                  className="secondaryButton stickySummaryButton"
-                  aria-haspopup="dialog"
-                  aria-expanded={isFiltersOpen}
-                  onClick={() => setIsFiltersOpen(true)}
-                >
-                  {t.filters.filters}
-                </button>
-                {hasActiveFilters(period, genres, type, sort) && (
-                  <button type="button" className="ghostButton stickyResetButton" onClick={resetFilters}>
-                    {t.filters.resetShort}
-                  </button>
-                )}
-              </div>
+              {(!isMobileFilterPanelVisible || hasActiveSearchFilters) && (
+                <div className="stickySummaryActions">
+                  {!isMobileFilterPanelVisible && (
+                    <button
+                      type="button"
+                      className="secondaryButton stickySummaryButton"
+                      aria-haspopup="dialog"
+                      aria-expanded={isFiltersOpen}
+                      onClick={openFiltersSheet}
+                    >
+                      {t.filters.filters}
+                    </button>
+                  )}
+                  {hasActiveSearchFilters && (
+                    <button
+                      type="button"
+                      className="stickyResetLink"
+                      aria-label={t.filters.reset}
+                      onClick={resetFilters}
+                    >
+                      {t.filters.resetShort}
+                    </button>
+                  )}
+                </div>
+              )}
             </section>
           )}
 
           <section className="releaseList" aria-label={t.filters.aria} ref={releaseListRef}>
-        {isInitialLoading && <ReleaseSkeleton />}
+            {isInitialLoading && <ReleaseSkeleton />}
 
-        {status === 'error' && releases.length === 0 && (
-          <div className="statePanel" role="alert">
-            <h2>{t.results.errorTitle}</h2>
-            <p>{t.results.errorDescription}</p>
-            <button type="button" onClick={retry}>
-              {t.results.retry}
-            </button>
-          </div>
-        )}
-
-        {status === 'success' && releases.length === 0 && (
-          <div className="statePanel">
-            <h2>{t.results.noTitle}</h2>
-            <p>{t.results.noDescription}</p>
-            <div className="stateActions">
-              <button type="button" className="secondaryButton" disabled={genres.length === 0} onClick={clearSelectedGenres}>
-                {t.filters.clearGenres}
-              </button>
-              <button type="button" className="ghostButton" onClick={resetFilters}>
-                {t.filters.resetAll}
-              </button>
-              <button type="button" onClick={useMonth}>
-                {t.results.useMonth}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {releases.length > 0 && (
-          <>
-            <div className={isRefreshing ? 'virtualReleaseList isRefreshing' : 'virtualReleaseList'} style={{ height: virtualRange.totalHeight }}>
-              <div
-                className="virtualReleaseItems"
-                style={{ transform: `translateY(${virtualRange.offsetTop}px)` }}
-              >
-                {visibleReleases.map((release) => (
-                  <ReleaseRow release={release} key={release.id} t={t} onSelect={() => openRelease(release)} />
-                ))}
-              </div>
-            </div>
-            {isRefreshing && (
-              <div className="refreshSkeletonStack" aria-hidden="true">
-                <ReleaseSkeleton count={2} />
+            {status === 'error' && releases.length === 0 && (
+              <div className="statePanel" role="alert">
+                <h2>{t.results.errorTitle}</h2>
+                <p>{t.results.errorDescription}</p>
+                <button type="button" onClick={retry}>
+                  {t.results.retry}
+                </button>
               </div>
             )}
-          </>
-        )}
 
-        {status === 'error' && releases.length > 0 && (
-          <div className="inlineError" role="alert">
-            <span>{t.results.errorDescription}</span>
-            <button type="button" onClick={retry}>
-              {t.results.retry}
-            </button>
-          </div>
-        )}
+            {status === 'success' && releases.length === 0 && (
+              <div className="statePanel">
+                <h2>{t.results.noTitle}</h2>
+                <p>{t.results.noDescription}</p>
+                <div className="stateActions">
+                  <button type="button" className="secondaryButton" disabled={genres.length === 0} onClick={clearSelectedGenres}>
+                    {t.filters.clearGenres}
+                  </button>
+                  <button type="button" className="ghostButton" onClick={resetFilters}>
+                    {t.filters.resetAll}
+                  </button>
+                  <button type="button" onClick={useMonth}>
+                    {t.results.useMonth}
+                  </button>
+                </div>
+              </div>
+            )}
 
-        {status === 'loadingMore' && <p className="loadingMore">{t.results.loadingMore}</p>}
+            {releases.length > 0 && (
+              <>
+                <div className={isRefreshing ? 'virtualReleaseList isRefreshing' : 'virtualReleaseList'} style={{ height: virtualRange.totalHeight }}>
+                  <div
+                    className="virtualReleaseItems"
+                    style={{ transform: `translateY(${virtualRange.offsetTop}px)` }}
+                  >
+                    {visibleReleases.map((release) => (
+                      <ReleaseRow release={release} key={release.id} t={t} onSelect={() => openRelease(release)} />
+                    ))}
+                  </div>
+                </div>
+                {isRefreshing && (
+                  <div className="refreshSkeletonStack" aria-hidden="true">
+                    <ReleaseSkeleton count={2} />
+                  </div>
+                )}
+              </>
+            )}
 
-        {status !== 'loading' && status !== 'error' && pagination.hasNextPage && (
-          <div ref={loadMoreRef} className="scrollSentinel" aria-hidden="true" />
-        )}
-
-        {status === 'success' && releases.length > 0 && !pagination.hasNextPage && <p className="endState">{t.results.end}</p>}
+            {status === 'error' && releases.length > 0 && (
+              <div className="inlineError" role="alert">
+                <span>{t.results.errorDescription}</span>
+                <button type="button" onClick={retry}>
+                  {t.results.retry}
+                </button>
+              </div>
+            )}
           </section>
+
+          {status === 'loadingMore' && <p className="loadingMore">{t.results.loadingMore}</p>}
+
+          {status !== 'loading' && status !== 'error' && pagination.hasNextPage && (
+            <div ref={loadMoreRef} className="scrollSentinel" aria-hidden="true" />
+          )}
+
+          {status === 'success' && releases.length > 0 && !pagination.hasNextPage && <p className="endState">{t.results.end}</p>}
         </div>
       </div>
 
@@ -497,6 +495,11 @@ function App() {
         onLanguageChange={setLanguage}
       />
       <HowItWorksDialog isMobile={isMobile} isOpen={isHowItWorksOpen} t={t} onClose={() => setIsHowItWorksOpen(false)} />
+      {isBackToTopVisible && (
+        <button type="button" className="backToTopButton" onClick={scrollToTop}>
+          {t.app.backToTop}
+        </button>
+      )}
     </main>
   );
 
@@ -579,15 +582,14 @@ function App() {
     setIsHowItWorksOpen(true);
   }
 
-  function openFilterControls(): void {
-    if (isMobile) {
-      setIsFiltersOpen(true);
-      return;
-    }
+  function openFiltersSheet(): void {
+    setIsFiltersOpen(true);
+  }
 
-    filterPanelRef.current?.scrollIntoView({
+  function scrollToTop(): void {
+    window.scrollTo({
+      top: 0,
       behavior: 'smooth',
-      block: 'start',
     });
   }
 
@@ -657,7 +659,7 @@ function GenreFilter({ isMobile, selectedGenres, genreOptions, t, onChange }: Ge
         {isMobile && (
           <button
             type="button"
-            className="inlineFilterButton"
+            className={showOptions ? 'inlineFilterButton genreToggleButton isActive' : 'inlineFilterButton genreToggleButton'}
             aria-expanded={showOptions}
             onClick={() => setIsExpanded((current) => !current)}
           >
@@ -665,47 +667,55 @@ function GenreFilter({ isMobile, selectedGenres, genreOptions, t, onChange }: Ge
           </button>
         )}
       </div>
-      <div className="genreSearchField">
-        <input
-          type="search"
-          value={query}
-          placeholder={t.filters.searchGenres}
-          onFocus={() => setIsExpanded(true)}
-          onChange={(event) => setQuery(event.target.value)}
-        />
-      </div>
-      {selectedGenres.length > 0 && (
-        <div className="selectedGenreBar">
-          <div className="selectedGenreChips" aria-label={t.filters.selectedGenres}>
-            {selectedGenres.map((genre) => (
-              <button type="button" className="genreChip" key={genre} onClick={() => toggleGenre(genre)}>
-                {getGenreLabel(genre, t)} x
-              </button>
-            ))}
-          </div>
+      <div className="genreSearchRow">
+        <div className="genreSearchField">
+          {selectedGenres.length > 0 && (
+            <div className="selectedGenreChips" aria-label={t.filters.selectedGenres}>
+              {selectedGenres.map((genre) => (
+                <button type="button" className="genreChip" key={genre} onClick={() => toggleGenre(genre)}>
+                  {getGenreLabel(genre, t)} x
+                </button>
+              ))}
+            </div>
+          )}
+          <input
+            type="search"
+            value={query}
+            placeholder={t.filters.searchGenres}
+            onFocus={() => setIsExpanded(true)}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </div>
+        {selectedGenres.length > 0 && (
           <button type="button" className="clearGenresButton" onClick={clearGenres}>
             {t.filters.clearGenres}
           </button>
-        </div>
-      )}
+        )}
+      </div>
       {showOptions && (
         <>
           <div className="genreOptionList" role="list" aria-label={t.filters.genreResults}>
             {visibleOptions.length > 0 ? (
-              visibleOptions.map((option) => (
-                <label className="genreOption" key={`${option.kind}-${option.name}`}>
-                  <input
-                    type="checkbox"
-                    checked={selectedGenres.includes(option.name)}
-                    onChange={() => toggleGenre(option.name)}
-                  />
-                  <span className="genreOptionLabel">{getGenreLabel(option.name, t)}</span>
-                  <span className="genreCount">
-                    <span className="genreCountValue">{option.releaseCount}</span>
-                    <span>{t.filters.releasesCount}</span>
-                  </span>
-                </label>
-              ))
+              visibleOptions.map((option) => {
+                const isSelected = selectedGenres.includes(option.name);
+
+                return (
+                  <button
+                    type="button"
+                    role="checkbox"
+                    aria-checked={isSelected}
+                    className={isSelected ? 'genreOption isSelected' : 'genreOption'}
+                    key={`${option.kind}-${option.name}`}
+                    onClick={() => toggleGenre(option.name)}
+                  >
+                    <span className={isSelected ? 'genreCheckbox isChecked' : 'genreCheckbox'} aria-hidden="true">
+                      <span className="genreCheckboxMark" />
+                    </span>
+                    <span className="genreOptionLabel">{getGenreLabel(option.name, t)}</span>
+                    <span className="genreCount">{option.releaseCount}</span>
+                  </button>
+                );
+              })
             ) : (
               <div className="genreEmptyState">{t.filters.noGenresFound}</div>
             )}
@@ -733,12 +743,14 @@ function GenreFilter({ isMobile, selectedGenres, genreOptions, t, onChange }: Ge
 type TypeFilterProps = {
   type: ReleaseTypeFilter;
   t: Translation;
+  layout?: 'default' | 'sheet';
   onChange: (type: ReleaseTypeFilter) => void;
 };
 
-function TypeFilter({ type, t, onChange }: TypeFilterProps) {
+function TypeFilter({ type, t, layout = 'default', onChange }: TypeFilterProps) {
   return (
     <SegmentedControl
+      className={layout === 'sheet' ? 'isSheetTypeControl' : undefined}
       label={t.filters.type}
       value={type}
       options={[
@@ -799,12 +811,10 @@ function MobileFiltersSheet({
       <section className="bottomSheet" role="dialog" aria-modal="true" aria-label={t.filters.moreFilters}>
         <div className="sheetHeader">
           <h2>{t.filters.moreFilters}</h2>
-          <button type="button" className="iconButton" aria-label={t.filters.close} onClick={onClose}>
-            x
-          </button>
+          <SheetCloseButton label={t.filters.close} onClick={onClose} />
         </div>
         <div className="sheetFilters">
-          <TypeFilter type={type} t={t} onChange={onTypeChange} />
+          <TypeFilter type={type} t={t} layout="sheet" onChange={onTypeChange} />
           <SortOptions sort={sort} t={t} onChange={onSortChange} />
         </div>
         <button type="button" className="ghostButton fullWidthButton" onClick={onReset}>
@@ -836,11 +846,9 @@ function MobileSettingsSheet({
       <section className="bottomSheet settingsSheet" role="dialog" aria-modal="true" aria-label={t.app.settings}>
         <div className="sheetHeader">
           <h2>{t.app.settings}</h2>
-          <button type="button" className="iconButton" aria-label={t.filters.close} onClick={onClose}>
-            x
-          </button>
+          <SheetCloseButton label={t.filters.close} onClick={onClose} />
         </div>
-        <LanguageSwitcher language={language} t={t} onChange={onLanguageChange} />
+        <LanguageSettingsField language={language} t={t} onChange={onLanguageChange} />
       </section>
     </div>
   );
@@ -852,6 +860,7 @@ type SegmentedControlOption<TValue extends string> = {
 };
 
 type SegmentedControlProps<TValue extends string> = {
+  className?: string;
   label: string;
   value: TValue;
   options: SegmentedControlOption<TValue>[];
@@ -859,6 +868,7 @@ type SegmentedControlProps<TValue extends string> = {
 };
 
 function SegmentedControl<TValue extends string>({
+  className,
   label,
   value,
   options,
@@ -867,7 +877,7 @@ function SegmentedControl<TValue extends string>({
   return (
     <div className="filterField">
       <span className="fieldLabel">{label}</span>
-      <div className="segmentedControl" role="group" aria-label={label}>
+      <div className={className ? `segmentedControl ${className}` : 'segmentedControl'} role="group" aria-label={label}>
         {options.map((option) => (
           <button
             key={option.value}
@@ -986,84 +996,78 @@ type ReleaseDetailProps = {
 function ReleaseDetail({ isLoading, release, language, isMobile, t, onBack, onLanguageChange }: ReleaseDetailProps) {
   if (!release) {
     return (
-      <main className="appShell detailShell">
-        <ReleaseDetailTopBar
-          releaseTitle={isLoading ? t.release.loadingTitle : t.release.notLoadedTitle}
-          spotifyUrl={undefined}
-          t={t}
-          onBack={onBack}
-        />
-        <section className="statePanel" role="status">
-          <h1>{isLoading ? t.release.loadingTitle : t.release.notLoadedTitle}</h1>
-          <p>{isLoading ? t.release.loadingDescription : t.release.notLoadedDescription}</p>
-        </section>
+      <main className="detailPage">
+        <ReleaseDetailTopBar t={t} onBack={onBack} />
+        <div className="appShell detailShell detailShellState">
+          <section className="statePanel" role="status">
+            <h1>{isLoading ? t.release.loadingTitle : t.release.notLoadedTitle}</h1>
+            <p>{isLoading ? t.release.loadingDescription : t.release.notLoadedDescription}</p>
+          </section>
+        </div>
       </main>
     );
   }
 
   return (
-    <main className="appShell detailShell">
-      <ReleaseDetailTopBar releaseTitle={release.title} spotifyUrl={release.spotifyUrl} t={t} onBack={onBack} />
-      <section className="releaseDetail" aria-label={t.release.detailsAria}>
-        <div className="detailHero">
-          {release.coverUrl ? (
-            <img className="detailCover" src={release.coverUrl} alt="" />
-          ) : (
-            <div className="detailCover coverPlaceholder" aria-label={t.release.noCover} role="img" />
-          )}
-        </div>
-        <div className="detailContent">
-          <div className="detailHeading">
-            <span className="releaseTypeBadge detailTypeBadge">{getReleaseTypeLabel(release.type, t)}</span>
+    <main className="detailPage">
+      <ReleaseDetailTopBar t={t} onBack={onBack} />
+      <div className="appShell detailShell">
+        <section className="releaseDetail" aria-label={t.release.detailsAria}>
+          <div className="detailHero">
+            {release.coverUrl ? (
+              <img className="detailCover" src={release.coverUrl} alt="" />
+            ) : (
+              <div className="detailCover detailCoverPlaceholder coverPlaceholder" aria-label={t.release.noCover} role="img" />
+            )}
+          </div>
+          <div className="detailContent">
             {!isMobile && (
-              <LanguageSwitcher language={language} t={t} onChange={onLanguageChange} />
+              <div className="detailHeading">
+                <LanguageSwitcher language={language} t={t} onChange={onLanguageChange} />
+              </div>
             )}
-          </div>
-          <h1>{release.title}</h1>
-          <p className="detailArtist">{formatArtists(release, t)}</p>
-          <div className="detailActions">
-            {release.spotifyUrl && (
-              <a className="spotifyLink detailPrimaryAction" href={release.spotifyUrl} target="_blank" rel="noreferrer">
-                {t.release.openSpotify}
-              </a>
-            )}
-            <button type="button" className="ghostButton detailSecondaryAction" onClick={onBack}>
-              {t.release.backToResults}
-            </button>
-          </div>
-          <dl className="detailMetaCard">
-            <div className="detailMetaItem">
-              <dt>{t.release.releaseDate}</dt>
-              <dd>{formatUnknown(release.releaseDate, t)}</dd>
+            <h1>{release.title}</h1>
+            <p className="detailArtist">{formatArtists(release, t)}</p>
+            <div className="detailActions">
+              {release.spotifyUrl && (
+                <a className="spotifyLink detailPrimaryAction" href={release.spotifyUrl} target="_blank" rel="noreferrer">
+                  {t.release.openSpotify}
+                </a>
+              )}
             </div>
-            <div className="detailMetaItem">
-              <dt>{t.release.country}</dt>
-              <dd>{formatUnknown(release.country, t)}</dd>
-            </div>
-            <div className="detailMetaItem">
-              <dt>{t.release.popularity}</dt>
-              <dd>{formatNullableNumber(release.popularity, t)}</dd>
-            </div>
-            <div className="detailMetaItem">
-              <dt>{t.release.type}</dt>
-              <dd>
-                <span className="releaseTypeBadge detailMetaBadge">{getReleaseTypeLabel(release.type, t)}</span>
-              </dd>
-            </div>
-          </dl>
-          <div className="detailGenresSection">
-            <p className="detailSectionLabel">{t.release.genres}</p>
-            <div className="selectedGenreChips detailGenreChips">
-              {getReleaseGenres(release, t).map((genre) => (
-                <span className="genreChip detailGenreChip" key={genre}>
-                  {genre}
-                </span>
-              ))}
+            <dl className="detailMetaCard">
+              <div className="detailMetaItem">
+                <dt>{t.release.releaseDate}</dt>
+                <dd>{formatUnknown(release.releaseDate, t)}</dd>
+              </div>
+              <div className="detailMetaItem">
+                <dt>{t.release.country}</dt>
+                <dd>{formatUnknown(release.country, t)}</dd>
+              </div>
+              <div className="detailMetaItem">
+                <dt>{t.release.popularity}</dt>
+                <dd>{formatNullableNumber(release.popularity, t)}</dd>
+              </div>
+              <div className="detailMetaItem">
+                <dt>{t.release.type}</dt>
+                <dd>
+                  <span className="releaseTypeBadge detailMetaBadge">{getReleaseTypeLabel(release.type, t)}</span>
+                </dd>
+              </div>
+            </dl>
+            <div className="detailGenresSection">
+              <p className="detailSectionLabel">{t.release.genres}</p>
+              <div className="selectedGenreChips detailGenreChips">
+                {getReleaseGenres(release, t).map((genre) => (
+                  <span className="genreChip detailGenreChip" key={genre}>
+                    {genre}
+                  </span>
+                ))}
+              </div>
             </div>
           </div>
-          <p className="shownBecause">{t.release.shownBecause}</p>
-        </div>
-      </section>
+        </section>
+      </div>
     </main>
   );
 }
@@ -1105,9 +1109,7 @@ function HowItWorksDialog({ isMobile, isOpen, t, onClose }: HowItWorksDialogProp
       >
         <div className="sheetHeader">
           <h2>{t.about.eyebrow}</h2>
-          <button type="button" className="iconButton" aria-label={t.about.close} onClick={onClose}>
-            ×
-          </button>
+          <SheetCloseButton label={t.about.close} onClick={onClose} />
         </div>
 
         <div className="aboutPage">
@@ -1167,27 +1169,50 @@ function LanguageSwitcher({ language, t, onChange }: LanguageSwitcherProps) {
   );
 }
 
+function LanguageSettingsField({ language, t, onChange }: LanguageSwitcherProps) {
+  return (
+    <div className="settingsField">
+      <span className="fieldLabel settingsFieldLabel">{t.language.label}</span>
+      <div className="languageOptionList" role="group" aria-label={t.language.label}>
+        {[
+          { value: 'en' as const, label: t.language.en },
+          { value: 'ru' as const, label: t.language.ru },
+        ].map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            className={language === option.value ? 'languageOption isActive' : 'languageOption'}
+            aria-pressed={language === option.value}
+            onClick={() => onChange(option.value)}
+          >
+            <span>{option.label}</span>
+            {language === option.value && <span aria-hidden="true">✓</span>}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SheetCloseButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button type="button" className="sheetCloseButton" aria-label={label} onClick={onClick}>
+      <span aria-hidden="true">×</span>
+    </button>
+  );
+}
+
 type ReleaseDetailTopBarProps = {
-  releaseTitle: string;
-  spotifyUrl: string | null | undefined;
   t: Translation;
   onBack: () => void;
 };
 
-function ReleaseDetailTopBar({ releaseTitle, spotifyUrl, t, onBack }: ReleaseDetailTopBarProps) {
+function ReleaseDetailTopBar({ t, onBack }: ReleaseDetailTopBarProps) {
   return (
     <div className="pageTopBar releaseTopBar">
-      <button type="button" className="backButton" onClick={onBack}>
-        &larr; {t.release.back}
+      <button type="button" className="backButton iconBackButton" aria-label={t.release.back} onClick={onBack}>
+        <span aria-hidden="true">&larr;</span>
       </button>
-      <span className="releaseTopBarTitle">{releaseTitle}</span>
-      {spotifyUrl ? (
-        <a className="secondaryButton releaseTopBarAction" href={spotifyUrl} target="_blank" rel="noreferrer">
-          {t.release.openShort}
-        </a>
-      ) : (
-        <span className="releaseTopBarSpacer" aria-hidden="true" />
-      )}
     </div>
   );
 }
@@ -1285,35 +1310,56 @@ function getReleaseSortLabel(sort: ReleaseSort, t: Translation): string {
   return t.sorts[sort === 'less-popular' ? 'lessPopular' : sort];
 }
 
-function getMobileFilterSummary(type: ReleaseTypeFilter, sort: ReleaseSort, t: Translation): string {
-  return [getReleaseTypeFilterLabel(type, t), getReleaseSortLabel(sort, t)].join(' · ');
-}
-
-function getMobileSummaryText(
-  count: number,
-  period: ReleasePeriod,
-  genres: string[],
-  t: Translation,
-): string {
+function getMobileSummaryText(count: number, details: string[], t: Translation): string {
   const formattedCount = new Intl.NumberFormat().format(count);
-  const context = getMobileSummaryContext(period, genres, t);
 
-  return [`${formattedCount} ${t.results.releasesShort(count)}`, ...context].join(' · ');
+  return [`${formattedCount} ${t.results.releasesShort(count)}`, ...details].join(' · ');
 }
 
-function getMobileSummaryContext(period: ReleasePeriod, genres: string[], t: Translation): string[] {
-  const genreLabels = genres.slice(0, 2).map((genre) => getGenreLabel(genre, t));
-
-  return genreLabels.length > 0 ? genreLabels : [getPeriodLabel(period, t)];
-}
-
-function getMobileActiveFilterCount(
+function getMobileSummaryDetails(
   period: ReleasePeriod,
   genres: string[],
   type: ReleaseTypeFilter,
   sort: ReleaseSort,
-): number {
-  return (period !== '7d' ? 1 : 0) + genres.length + (type !== 'all' ? 1 : 0) + (sort !== 'newest' ? 1 : 0);
+  t: Translation,
+): string[] {
+  const details: string[] = [];
+
+  if (period !== '7d' || genres.length === 0) {
+    details.push(getPeriodLabel(period, t));
+  }
+
+  if (genres.length > 0) {
+    details.push(...getCompactGenreSummary(genres, t));
+  }
+
+  if (type !== 'all') {
+    details.push(getReleaseTypeFilterLabel(type, t));
+  }
+
+  if (sort !== 'newest') {
+    details.push(getReleaseSortLabel(sort, t));
+  }
+
+  return details;
+}
+
+function getCompactGenreSummary(genres: string[], t: Translation): string[] {
+  const labels = genres.map((genre) => getGenreLabel(genre, t));
+
+  if (labels.length <= 2) {
+    return labels;
+  }
+
+  return [...labels.slice(0, 2), `+${labels.length - 2}`];
+}
+
+function isElementVisible(element: HTMLElement | null, scrollPosition: ScrollPosition): boolean {
+  if (!element || element.offsetHeight === 0) {
+    return scrollPosition.top < scrollPosition.height * 0.55;
+  }
+
+  return scrollPosition.top + 24 < element.offsetTop + element.offsetHeight;
 }
 
 function getStoredReleaseSearchState(storage: Storage = window.localStorage): ReleaseSearchState {

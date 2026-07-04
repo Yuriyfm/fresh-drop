@@ -174,6 +174,10 @@ input[type="search"]:focus-visible {
   background: linear-gradient(180deg, #0e1510, var(--color-field));
 }
 
+.isSheetTypeControl {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .segmentedControlCompact {
   display: inline-grid;
   width: auto;
@@ -208,31 +212,55 @@ select:disabled {
   min-width: 0;
 }
 
-.genreSearchField {
-  width: 100%;
-}
-
-.genreSearchField input {
-  padding-right: 12px;
-}
-
-.selectedGenreBar {
+.genreSearchRow {
   display: grid;
-  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: start;
+}
+
+.genreSearchField {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  width: 100%;
+  min-height: 42px;
+  padding: 5px 12px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  background: linear-gradient(180deg, #0d1510, var(--color-field));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+}
+
+.genreSearchField:focus-within {
+  outline: 2px solid rgba(30, 215, 96, 0.32);
+  outline-offset: 1px;
+  border-color: var(--color-accent);
 }
 
 .selectedGenreChips {
   display: flex;
-  min-height: 32px;
   gap: 6px;
   align-items: center;
   flex-wrap: wrap;
-  overflow-x: auto;
+  max-width: 100%;
   scrollbar-width: none;
 }
 
 .selectedGenreChips::-webkit-scrollbar {
   display: none;
+}
+
+.genreSearchField input {
+  flex: 1 1 120px;
+  min-width: 96px;
+  min-height: 30px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  outline: none;
 }
 
 .genreChip {
@@ -251,7 +279,6 @@ select:disabled {
 }
 
 .clearGenresButton {
-  justify-self: start;
   min-height: 32px;
   padding: 0 12px;
   border: 1px solid var(--color-border);
@@ -275,20 +302,59 @@ select:disabled {
 .genreOption {
   display: grid;
   grid-template-columns: 18px minmax(0, 1fr) auto;
-  gap: 10px;
+  gap: 12px;
   align-items: center;
-  min-height: 48px;
-  padding: 10px 12px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-text-primary);
   border-bottom: 1px solid rgba(63, 86, 73, 0.42);
   font-size: 14px;
+  text-align: left;
 }
 
 .genreOption:last-child {
   border-bottom: 0;
 }
 
-.genreOption input {
-  margin: 0;
+.genreOption:hover,
+.genreOption:focus-visible {
+  background: rgba(29, 42, 34, 0.74);
+}
+
+.genreOption.isSelected {
+  background: rgba(21, 43, 29, 0.78);
+}
+
+.genreCheckbox {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 6px;
+  background: var(--color-surface-raised);
+}
+
+.genreCheckboxMark {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: transparent;
+  transition: background-color 120ms ease;
+}
+
+.genreCheckbox.isChecked {
+  border-color: var(--color-accent);
+  background: rgba(16, 185, 129, 0.16);
+}
+
+.genreCheckbox.isChecked .genreCheckboxMark {
+  background: var(--color-accent);
 }
 
 .genreOptionLabel {
@@ -296,17 +362,17 @@ select:disabled {
 }
 
 .genreCount {
-  display: grid;
-  justify-items: end;
-  color: var(--color-text-tertiary);
-  font-size: 11px;
-  line-height: 1.15;
-  text-transform: lowercase;
-}
-
-.genreCountValue {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  min-height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: rgba(24, 37, 28, 0.9);
   color: var(--color-text-primary);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 800;
 }
 
@@ -314,8 +380,8 @@ select:disabled {
 .genreEmptyState {
   margin: 0;
   color: var(--color-text-tertiary);
-  font-size: 13px;
-  line-height: 1.4;
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .genreEmptyState {
@@ -332,18 +398,21 @@ select:disabled {
   font-weight: 800;
 }
 
-.compactFilterButton {
-  display: inline-grid;
-  gap: 2px;
-  min-height: auto;
-  padding: 10px 12px;
-  text-align: left;
+.genreToggleButton {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-raised);
+  color: var(--color-text-primary);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
-.compactFilterValue {
-  color: var(--color-text-tertiary);
-  font-size: 12px;
-  font-weight: 700;
+.genreToggleButton.isActive {
+  border-color: var(--color-accent);
+  background: var(--color-accent-surface);
+  color: #dffce7;
+  box-shadow: 0 0 0 1px rgba(30, 215, 96, 0.18);
 }
 
 .sheetOptionList {
@@ -441,39 +510,6 @@ button:disabled {
   justify-self: start;
 }
 
-.compactTopBar {
-  position: sticky;
-  top: 0;
-  z-index: 16;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
-  padding: 10px 12px;
-  border: 1px solid rgba(63, 86, 73, 0.82);
-  border-radius: var(--radius-card);
-  background: var(--color-surface-overlay);
-  backdrop-filter: blur(14px);
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
-}
-
-.compactTopBarTitle {
-  overflow: hidden;
-  color: var(--color-text-primary);
-  font-size: 14px;
-  font-weight: 800;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.compactTopBarButton {
-  min-height: 34px;
-  padding: 0 12px;
-  border-radius: 999px;
-  font-size: 12px;
-}
-
 .resultsHeader {
   display: grid;
   gap: 12px;
@@ -520,18 +556,16 @@ button:disabled {
   min-width: 220px;
 }
 
-.resultsResetButton {
-  min-height: 40px;
-}
-
 .stickySummaryBar {
   position: sticky;
   top: 10px;
   z-index: 12;
-  display: grid;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 10px;
   margin-top: 16px;
-  padding: 12px;
+  padding: 9px 10px;
   border: 1px solid rgba(63, 86, 73, 0.86);
   border-radius: var(--radius-card);
   background: var(--color-surface-overlay);
@@ -539,49 +573,100 @@ button:disabled {
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
 }
 
-.hasCompactHeader .stickySummaryBar {
-  top: 60px;
-}
-
 .stickySummaryContent {
   display: grid;
-  gap: 6px;
+  gap: 4px;
+  flex: 1 1 auto;
   min-width: 0;
 }
 
 .stickySummaryText {
   margin: 0;
+  overflow: hidden;
   color: var(--color-text-primary);
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 800;
-  line-height: 1.3;
-}
-
-.stickySummaryIndicator {
-  display: inline-flex;
-  align-items: center;
-  justify-self: start;
-  min-height: 24px;
-  padding: 0 8px;
-  border-radius: var(--radius-pill);
-  background: var(--color-accent-surface);
-  color: #dffce7;
-  font-size: 11px;
-  font-weight: 800;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .stickySummaryActions {
   display: flex;
-  gap: 8px;
+  flex: 0 0 auto;
+  gap: 6px;
   align-items: center;
 }
 
-.stickySummaryButton,
-.stickyResetButton {
+.stickySummaryButton {
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+.stickyResetLink {
+  min-height: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.settingsField {
+  display: grid;
+  gap: 10px;
+}
+
+.settingsFieldLabel {
+  font-size: 13px;
+}
+
+.languageOptionList {
+  display: grid;
+  gap: 8px;
+}
+
+.languageOption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 46px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--color-border-strong);
+  background: linear-gradient(180deg, #0d1510, var(--color-field));
+  color: var(--color-text-primary);
+}
+
+.languageOption.isActive {
+  border-color: var(--color-accent);
+  background: var(--color-accent-surface);
+  color: #dffce7;
+}
+
+.sidebarResetButton {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.filterPanelHeaderButton {
   min-height: 34px;
   padding: 0 12px;
   border-radius: 999px;
   font-size: 12px;
+}
+
+.backToTopButton {
+  position: fixed;
+  right: 16px;
+  bottom: max(16px, env(safe-area-inset-bottom, 0px) + 12px);
+  z-index: 18;
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 999px;
+  box-shadow: 0 14px 26px rgba(0, 0, 0, 0.28);
 }
 
 .releaseList {
@@ -800,7 +885,7 @@ button:disabled {
 
 .loadingMore,
 .endState {
-  margin: 0;
+  margin: 8px 0 0;
   padding: 12px 0;
   text-align: center;
   color: var(--color-text-tertiary);
@@ -863,6 +948,15 @@ button:disabled {
   gap: 20px;
 }
 
+.settingsSheet .segmentedControlCompact {
+  width: 100%;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.settingsSheet .segmentButton {
+  min-width: 0;
+}
+
 .helpSheet {
   gap: 18px;
   max-height: min(92dvh, calc(100dvh - 8px));
@@ -901,6 +995,25 @@ button:disabled {
   color: var(--color-text-primary);
 }
 
+.sheetCloseButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border-color: var(--color-border-strong);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-raised);
+  color: var(--color-text-primary);
+}
+
+.sheetCloseButton span {
+  display: block;
+  font-size: 22px;
+  line-height: 1;
+}
+
 .fullWidthButton {
   width: 100%;
 }
@@ -919,6 +1032,7 @@ button:disabled {
 
 .detailShell {
   max-width: 1080px;
+  padding-top: 10px;
 }
 
 .backButton {
@@ -927,48 +1041,42 @@ button:disabled {
   color: var(--color-text-primary);
 }
 
-.releaseTopBar {
-  position: sticky;
-  top: 10px;
-  z-index: 12;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  padding: 10px 12px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-card);
-  background: var(--color-surface-overlay);
-  backdrop-filter: blur(18px);
-}
-
-.releaseTopBarTitle {
-  overflow: hidden;
-  color: var(--color-text-primary);
-  font-size: 14px;
-  font-weight: 800;
-  line-height: 1.2;
-  text-align: center;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.releaseTopBarAction {
+.iconBackButton {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 36px;
-  min-width: 72px;
-  padding: 0 12px;
-  text-decoration: none;
+  width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border-radius: 999px;
+  font-size: 22px;
+  line-height: 1;
 }
 
-.releaseTopBarSpacer {
-  width: 72px;
+.detailPage {
+  min-height: 100dvh;
+}
+
+.releaseTopBar {
+  position: relative;
+  top: 0;
+  z-index: 12;
+  display: grid;
+  grid-template-columns: auto;
+  align-items: center;
+  width: 100vw;
+  margin: 0 0 12px;
+  margin-left: calc(50% - 50vw);
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-overlay);
+  backdrop-filter: blur(18px);
 }
 
 .releaseDetail {
   display: grid;
   grid-template-columns: minmax(220px, 320px) 1fr;
-  gap: 28px;
+  gap: 24px;
   align-items: start;
 }
 
@@ -979,29 +1087,31 @@ button:disabled {
 
 .detailCover {
   width: 100%;
+  max-width: min(70vw, 320px);
+  max-height: 320px;
   aspect-ratio: 1;
   border-radius: 18px;
   object-fit: cover;
   box-shadow: 0 18px 46px rgba(0, 0, 0, 0.32);
 }
 
+.detailCoverPlaceholder {
+  max-width: min(54vw, 220px);
+  max-height: 220px;
+  opacity: 0.78;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.22);
+}
+
 .detailContent {
   display: grid;
-  gap: 18px;
+  gap: 14px;
 }
 
 .detailHeading {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 12px;
-}
-
-.detailTypeBadge,
-.detailMetaBadge {
-  min-height: 28px;
-  padding: 0 10px;
-  font-size: 12px;
 }
 
 .detailContent h1 {
@@ -1021,7 +1131,7 @@ button:disabled {
 .detailActions {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 0;
 }
 
 .spotifyLink {
@@ -1031,18 +1141,20 @@ button:disabled {
   text-decoration: none;
 }
 
-.detailPrimaryAction,
-.detailSecondaryAction {
-  min-width: 0;
+.detailPrimaryAction {
+  width: 100%;
+  min-width: 196px;
 }
 
-.detailPrimaryAction {
-  min-width: 196px;
+.detailMetaBadge {
+  min-height: 26px;
+  padding: 0 9px;
+  font-size: 11px;
 }
 
 .detailMetaCard {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 1fr;
   gap: 1px;
   margin: 0;
   overflow: hidden;
@@ -1082,16 +1194,13 @@ dd {
 }
 
 .detailGenreChip {
-  min-height: 34px;
-}
-
-.shownBecause {
-  margin: 0;
-  padding: 14px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-card);
-  color: var(--color-text-secondary);
-  background: var(--color-surface);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 0 10px;
+  font-size: 11px;
+  line-height: 1;
 }
 
 .aboutPage {
@@ -1195,7 +1304,11 @@ dd {
 @media (max-width: 767px) {
   .appShell {
     width: min(100% - 24px, 520px);
-    padding-top: 14px;
+    padding-top: 12px;
+  }
+
+  .detailShell {
+    padding-top: 6px;
   }
 
   .appHeader h1,
@@ -1206,7 +1319,8 @@ dd {
 
   .appHeader {
     display: grid;
-    gap: 10px;
+    gap: 8px;
+    padding-bottom: 12px;
   }
 
   .headerBrand p {
@@ -1215,35 +1329,21 @@ dd {
     -webkit-box-orient: vertical;
     overflow: hidden;
     max-width: none;
-    font-size: 15px;
-    line-height: 1.35;
+    margin-top: 4px;
+    font-size: 14px;
+    line-height: 1.3;
   }
 
   .filterPanel {
     grid-template-columns: 1fr;
-    padding: 12px;
+    gap: 10px;
+    padding: 10px;
   }
 
   .stickySummaryBar {
     top: 8px;
-    padding: 10px 12px;
-  }
-
-  .hasCompactHeader .stickySummaryBar {
-    top: 56px;
-  }
-
-  .compactFilterButton {
-    min-width: 0;
-    max-width: 172px;
-  }
-
-  .compactTopBar {
-    padding: 9px 12px;
-  }
-
-  .selectedGenreBar {
-    gap: 8px;
+    margin-top: 12px;
+    padding: 8px 10px;
   }
 
   .stateActions {
@@ -1258,6 +1358,65 @@ dd {
   .inlineFilterButton {
     display: inline-flex;
     align-items: center;
+  }
+
+  .genreToggleButton {
+    min-height: 34px;
+    padding: 0 12px;
+    font-size: 12px;
+  }
+
+  .fieldHeader,
+  .genreSelector {
+    gap: 8px;
+  }
+
+  .genreSearchRow {
+    gap: 6px;
+  }
+
+  .genreOption {
+    padding: 6px 10px;
+  }
+
+  .genreCount {
+    min-width: 24px;
+    min-height: 22px;
+    padding: 0 7px;
+    font-size: 11px;
+  }
+
+  .genreHelperText {
+    font-size: 11px;
+    line-height: 1.3;
+  }
+
+  .secondaryButton,
+  .ghostButton {
+    min-height: 36px;
+    padding: 0 12px;
+    font-size: 12px;
+  }
+
+  .clearGenresButton,
+  .stickySummaryButton,
+  .filterPanelHeaderButton {
+    min-height: 32px;
+    padding: 0 10px;
+    font-size: 11px;
+  }
+
+  .stickySummaryText {
+    font-size: 13px;
+  }
+
+  .stickyResetLink {
+    font-size: 11px;
+  }
+
+  .backToTopButton {
+    right: 12px;
+    bottom: max(12px, env(safe-area-inset-bottom, 0px) + 10px);
   }
 
   .releaseRow {
@@ -1279,45 +1438,66 @@ dd {
     font-size: 14px;
   }
 
+  .releaseList {
+    padding-top: 10px;
+  }
+
   .releaseDetail {
     grid-template-columns: 1fr;
-    gap: 18px;
+    gap: 10px;
   }
 
   .detailCover {
-    width: min(70vw, 360px);
-    max-width: 100%;
+    width: min(42vw, 160px);
+    max-height: 320px;
     justify-self: center;
   }
 
+  .detailCoverPlaceholder {
+    width: min(34vw, 128px);
+    max-width: min(44vw, 156px);
+    max-height: 156px;
+  }
+
   .detailContent {
-    gap: 16px;
+    gap: 10px;
   }
 
   .detailHeading {
-    align-items: flex-start;
+    align-items: flex-end;
   }
 
   .detailContent h1 {
-    font-size: 28px;
+    font-size: 22px;
+    line-height: 1.08;
   }
 
   .detailArtist {
-    font-size: 16px;
+    font-size: 15px;
   }
 
   .detailActions {
     display: grid;
     grid-template-columns: 1fr;
-  }
-
-  .detailPrimaryAction,
-  .detailSecondaryAction {
-    width: 100%;
+    align-items: stretch;
+    gap: 0;
   }
 
   .detailMetaCard {
     grid-template-columns: 1fr;
+  }
+
+  .detailMetaItem {
+    padding: 12px;
+  }
+
+  .detailSectionLabel {
+    margin-bottom: 8px;
+  }
+
+  .detailGenreChip {
+    min-height: 26px;
+    padding: 0 9px;
   }
 
   .inlineError {
@@ -1342,6 +1522,12 @@ dd {
 
   .languageSwitcher {
     min-width: 112px;
+  }
+
+  .sidebarResetButton {
+    width: auto;
+    margin-top: 0;
+    justify-self: start;
   }
 
   .filterPanel {
