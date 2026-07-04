@@ -69,6 +69,8 @@ export type CompleteSyncTaskInput = {
   priority?: number;
   wasSplit?: boolean;
   requestCount?: number;
+  artistCacheHits?: number;
+  artistRequestsSaved?: number;
 };
 
 export type SyncTaskRepository = {

@@ -1,4 +1,5 @@
 import type { FetchFreshReleasesFromSpotifyOptions, SpotifyApiAdapterConfig } from '../spotify/spotifyApiAdapter';
+import type { SpotifyRequestSchedulerConfig } from '../spotify/spotifyRequestScheduler';
 
 export type SyncEnv = Record<string, string | undefined>;
 
@@ -12,24 +13,37 @@ const DEFAULT_LIMIT = 50;
 const DEFAULT_PAGES = 1;
 const MAX_LIMIT = 50;
 const MAX_PAGES = 10;
-const DEFAULT_MIN_REQUEST_INTERVAL_MS = 10_000;
-const MAX_MIN_REQUEST_INTERVAL_MS = 60_000;
 
 export function getReleaseSyncConfigFromEnv(env: SyncEnv): ReleaseSyncConfig {
   const clientId = getRequiredEnv(env, 'SPOTIFY_CLIENT_ID');
   const clientSecret = getRequiredEnv(env, 'SPOTIFY_CLIENT_SECRET');
+  const minRequestIntervalMs = normalizeOptionalNonNegativeInteger(env.SPOTIFY_API_MIN_REQUEST_INTERVAL_MS);
 
   return {
     spotify: {
       clientId,
       clientSecret,
-      minRequestIntervalMs: normalizeMinRequestIntervalMs(env.SPOTIFY_API_MIN_REQUEST_INTERVAL_MS),
+      minRequestIntervalMs,
+      requestSchedulerConfig: getSpotifyRequestSchedulerConfigFromEnv(env),
     },
     fetchOptions: {
       market: normalizeMarket(env.SPOTIFY_MARKET),
       limit: normalizeLimit(env.SPOTIFY_SYNC_LIMIT),
       pages: normalizePages(env.SPOTIFY_SYNC_PAGES),
     },
+  };
+}
+
+export function getSpotifyRequestSchedulerConfigFromEnv(env: SyncEnv): SpotifyRequestSchedulerConfig {
+  return {
+    initialRps: normalizePositiveNumber(env.SPOTIFY_INITIAL_RPS, 1, 'SPOTIFY_INITIAL_RPS'),
+    maxRps: normalizePositiveNumber(env.SPOTIFY_MAX_RPS, 2, 'SPOTIFY_MAX_RPS'),
+    minRps: normalizePositiveNumber(env.SPOTIFY_MIN_RPS, 0.1, 'SPOTIFY_MIN_RPS'),
+    maxConcurrency: normalizePositiveInteger(env.SPOTIFY_MAX_CONCURRENCY, 1, 'SPOTIFY_MAX_CONCURRENCY'),
+    rateIncreaseStep: normalizePositiveNumber(env.SPOTIFY_RATE_INCREASE_STEP, 0.2, 'SPOTIFY_RATE_INCREASE_STEP'),
+    rateDecreaseFactor: normalizeFactor(env.SPOTIFY_RATE_DECREASE_FACTOR, 0.5, 'SPOTIFY_RATE_DECREASE_FACTOR'),
+    stableWindowMs: normalizeNonNegativeInteger(env.SPOTIFY_RATE_STABLE_WINDOW_MS, 300_000, 'SPOTIFY_RATE_STABLE_WINDOW_MS'),
+    retryJitterMs: normalizeNonNegativeInteger(env.SPOTIFY_RETRY_JITTER_MS, 500, 'SPOTIFY_RETRY_JITTER_MS'),
   };
 }
 
@@ -77,9 +91,9 @@ function normalizePages(value: string | undefined): number {
   return Math.min(parsed, MAX_PAGES);
 }
 
-function normalizeMinRequestIntervalMs(value: string | undefined): number {
+function normalizeOptionalNonNegativeInteger(value: string | undefined): number | undefined {
   if (!value) {
-    return DEFAULT_MIN_REQUEST_INTERVAL_MS;
+    return undefined;
   }
 
   const parsed = Number(value);
@@ -88,5 +102,61 @@ function normalizeMinRequestIntervalMs(value: string | undefined): number {
     throw new Error('SPOTIFY_API_MIN_REQUEST_INTERVAL_MS must be a non-negative integer.');
   }
 
-  return Math.min(parsed, MAX_MIN_REQUEST_INTERVAL_MS);
+  return parsed;
+}
+
+function normalizeNonNegativeInteger(value: string | undefined, fallback: number, name: string): number {
+  if (!value) {
+    return fallback;
+  }
+
+  const parsed = Number(value);
+
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new Error(`${name} must be a non-negative integer.`);
+  }
+
+  return parsed;
+}
+
+function normalizePositiveInteger(value: string | undefined, fallback: number, name: string): number {
+  if (!value) {
+    return fallback;
+  }
+
+  const parsed = Number(value);
+
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new Error(`${name} must be a positive integer.`);
+  }
+
+  return parsed;
+}
+
+function normalizePositiveNumber(value: string | undefined, fallback: number, name: string): number {
+  if (!value) {
+    return fallback;
+  }
+
+  const parsed = Number(value);
+
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`${name} must be a positive number.`);
+  }
+
+  return parsed;
+}
+
+function normalizeFactor(value: string | undefined, fallback: number, name: string): number {
+  if (!value) {
+    return fallback;
+  }
+
+  const parsed = Number(value);
+
+  if (!Number.isFinite(parsed) || parsed <= 0 || parsed > 1) {
+    throw new Error(`${name} must be greater than 0 and at most 1.`);
+  }
+
+  return parsed;
 }

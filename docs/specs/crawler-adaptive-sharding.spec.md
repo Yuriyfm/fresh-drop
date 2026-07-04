@@ -91,7 +91,14 @@ Search shard хранится в persistent storage и представляет 
 * `tag:new album:a` ... `tag:new album:z`
 * `tag:new artist:a` ... `tag:new artist:z`
 
-Для MVP используется текущий `market` приложения.
+Для MVP используется текущий список markets приложения.
+
+Для multi-market crawling:
+
+* seed query создаются для каждого market из `SPOTIFY_MARKETS`;
+* uniqueness задач остаётся по `(source, query, market, offset_value)`;
+* все markets делят один общий Spotify rate limiter;
+* структура конфига должна позволять позже добавить tiered markets, но для MVP достаточно линейного списка markets.
 
 ## Выполнение shard
 
@@ -100,9 +107,9 @@ Worker берёт shard с максимальным `priority`, где `status =
 Параметры запроса:
 
 * `type=album`
-* `limit=50`
+* `limit` берётся из `SPOTIFY_SEARCH_LIMIT`
 * `offset=0`
-* `max_safe_offset=950`
+* `max_safe_offset` берётся из `SPOTIFY_MAX_SAFE_OFFSET`
 
 После каждой страницы нужно:
 
@@ -113,7 +120,7 @@ Worker берёт shard с максимальным `priority`, где `status =
 
 Чтение shard прекращается, если:
 
-* `offset >= 950`;
+* `offset >= SPOTIFY_MAX_SAFE_OFFSET`;
 * `items.length === 0`;
 * `offset + limit >= spotify_total`;
 * получен `429`;
@@ -123,7 +130,7 @@ Worker берёт shard с максимальным `priority`, где `status =
 
 Если после выполнения:
 
-* `spotify_total >= 950`;
+* `spotify_total >= SPOTIFY_SPLIT_TOTAL_THRESHOLD`;
 * `depth < MAX_DEPTH`
 
 то shard считается saturated и должен быть дроблён на child query.
@@ -160,7 +167,7 @@ Worker берёт shard с максимальным `priority`, где `status =
 
 то shard тоже может быть помечен как `exhausted`.
 
-Но если `spotify_total >= 950`, shard сначала должен быть рассмотрен на дробление.
+Но если `spotify_total >= SPOTIFY_SPLIT_TOTAL_THRESHOLD`, shard сначала должен быть рассмотрен на дробление.
 
 ## Priority
 
@@ -183,6 +190,16 @@ priority = 50
 
 Где:
 
-* `saturated_bonus = 20`, если `spotify_total >= 950`
+* `saturated_bonus = 20`, если `spotify_total >= SPOTIFY_SPLIT_TOTAL_THRESHOLD`
 
 Формула не обязана быть идеально точной. Цель — держать выше полезные и насыщенные shard-ы и не тратить batch на мёртвые query.
+
+Рекомендуемые env для MVP:
+
+```text
+SPOTIFY_SEARCH_LIMIT=10
+SPOTIFY_MAX_SAFE_OFFSET=1000
+SPOTIFY_SPLIT_TOTAL_THRESHOLD=800
+```
+
+Crawler должен начинать дробление раньше безопасного потолка offset, чтобы не терять выдачу на краю лимита Spotify Search API.

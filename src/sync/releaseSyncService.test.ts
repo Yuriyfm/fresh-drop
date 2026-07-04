@@ -122,6 +122,8 @@ describe('createReleaseSyncService', () => {
     const repository = {
       saveReleases: vi.fn().mockResolvedValue({ saved: 1 }),
       findExistingReleaseIds: vi.fn().mockResolvedValue(new Set()),
+      findCachedArtists: vi.fn().mockResolvedValue(new Map()),
+      saveReleaseMarkets: vi.fn(),
       findReleases: vi.fn(),
       listActiveGenres: vi.fn().mockResolvedValue([]),
       cleanupOldReleases: vi.fn().mockResolvedValue({ deleted: 3 }),
@@ -153,6 +155,8 @@ describe('createReleaseSyncService', () => {
     const repository = {
       saveReleases: vi.fn().mockResolvedValue({ saved: 1 }),
       findExistingReleaseIds: vi.fn().mockResolvedValue(new Set()),
+      findCachedArtists: vi.fn().mockResolvedValue(new Map()),
+      saveReleaseMarkets: vi.fn(),
       findReleases: vi.fn(),
       listActiveGenres: vi.fn().mockResolvedValue([]),
       cleanupOldReleases: vi.fn().mockRejectedValue(new Error('Cleanup failed.')),
@@ -191,6 +195,8 @@ describe('createReleaseSyncService', () => {
     const repository = {
       saveReleases: vi.fn(),
       findExistingReleaseIds: vi.fn().mockResolvedValue(new Set()),
+      findCachedArtists: vi.fn().mockResolvedValue(new Map()),
+      saveReleaseMarkets: vi.fn(),
       findReleases: vi.fn(),
       listActiveGenres: vi.fn().mockResolvedValue([]),
       cleanupOldReleases: vi.fn(),

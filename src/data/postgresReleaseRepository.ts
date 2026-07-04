@@ -22,6 +22,7 @@ import {
   type ReleasePage,
   type ReleaseQuery,
   type ReleaseRepository,
+  type SaveReleasesOptions,
 } from './releaseRepository';
 
 type PostgresReleaseRepositoryOptions = {
@@ -51,6 +52,14 @@ type DbArtist = {
   is_primary: boolean;
 };
 
+type ArtistRow = {
+  spotify_id: string;
+  name: string;
+  genres: string[];
+  country: string;
+  popularity: number | null;
+};
+
 type IdRow = {
   id: string;
 };
@@ -77,7 +86,7 @@ export class PostgresReleaseRepository implements ReleaseRepository {
     this.pool = options.pool;
   }
 
-  async saveReleases(releases: Release[]): Promise<{ saved: number }> {
+  async saveReleases(releases: Release[], options: SaveReleasesOptions = {}): Promise<{ saved: number }> {
     if (releases.length === 0) {
       return { saved: 0 };
     }
@@ -88,7 +97,11 @@ export class PostgresReleaseRepository implements ReleaseRepository {
       await client.query('begin');
 
       for (const release of releases) {
-        await this.saveRelease(client, release);
+        const releaseId = await this.saveRelease(client, release);
+
+        if (options.discoveredMarket) {
+          await upsertReleaseMarket(client, releaseId, options.discoveredMarket, options.discoveredAt ?? new Date());
+        }
       }
 
       await client.query('commit');
@@ -115,6 +128,47 @@ export class PostgresReleaseRepository implements ReleaseRepository {
     );
 
     return new Set(result.rows.map((row) => row.spotify_id));
+  }
+
+  async findCachedArtists(ids: string[], options: { maxAgeDays: number; now?: Date }): Promise<Map<string, ArtistSummary>> {
+    const uniqueIds = Array.from(new Set(ids.filter((id) => id.trim().length > 0)));
+
+    if (uniqueIds.length === 0) {
+      return new Map();
+    }
+
+    const cutoff = new Date((options.now ?? new Date()).getTime() - options.maxAgeDays * 24 * 60 * 60 * 1000);
+    const result = await this.pool.query<ArtistRow>(
+      `
+        select spotify_id, name, genres, country, popularity
+        from artists
+        where spotify_id = any($1::text[])
+          and updated_at >= $2
+      `,
+      [uniqueIds, cutoff],
+    );
+
+    return new Map(result.rows.map((row) => [row.spotify_id, mapArtistRow(row)]));
+  }
+
+  async saveReleaseMarkets(ids: string[], market: string, seenAt = new Date()): Promise<void> {
+    const uniqueIds = Array.from(new Set(ids.filter((id) => id.trim().length > 0)));
+
+    if (uniqueIds.length === 0) {
+      return;
+    }
+
+    await this.pool.query(
+      `
+        insert into release_markets (release_id, market, first_seen_at, last_seen_at)
+        select id, $2, $3, $3
+        from releases
+        where spotify_id = any($1::text[])
+        on conflict (release_id, market) do update set
+          last_seen_at = excluded.last_seen_at
+      `,
+      [uniqueIds, market, seenAt],
+    );
   }
 
   async findReleases(query: ReleaseQuery): Promise<ReleasePage> {
@@ -277,7 +331,7 @@ export class PostgresReleaseRepository implements ReleaseRepository {
     }
   }
 
-  private async saveRelease(client: PoolClient, release: Release): Promise<void> {
+  private async saveRelease(client: PoolClient, release: Release): Promise<string> {
     const releaseResult = await client.query<IdRow>(
       `
         insert into releases (
@@ -356,6 +410,8 @@ export class PostgresReleaseRepository implements ReleaseRepository {
     }
 
     await incrementGenreCounts(client, releaseGenres);
+
+    return releaseId;
   }
 
   private async saveArtist(client: PoolClient, artist: ArtistSummary): Promise<string> {
@@ -503,6 +559,16 @@ function mapArtist(artist: DbArtist): ArtistSummary {
   };
 }
 
+function mapArtistRow(row: ArtistRow): ArtistSummary {
+  return {
+    id: row.spotify_id,
+    name: row.name,
+    genres: row.genres,
+    country: row.country,
+    popularity: row.popularity,
+  };
+}
+
 async function decrementGenreCountsForReleaseIds(client: PoolClient, releaseIds: string[]): Promise<void> {
   if (releaseIds.length === 0) {
     return;
@@ -539,6 +605,18 @@ async function incrementGenreCounts(client: PoolClient, genres: string[]): Promi
       [genre],
     );
   }
+}
+
+async function upsertReleaseMarket(client: PoolClient, releaseId: string, market: string, seenAt: Date): Promise<void> {
+  await client.query(
+    `
+      insert into release_markets (release_id, market, first_seen_at, last_seen_at)
+      values ($1::bigint, $2, $3, $3)
+      on conflict (release_id, market) do update set
+        last_seen_at = excluded.last_seen_at
+    `,
+    [releaseId, market, seenAt],
+  );
 }
 
 function getDatabaseReleaseDate(release: Release): string | null {

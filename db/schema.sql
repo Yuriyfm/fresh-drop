@@ -38,6 +38,14 @@ create table if not exists release_genres (
   primary key (release_id, genre)
 );
 
+create table if not exists release_markets (
+  release_id bigint not null references releases(id) on delete cascade,
+  market text not null check (length(trim(market)) > 0),
+  first_seen_at timestamptz not null default now(),
+  last_seen_at timestamptz not null default now(),
+  primary key (release_id, market)
+);
+
 create table if not exists genre_counts (
   genre text primary key check (length(trim(genre)) > 0),
   release_count integer not null default 0 check (release_count >= 0),
@@ -149,6 +157,7 @@ create index if not exists idx_releases_country_normalized on releases(lower(tri
 create index if not exists idx_releases_popularity on releases(popularity);
 create index if not exists idx_artists_genres on artists using gin(genres);
 create index if not exists idx_release_genres_genre on release_genres(genre);
+create index if not exists idx_release_markets_market on release_markets(market, last_seen_at desc);
 create index if not exists idx_genre_counts_release_count on genre_counts(release_count desc, genre);
 create index if not exists idx_release_artists_release_id on release_artists(release_id);
 create index if not exists idx_release_artists_artist_id on release_artists(artist_id);

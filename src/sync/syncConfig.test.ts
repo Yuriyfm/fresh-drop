@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { getReleaseSyncConfigFromEnv } from './syncConfig';
 
 describe('getReleaseSyncConfigFromEnv', () => {
-  it('reads Spotify credentials and sync options from env', () => {
+  it('reads Spotify credentials, sync options, and adaptive scheduler settings from env', () => {
     expect(
       getReleaseSyncConfigFromEnv({
         SPOTIFY_CLIENT_ID: 'client-id',
@@ -10,12 +10,31 @@ describe('getReleaseSyncConfigFromEnv', () => {
         SPOTIFY_MARKET: 'de',
         SPOTIFY_SYNC_LIMIT: '25',
         SPOTIFY_SYNC_PAGES: '3',
+        SPOTIFY_INITIAL_RPS: '1.5',
+        SPOTIFY_MAX_RPS: '3',
+        SPOTIFY_MIN_RPS: '0.2',
+        SPOTIFY_MAX_CONCURRENCY: '2',
+        SPOTIFY_RATE_INCREASE_STEP: '0.3',
+        SPOTIFY_RATE_DECREASE_FACTOR: '0.4',
+        SPOTIFY_RATE_STABLE_WINDOW_MS: '600000',
+        SPOTIFY_RETRY_JITTER_MS: '750',
+        SPOTIFY_API_MIN_REQUEST_INTERVAL_MS: '250',
       }),
     ).toEqual({
       spotify: {
         clientId: 'client-id',
         clientSecret: 'client-secret',
-        minRequestIntervalMs: 10000,
+        minRequestIntervalMs: 250,
+        requestSchedulerConfig: {
+          initialRps: 1.5,
+          maxRps: 3,
+          minRps: 0.2,
+          maxConcurrency: 2,
+          rateIncreaseStep: 0.3,
+          rateDecreaseFactor: 0.4,
+          stableWindowMs: 600000,
+          retryJitterMs: 750,
+        },
       },
       fetchOptions: {
         market: 'DE',
@@ -25,23 +44,34 @@ describe('getReleaseSyncConfigFromEnv', () => {
     });
   });
 
-  it('uses safe defaults for market and limit', () => {
+  it('uses adaptive defaults and leaves legacy request interval disabled by default', () => {
     expect(
       getReleaseSyncConfigFromEnv({
         SPOTIFY_CLIENT_ID: 'client-id',
         SPOTIFY_CLIENT_SECRET: 'client-secret',
-      }).fetchOptions,
+      }),
     ).toEqual({
-      market: 'US',
-      limit: 50,
-      pages: 1,
+      spotify: {
+        clientId: 'client-id',
+        clientSecret: 'client-secret',
+        minRequestIntervalMs: undefined,
+        requestSchedulerConfig: {
+          initialRps: 1,
+          maxRps: 2,
+          minRps: 0.1,
+          maxConcurrency: 1,
+          rateIncreaseStep: 0.2,
+          rateDecreaseFactor: 0.5,
+          stableWindowMs: 300000,
+          retryJitterMs: 500,
+        },
+      },
+      fetchOptions: {
+        market: 'US',
+        limit: 50,
+        pages: 1,
+      },
     });
-    expect(
-      getReleaseSyncConfigFromEnv({
-        SPOTIFY_CLIENT_ID: 'client-id',
-        SPOTIFY_CLIENT_SECRET: 'client-secret',
-      }).spotify.minRequestIntervalMs,
-    ).toBe(10000);
   });
 
   it('requires Spotify credentials', () => {
@@ -87,22 +117,22 @@ describe('getReleaseSyncConfigFromEnv', () => {
     ).toThrow('SPOTIFY_SYNC_PAGES must be a positive integer.');
   });
 
-  it('reads and validates the Spotify request interval', () => {
-    expect(
+  it('validates scheduler and legacy interval env values', () => {
+    expect(() =>
       getReleaseSyncConfigFromEnv({
         SPOTIFY_CLIENT_ID: 'client-id',
         SPOTIFY_CLIENT_SECRET: 'client-secret',
-        SPOTIFY_API_MIN_REQUEST_INTERVAL_MS: '1500',
-      }).spotify.minRequestIntervalMs,
-    ).toBe(1500);
+        SPOTIFY_INITIAL_RPS: '0',
+      }),
+    ).toThrow('SPOTIFY_INITIAL_RPS must be a positive number.');
 
-    expect(
+    expect(() =>
       getReleaseSyncConfigFromEnv({
         SPOTIFY_CLIENT_ID: 'client-id',
         SPOTIFY_CLIENT_SECRET: 'client-secret',
-        SPOTIFY_API_MIN_REQUEST_INTERVAL_MS: '999999',
-      }).spotify.minRequestIntervalMs,
-    ).toBe(60000);
+        SPOTIFY_RATE_DECREASE_FACTOR: '2',
+      }),
+    ).toThrow('SPOTIFY_RATE_DECREASE_FACTOR must be greater than 0 and at most 1.');
 
     expect(() =>
       getReleaseSyncConfigFromEnv({

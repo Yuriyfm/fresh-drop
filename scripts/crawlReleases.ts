@@ -18,12 +18,16 @@ async function main(): Promise<void> {
     const tasks = new PostgresSyncTaskRepository({ pool });
 
     console.info(
-      `Starting release crawler: market=${crawlerConfig.market}` +
+      `Starting release crawler: markets=${crawlerConfig.markets.join(',')}` +
         ` batch=${crawlerConfig.batchSize}` +
-        ` queries=${crawlerConfig.searchSeeds.length}`,
+        ` queries=${crawlerConfig.searchSeeds.length}` +
+        ` searchLimit=${crawlerConfig.searchLimit}` +
+        ` splitTotalThreshold=${crawlerConfig.splitTotalThreshold}`,
     );
 
     const result = await runReleaseCrawler(spotify, releases, tasks, crawlerConfig);
+
+    const schedulerState = spotify.getRequestSchedulerState();
 
     console.info(
       `Release crawler success:` +
@@ -37,13 +41,15 @@ async function main(): Promise<void> {
         ` saved=${result.itemsSaved}` +
         ` deleted=${result.itemsDeleted}` +
         ` rateLimited=${result.stoppedDueToRateLimit}` +
-        ` retryAt=${result.retryAt?.toISOString() ?? 'n/a'}`,
+        ` retryAt=${result.retryAt?.toISOString() ?? 'n/a'}` +
+        ` currentRps=${schedulerState.currentRps.toFixed(2)}`,
     );
 
     for (const task of result.taskSummaries) {
       console.info(
         `Crawler task:` +
           ` query="${task.query}"` +
+          ` market=${task.market}` +
           ` source=${task.source}` +
           ` family=${task.family ?? 'n/a'}` +
           ` token=${task.token ?? 'n/a'}` +
@@ -59,6 +65,8 @@ async function main(): Promise<void> {
           ` duplicateRate=${task.duplicateRate.toFixed(4)}` +
           ` emptyPages=${task.emptyPages}` +
           ` avgLatencyMs=${task.avgLatencyMs ?? 'n/a'}` +
+          ` artistCacheHits=${task.artistCacheHits}` +
+          ` artistRequestsSaved=${task.artistRequestsSaved}` +
           ` priority=${task.priority}` +
           ` split=${task.wasSplit}` +
           ` childTasksInserted=${task.childTasksInserted}` +

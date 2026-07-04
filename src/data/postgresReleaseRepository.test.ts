@@ -112,6 +112,48 @@ describeWithPostgres('PostgresReleaseRepository', () => {
     await expect(repository.findExistingReleaseIds(['spotify-2', 'missing', 'spotify-2'])).resolves.toEqual(new Set(['spotify-2']));
   });
 
+  it('reuses fresh artists from the cache and tracks discovery markets', async () => {
+    const artist = makeArtist({ id: 'artist-cache', genres: ['Ambient'] });
+
+    await repository.saveReleases([
+      makeRelease({
+        id: 'spotify-cache',
+        artists: [artist],
+        primaryArtist: artist,
+      }),
+    ], {
+      discoveredMarket: 'US',
+      discoveredAt: new Date('2026-07-01T12:00:00.000Z'),
+    });
+
+    await repository.saveReleaseMarkets(['spotify-cache'], 'DE', new Date('2026-07-02T12:00:00.000Z'));
+
+    await expect(repository.findCachedArtists(['artist-cache', 'missing'], {
+      maxAgeDays: 30,
+      now: new Date('2026-07-03T12:00:00.000Z'),
+    })).resolves.toEqual(new Map([
+      ['artist-cache', {
+        id: 'artist-cache',
+        name: artist.name,
+        genres: ['ambient'],
+        country: 'unknown',
+        popularity: 70,
+      }],
+    ]));
+
+    const markets = await pool.query<{ market: string }>(
+      `
+        select rm.market
+        from release_markets rm
+        join releases r on r.id = rm.release_id
+        where r.spotify_id = 'spotify-cache'
+        order by rm.market asc
+      `,
+    );
+
+    expect(markets.rows.map((row) => row.market)).toEqual(['DE', 'US']);
+  });
+
   it('applies SQL filters, sorting, and pagination before returning releases', async () => {
     const swedishMetalArtist = makeArtist({ id: 'artist-metal', genres: ['Death Metal'], country: 'SE', popularity: 78 });
     const popArtist = makeArtist({ id: 'artist-pop', genres: ['Pop'], country: 'SE', popularity: 82 });

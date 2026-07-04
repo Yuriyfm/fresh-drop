@@ -1,5 +1,6 @@
 import type { Release } from '../domain/release';
-import { mapSpotifyAlbumToRelease } from './mapSpotifyAlbum';
+import { enrichSpotifyAlbumArtists, mapSpotifyAlbumToRelease } from './mapSpotifyAlbum';
+import { SpotifyRequestScheduler, type SpotifyRequestSchedulerConfig } from './spotifyRequestScheduler';
 import type {
   SpotifyAlbumDto,
   SpotifyAlbumsPageResponseDto,
@@ -13,6 +14,8 @@ const SPOTIFY_ACCOUNTS_URL = 'https://accounts.spotify.com/api/token';
 const SPOTIFY_API_URL = 'https://api.spotify.com/v1';
 const MAX_SEARCH_LIMIT = 50;
 const MAX_ARTIST_IDS_PER_REQUEST = 50;
+const MAX_REQUEST_RETRIES = 3;
+const MAX_ARTIST_FETCH_RETRIES = 3;
 
 type FetchLike = typeof fetch;
 
@@ -20,6 +23,8 @@ export type SpotifyApiAdapterConfig = {
   clientId: string;
   clientSecret: string;
   minRequestIntervalMs?: number;
+  requestScheduler?: SpotifyRequestScheduler;
+  requestSchedulerConfig?: Omit<SpotifyRequestSchedulerConfig, 'nowFn' | 'sleepFn'>;
   fetchFn?: FetchLike;
   nowFn?: () => number;
   sleepFn?: (delayMs: number) => Promise<void>;
@@ -43,6 +48,19 @@ export type FetchSpotifyArtistAlbumsPageOptions = {
   limit?: number;
   market?: string;
   offset?: number;
+};
+
+export type SpotifyReleaseSearchAlbumsPage = {
+  albums: SpotifyAlbumDto[];
+  total: number | null;
+  nextOffset: number | null;
+  requestCount: number;
+};
+
+export type SpotifyArtistsByIdResult = {
+  artistsById: Map<string, SpotifyArtistDto>;
+  retryAfterSeconds: number | null;
+  requestCount: number;
 };
 
 export type SpotifyReleasePage = {
@@ -77,34 +95,42 @@ export class SpotifyApiAdapter {
   private readonly clientId: string;
   private readonly clientSecret: string;
   private readonly fetchFn: FetchLike;
-  private readonly minRequestIntervalMs: number;
   private readonly nowFn: () => number;
   private readonly sleepFn: (delayMs: number) => Promise<void>;
+  private readonly requestScheduler: SpotifyRequestScheduler;
   private token: { value: string; expiresAt: number } | null = null;
-  private nextRequestAt = 0;
 
   constructor(config: SpotifyApiAdapterConfig) {
     this.clientId = config.clientId;
     this.clientSecret = config.clientSecret;
     this.fetchFn = config.fetchFn ?? fetch;
-    this.minRequestIntervalMs = normalizeMinRequestIntervalMs(config.minRequestIntervalMs);
     this.nowFn = config.nowFn ?? Date.now;
     this.sleepFn = config.sleepFn ?? sleep;
+    this.requestScheduler = config.requestScheduler ?? new SpotifyRequestScheduler({
+      ...config.requestSchedulerConfig,
+      minRequestIntervalMs: normalizeMinRequestIntervalMs(config.minRequestIntervalMs),
+      nowFn: this.nowFn,
+      sleepFn: this.sleepFn,
+    });
   }
 
   async getAppAccessToken(counter?: RequestCounter): Promise<string> {
-    if (this.token && this.token.expiresAt > Date.now()) {
+    if (this.token && this.token.expiresAt > this.nowFn()) {
       return this.token.value;
     }
 
-    const response = await this.request(SPOTIFY_ACCOUNTS_URL, {
-      method: 'POST',
-      headers: {
-        Authorization: `Basic ${encodeBasicAuth(this.clientId, this.clientSecret)}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
+    const response = await this.request(
+      SPOTIFY_ACCOUNTS_URL,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Basic ${encodeBasicAuth(this.clientId, this.clientSecret)}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({ grant_type: 'client_credentials' }),
       },
-      body: new URLSearchParams({ grant_type: 'client_credentials' }),
-    }, counter);
+      counter,
+    );
 
     const token = (await response.json()) as SpotifyTokenResponseDto;
 
@@ -114,7 +140,7 @@ export class SpotifyApiAdapter {
 
     this.token = {
       value: token.access_token,
-      expiresAt: Date.now() + Math.max(token.expires_in - 60, 0) * 1000,
+      expiresAt: this.nowFn() + Math.max(token.expires_in - 60, 0) * 1000,
     };
 
     return token.access_token;
@@ -166,12 +192,47 @@ export class SpotifyApiAdapter {
       return [];
     }
 
-    const { artistsById } = await this.fetchArtistsById(token, albums);
+    const { artistsById } = await this.fetchArtistsByIdsWithToken(
+      token,
+      getAlbumArtistIds(albums),
+      undefined,
+      MAX_ARTIST_FETCH_RETRIES,
+    );
 
     return albums
-      .map((album) => enrichAlbumArtists(album, artistsById))
+      .map((album) => enrichSpotifyAlbumArtists(album, artistsById))
       .map(mapSpotifyAlbumToRelease)
       .filter((release): release is Release => release !== null);
+  }
+
+  async fetchReleaseSearchAlbumsPage(options: FetchSpotifyReleaseSearchPageOptions): Promise<SpotifyReleaseSearchAlbumsPage> {
+    const requestCounter: RequestCounter = { count: 0 };
+    const token = await this.getAppAccessToken(requestCounter);
+    const limit = clampSearchLimit(options.limit ?? MAX_SEARCH_LIMIT);
+    const offset = Math.max(Math.trunc(options.offset ?? 0), 0);
+    const searchUrl = new URL(`${SPOTIFY_API_URL}/search`);
+
+    searchUrl.searchParams.set('q', options.query);
+    searchUrl.searchParams.set('type', 'album');
+    searchUrl.searchParams.set('limit', String(limit));
+    searchUrl.searchParams.set('offset', String(offset));
+
+    if (options.market) {
+      searchUrl.searchParams.set('market', options.market);
+    }
+
+    const response = await this.request(searchUrl.toString(), {
+      headers: { Authorization: `Bearer ${token}` },
+    }, requestCounter);
+    const data = (await response.json()) as SpotifySearchAlbumsResponseDto;
+    const albums = data.albums?.items ?? [];
+
+    return {
+      albums,
+      total: typeof data.albums?.total === 'number' ? data.albums.total : null,
+      nextOffset: data.albums?.next && albums.length > 0 ? offset + limit : null,
+      requestCount: requestCounter.count,
+    };
   }
 
   async fetchReleaseSearchPage(options: FetchSpotifyReleaseSearchPageOptions): Promise<SpotifyReleasePage> {
@@ -195,7 +256,6 @@ export class SpotifyApiAdapter {
     }, requestCounter);
     const data = (await response.json()) as SpotifySearchAlbumsResponseDto;
     const albums = data.albums?.items ?? [];
-
     const mapped = await this.mapAlbumsToReleases(token, albums, requestCounter);
 
     return {
@@ -227,7 +287,6 @@ export class SpotifyApiAdapter {
     }, requestCounter);
     const data = (await response.json()) as SpotifyAlbumsPageResponseDto;
     const albums = data.items ?? [];
-
     const mapped = await this.mapAlbumsToReleases(token, albums, requestCounter);
 
     return {
@@ -239,38 +298,45 @@ export class SpotifyApiAdapter {
     };
   }
 
-  private async fetchArtistsById(token: string, albums: SpotifyAlbumDto[], counter?: RequestCounter): Promise<{
-    artistsById: Map<string, SpotifyArtistDto>;
-    retryAfterSeconds: number | null;
-  }> {
-    const artistIds = Array.from(
-      new Set(
-        albums
-          .flatMap((album) => album.artists ?? [])
-          .map((artist) => artist.id)
-          .filter((id): id is string => Boolean(id)),
-      ),
-    );
+  async fetchArtistsByIds(artistIds: string[]): Promise<SpotifyArtistsByIdResult> {
+    const requestCounter: RequestCounter = { count: 0 };
+    const token = await this.getAppAccessToken(requestCounter);
 
-    if (artistIds.length === 0) {
+    return this.fetchArtistsByIdsWithToken(token, artistIds, requestCounter);
+  }
+
+  getRequestSchedulerState(): ReturnType<SpotifyRequestScheduler['getState']> {
+    return this.requestScheduler.getState();
+  }
+
+  private async fetchArtistsByIdsWithToken(
+    token: string,
+    artistIds: string[],
+    counter?: RequestCounter,
+    maxRetries = MAX_REQUEST_RETRIES,
+  ): Promise<SpotifyArtistsByIdResult> {
+    const uniqueArtistIds = Array.from(new Set(artistIds.filter((id) => id.trim().length > 0)));
+
+    if (uniqueArtistIds.length === 0) {
       return {
         artistsById: new Map(),
         retryAfterSeconds: null,
+        requestCount: counter?.count ?? 0,
       };
     }
 
     const artistsById = new Map<string, SpotifyArtistDto>();
     let retryAfterSeconds: number | null = null;
 
-    for (let index = 0; index < artistIds.length; index += MAX_ARTIST_IDS_PER_REQUEST) {
-      const ids = artistIds.slice(index, index + MAX_ARTIST_IDS_PER_REQUEST);
+    for (let index = 0; index < uniqueArtistIds.length; index += MAX_ARTIST_IDS_PER_REQUEST) {
+      const ids = uniqueArtistIds.slice(index, index + MAX_ARTIST_IDS_PER_REQUEST);
       const url = new URL(`${SPOTIFY_API_URL}/artists`);
       url.searchParams.set('ids', ids.join(','));
 
       try {
         const response = await this.request(url.toString(), {
           headers: { Authorization: `Bearer ${token}` },
-        }, counter);
+        }, counter, maxRetries);
         const data = (await response.json()) as SpotifyArtistsResponseDto;
 
         for (const artist of data.artists ?? []) {
@@ -293,13 +359,15 @@ export class SpotifyApiAdapter {
     return {
       artistsById,
       retryAfterSeconds,
+      requestCount: counter?.count ?? 0,
     };
   }
 
-  private async mapAlbumsToReleases(token: string, albums: SpotifyAlbumDto[], counter?: RequestCounter): Promise<{
-    releases: Release[];
-    retryAfterSeconds: number | null;
-  }> {
+  private async mapAlbumsToReleases(
+    token: string,
+    albums: SpotifyAlbumDto[],
+    counter?: RequestCounter,
+  ): Promise<{ releases: Release[]; retryAfterSeconds: number | null }> {
     if (albums.length === 0) {
       return {
         releases: [],
@@ -307,73 +375,93 @@ export class SpotifyApiAdapter {
       };
     }
 
-    const { artistsById, retryAfterSeconds } = await this.fetchArtistsById(token, albums, counter);
+    const { artistsById, retryAfterSeconds } = await this.fetchArtistsByIdsWithToken(
+      token,
+      getAlbumArtistIds(albums),
+      counter,
+      MAX_ARTIST_FETCH_RETRIES,
+    );
 
     return {
       releases: albums
-        .map((album) => enrichAlbumArtists(album, artistsById))
+        .map((album) => enrichSpotifyAlbumArtists(album, artistsById))
         .map(mapSpotifyAlbumToRelease)
         .filter((release): release is Release => release !== null),
       retryAfterSeconds,
     };
   }
 
-  private async request(input: RequestInfo | URL, init?: RequestInit, counter?: RequestCounter): Promise<Response> {
-    if (counter) {
-      counter.count += 1;
+  private async request(
+    input: RequestInfo | URL,
+    init?: RequestInit,
+    counter?: RequestCounter,
+    maxRetries = MAX_REQUEST_RETRIES,
+  ): Promise<Response> {
+    for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
+      if (counter) {
+        counter.count += 1;
+      }
+
+      await this.requestScheduler.waitForTurn();
+
+      try {
+        const response = await this.fetchFn(input, init);
+
+        if (response.ok) {
+          this.requestScheduler.recordSuccess();
+          return response;
+        }
+
+        const retryAfterSeconds = parseRetryAfter(response.headers);
+
+        if (response.status === 429) {
+          this.requestScheduler.recordRateLimit(retryAfterSeconds);
+          throw new SpotifyApiError(
+            `Spotify API request failed with status ${response.status}.`,
+            'rate_limited',
+            response.status,
+            retryAfterSeconds,
+          );
+        }
+
+        if (response.status >= 500 && attempt < maxRetries) {
+          await this.sleepFn(this.requestScheduler.getRetryDelayMs(attempt));
+          continue;
+        }
+
+        throw new SpotifyApiError(
+          `Spotify API request failed with status ${response.status}.`,
+          mapErrorCode(response.status),
+          response.status,
+          retryAfterSeconds,
+        );
+      } catch (error) {
+        if (error instanceof SpotifyApiError) {
+          throw error;
+        }
+
+        if (attempt < maxRetries) {
+          await this.sleepFn(this.requestScheduler.getRetryDelayMs(attempt));
+          continue;
+        }
+
+        throw new SpotifyApiError(
+          error instanceof Error ? error.message : 'Spotify network request failed.',
+          'network',
+        );
+      } finally {
+        this.requestScheduler.finishRequest();
+      }
     }
 
-    await this.waitForRequestWindow();
-
-    let response: Response;
-
-    try {
-      response = await this.fetchFn(input, init);
-    } catch (error) {
-      this.deferNextRequest(this.minRequestIntervalMs);
-      throw new SpotifyApiError(error instanceof Error ? error.message : 'Spotify network request failed.', 'network');
-    }
-
-    if (response.ok) {
-      this.deferNextRequest(this.minRequestIntervalMs);
-      return response;
-    }
-
-    this.deferNextRequest(getRetryDelayMs(response) ?? this.minRequestIntervalMs);
-
-    throw new SpotifyApiError(
-      `Spotify API request failed with status ${response.status}.`,
-      mapErrorCode(response.status),
-      response.status,
-      parseRetryAfter(response.headers),
-    );
-  }
-
-  private async waitForRequestWindow(): Promise<void> {
-    const delayMs = this.nextRequestAt - this.nowFn();
-
-    if (delayMs > 0) {
-      await this.sleepFn(delayMs);
-    }
-  }
-
-  private deferNextRequest(delayMs: number): void {
-    this.nextRequestAt = Math.max(this.nextRequestAt, this.nowFn()) + Math.max(delayMs, 0);
+    throw new SpotifyApiError('Spotify request retries exhausted.', 'network');
   }
 }
 
-function enrichAlbumArtists(album: SpotifyAlbumDto, artistsById: Map<string, SpotifyArtistDto>): SpotifyAlbumDto {
-  return {
-    ...album,
-    artists: (album.artists ?? []).map((artist) => {
-      const enrichedArtist = artist.id ? artistsById.get(artist.id) : undefined;
-
-      return {
-        ...artist,
-        ...enrichedArtist,
-      };
-    }),
-  };
+function getAlbumArtistIds(albums: SpotifyAlbumDto[]): string[] {
+  return albums.flatMap((album) => album.artists ?? [])
+    .map((artist) => artist.id)
+    .filter((id): id is string => Boolean(id));
 }
 
 function clampSearchLimit(limit: number): number {
@@ -415,23 +503,13 @@ function parseRetryAfter(headers: Headers): number | null {
   return Number.isNaN(parsed) ? null : parsed;
 }
 
-function getRetryDelayMs(response: Response): number | null {
-  const retryAfterSeconds = parseRetryAfter(response.headers);
-
-  if (retryAfterSeconds === null) {
-    return response.status === 429 ? 60_000 : null;
-  }
-
-  return Math.max(retryAfterSeconds, 1) * 1000;
-}
-
 function getRetryDelaySeconds(error: unknown): number | null {
   if (!(error instanceof SpotifyApiError)) {
     return null;
   }
 
   if (error.code === 'rate_limited') {
-    return Math.max(error.retryAfterSeconds ?? 60, 1);
+    return Math.max(error.retryAfterSeconds ?? 30, 1);
   }
 
   if (error.code === 'network' || (error.status !== null && error.status >= 500)) {

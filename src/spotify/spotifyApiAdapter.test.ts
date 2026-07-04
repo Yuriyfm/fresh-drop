@@ -67,7 +67,7 @@ describe('SpotifyApiAdapter', () => {
     ]);
   });
 
-  it('fetches multiple search pages when sync pages are configured', async () => {
+  it('fetches a raw search page for crawler dedupe-before-enrichment', async () => {
     const fetchFn = vi
       .fn()
       .mockResolvedValueOnce(makeJsonResponse({ access_token: 'token-1', expires_in: 3600 }))
@@ -84,31 +84,9 @@ describe('SpotifyApiAdapter', () => {
                 artists: [{ id: 'artist-1', name: 'Artist One' }],
               },
             ],
+            total: 500,
+            next: 'https://api.spotify.com/v1/search?offset=10',
           },
-        }),
-      )
-      .mockResolvedValueOnce(
-        makeJsonResponse({
-          albums: {
-            items: [
-              {
-                id: 'album-2',
-                name: 'Fresh Album',
-                album_type: 'album',
-                release_date: '2026-06-29',
-                release_date_precision: 'day',
-                artists: [{ id: 'artist-2', name: 'Artist Two' }],
-              },
-            ],
-          },
-        }),
-      )
-      .mockResolvedValueOnce(
-        makeJsonResponse({
-          artists: [
-            { id: 'artist-1', name: 'Artist One', genres: ['Pop'], popularity: 64 },
-            { id: 'artist-2', name: 'Artist Two', genres: ['Rock'], popularity: 51 },
-          ],
         }),
       );
 
@@ -118,12 +96,22 @@ describe('SpotifyApiAdapter', () => {
       fetchFn,
     });
 
-    const releases = await adapter.fetchFreshReleasesFromSpotify({ limit: 1, pages: 2 });
-
-    expect(String(fetchFn.mock.calls[1][0])).toContain('limit=1');
-    expect(String(fetchFn.mock.calls[1][0])).toContain('offset=0');
-    expect(String(fetchFn.mock.calls[2][0])).toContain('offset=1');
-    expect(releases.map((release) => release.id)).toEqual(['album-1', 'album-2']);
+    await expect(adapter.fetchReleaseSearchAlbumsPage({
+      query: 'tag:new',
+      market: 'US',
+      limit: 10,
+      offset: 0,
+    })).resolves.toEqual({
+      albums: [
+        expect.objectContaining({
+          id: 'album-1',
+          name: 'Fresh Single',
+        }),
+      ],
+      total: 500,
+      nextOffset: 10,
+      requestCount: 2,
+    });
   });
 
   it('returns an empty list when Spotify search has no album items', async () => {
@@ -194,35 +182,6 @@ describe('SpotifyApiAdapter', () => {
     });
   });
 
-  it('does not retry forever when Spotify returns a rate limit during search', async () => {
-    const fetchFn = vi
-      .fn()
-      .mockResolvedValueOnce(makeJsonResponse({ access_token: 'token-1', expires_in: 3600 }))
-      .mockResolvedValueOnce(
-        makeJsonResponse(
-          { error: { message: 'Too many requests' } },
-          {
-            ok: false,
-            status: 429,
-            headers: new Headers({ 'retry-after': '7' }),
-          },
-        ),
-      );
-
-    const adapter = new SpotifyApiAdapter({
-      clientId: 'client-id',
-      clientSecret: 'client-secret',
-      fetchFn,
-    });
-
-    await expect(adapter.fetchFreshReleasesFromSpotify({ pages: 3 })).rejects.toMatchObject({
-      code: 'rate_limited',
-      status: 429,
-      retryAfterSeconds: 7,
-    });
-    expect(fetchFn).toHaveBeenCalledTimes(2);
-  });
-
   it('returns partial search results when artist enrichment hits rate limit', async () => {
     const fetchFn = vi
       .fn()
@@ -271,21 +230,23 @@ describe('SpotifyApiAdapter', () => {
     }));
   });
 
-  it('maps network failures to adapter errors', async () => {
-    const fetchFn = vi.fn().mockRejectedValueOnce(new Error('network down'));
+  it('maps network failures to adapter errors after retries are exhausted', async () => {
+    const fetchFn = vi.fn().mockRejectedValue(new Error('network down'));
     const adapter = new SpotifyApiAdapter({
       clientId: 'client-id',
       clientSecret: 'client-secret',
       fetchFn,
+      sleepFn: vi.fn().mockResolvedValue(undefined),
     });
 
     const promise = adapter.fetchFreshReleasesFromSpotify();
 
     await expect(promise).rejects.toBeInstanceOf(SpotifyApiError);
     await expect(promise).rejects.toMatchObject({ code: 'network' });
+    expect(fetchFn).toHaveBeenCalledTimes(3);
   });
 
-  it('waits between Spotify requests when a minimum interval is configured', async () => {
+  it('waits between Spotify requests according to the adaptive scheduler', async () => {
     let now = 0;
     const sleepFn = vi.fn().mockImplementation(async (delayMs: number) => {
       now += delayMs;
@@ -306,19 +267,18 @@ describe('SpotifyApiAdapter', () => {
       clientId: 'client-id',
       clientSecret: 'client-secret',
       fetchFn,
-      minRequestIntervalMs: 1_000,
       nowFn: () => now,
       sleepFn,
     });
 
-    await adapter.fetchReleaseSearchPage({ query: 'tag:new', market: 'US', limit: 50, offset: 0 });
-    await adapter.fetchReleaseSearchPage({ query: 'tag:new', market: 'US', limit: 50, offset: 50 });
+    await adapter.fetchReleaseSearchAlbumsPage({ query: 'tag:new', market: 'US', limit: 50, offset: 0 });
+    await adapter.fetchReleaseSearchAlbumsPage({ query: 'tag:new', market: 'US', limit: 50, offset: 50 });
 
     expect(sleepFn).toHaveBeenNthCalledWith(1, 1000);
-    expect(sleepFn).toHaveBeenNthCalledWith(2, 1000);
+    expect(sleepFn).toHaveBeenNthCalledWith(2, 990);
   });
 
-  it('waits for the full retry-after window before the next Spotify request', async () => {
+  it('waits for the full retry-after window before the next Spotify request and lowers current rps', async () => {
     let now = 0;
     const sleepFn = vi.fn().mockImplementation(async (delayMs: number) => {
       now += delayMs;
@@ -342,17 +302,21 @@ describe('SpotifyApiAdapter', () => {
       clientId: 'client-id',
       clientSecret: 'client-secret',
       fetchFn,
-      minRequestIntervalMs: 1_000,
       nowFn: () => now,
       sleepFn,
+      requestSchedulerConfig: {
+        retryJitterMs: 0,
+      },
     });
 
-    await expect(adapter.fetchReleaseSearchPage({ query: 'tag:new', market: 'US', limit: 50, offset: 0 })).rejects.toMatchObject({
+    await expect(adapter.fetchReleaseSearchAlbumsPage({ query: 'tag:new', market: 'US', limit: 50, offset: 0 })).rejects.toMatchObject({
       code: 'rate_limited',
       retryAfterSeconds: 7,
     });
 
-    await adapter.fetchReleaseSearchPage({ query: 'tag:new', market: 'US', limit: 50, offset: 0 });
+    expect(adapter.getRequestSchedulerState().currentRps).toBe(0.5);
+
+    await adapter.fetchReleaseSearchAlbumsPage({ query: 'tag:new', market: 'US', limit: 50, offset: 0 });
 
     expect(sleepFn).toHaveBeenNthCalledWith(1, 1000);
     expect(sleepFn).toHaveBeenNthCalledWith(2, 7000);
@@ -376,6 +340,9 @@ describe('SpotifyApiAdapter', () => {
       clientId: 'client-id',
       clientSecret: 'client-secret',
       fetchFn,
+      requestSchedulerConfig: {
+        retryJitterMs: 0,
+      },
     });
 
     await expect(adapter.fetchFreshReleasesFromSpotify()).rejects.toMatchObject({
@@ -383,6 +350,7 @@ describe('SpotifyApiAdapter', () => {
       status: 429,
       retryAfterSeconds: null,
     });
+    expect(adapter.getRequestSchedulerState().cooldownUntil).toBeGreaterThan(0);
   });
 });
 

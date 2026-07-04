@@ -49,7 +49,10 @@ export function createReleaseSyncService(
         const releases = await source.fetchFreshReleasesFromSpotify(options);
         itemsFound = releases.length;
         smoke = getReleaseSyncSmokeStats(releases);
-        const saveResult = await repository.saveReleases(releases);
+        const saveResult = await repository.saveReleases(releases, {
+          discoveredMarket: options.market,
+          discoveredAt: new Date(),
+        });
         itemsSaved = saveResult.saved;
         const cleanupResult = await repository.cleanupOldReleases(new Date(), RELEASE_RETENTION_DAYS);
 

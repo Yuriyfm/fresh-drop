@@ -1,0 +1,42 @@
+name: Fallback sync Spotify releases
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: sync-spotify-releases-fallback
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Sync releases fallback
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Run fallback release sync
+        run: yarn sync:scheduled
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
+          SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
+          SPOTIFY_MARKET: ${{ vars.SPOTIFY_MARKET || 'US' }}
+          SPOTIFY_SYNC_LIMIT: ${{ vars.SPOTIFY_SYNC_LIMIT || '50' }}
+          SPOTIFY_SYNC_PAGES: ${{ vars.SPOTIFY_SYNC_PAGES || '1' }}

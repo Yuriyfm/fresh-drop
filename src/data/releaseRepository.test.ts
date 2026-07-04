@@ -28,6 +28,40 @@ describe('InMemoryReleaseRepository', () => {
     await expect(repository.findExistingReleaseIds(['spotify-1', 'missing', 'spotify-1'])).resolves.toEqual(new Set(['spotify-1']));
   });
 
+  it('returns cached artists when they are still fresh', async () => {
+    const repository = new InMemoryReleaseRepository();
+
+    await repository.saveReleases([
+      makeRelease({
+        id: 'spotify-1',
+        artists: [
+          {
+            id: 'artist-1',
+            name: 'Artist One',
+            genres: ['ambient'],
+            country: 'unknown',
+            popularity: 70,
+          },
+        ],
+      }),
+    ], {
+      discoveredAt: new Date('2026-07-01T12:00:00.000Z'),
+    });
+
+    await expect(repository.findCachedArtists(['artist-1', 'missing'], {
+      maxAgeDays: 30,
+      now: new Date('2026-07-10T12:00:00.000Z'),
+    })).resolves.toEqual(new Map([
+      ['artist-1', {
+        id: 'artist-1',
+        name: 'Artist One',
+        genres: ['ambient'],
+        country: 'unknown',
+        popularity: 70,
+      }],
+    ]));
+  });
+
   it('reads releases with filters and pagination', async () => {
     const repository = new InMemoryReleaseRepository();
 

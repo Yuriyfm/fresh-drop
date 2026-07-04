@@ -1,19 +1,19 @@
-name: Sync Spotify releases
+name: Crawl Spotify releases
 
 on:
   schedule:
-    - cron: "0 */6 * * *"
+    - cron: "0 * * * *"
   workflow_dispatch:
 
 concurrency:
-  group: sync-spotify-releases
+  group: crawl-spotify-releases
   cancel-in-progress: false
 
 jobs:
-  sync:
-    name: Sync releases
+  crawl:
+    name: Crawl releases
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
@@ -31,12 +31,22 @@ jobs:
       - name: Install dependencies
         run: yarn install --frozen-lockfile
 
-      - name: Run release sync
-        run: yarn sync:scheduled
+      - name: Run release crawler
+        run: yarn crawl:scheduled
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
           SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
-          SPOTIFY_MARKET: ${{ vars.SPOTIFY_MARKET || 'US' }}
-          SPOTIFY_SYNC_LIMIT: ${{ vars.SPOTIFY_SYNC_LIMIT || '50' }}
-          SPOTIFY_SYNC_PAGES: ${{ vars.SPOTIFY_SYNC_PAGES || '1' }}
+          SPOTIFY_MARKETS: ${{ vars.SPOTIFY_MARKETS || 'US,GB,DE,FR,ES,IT,BR,MX,JP,KR,TR,IN,CA,AU,NL,SE,PL,AR,CO,ID,PH,ZA' }}
+          SPOTIFY_INITIAL_RPS: ${{ vars.SPOTIFY_INITIAL_RPS || '1' }}
+          SPOTIFY_MAX_RPS: ${{ vars.SPOTIFY_MAX_RPS || '2' }}
+          SPOTIFY_MIN_RPS: ${{ vars.SPOTIFY_MIN_RPS || '0.1' }}
+          SPOTIFY_MAX_CONCURRENCY: ${{ vars.SPOTIFY_MAX_CONCURRENCY || '1' }}
+          SPOTIFY_RATE_INCREASE_STEP: ${{ vars.SPOTIFY_RATE_INCREASE_STEP || '0.2' }}
+          SPOTIFY_RATE_DECREASE_FACTOR: ${{ vars.SPOTIFY_RATE_DECREASE_FACTOR || '0.5' }}
+          SPOTIFY_RATE_STABLE_WINDOW_MS: ${{ vars.SPOTIFY_RATE_STABLE_WINDOW_MS || '300000' }}
+          SPOTIFY_RETRY_JITTER_MS: ${{ vars.SPOTIFY_RETRY_JITTER_MS || '500' }}
+          SPOTIFY_SEARCH_LIMIT: ${{ vars.SPOTIFY_SEARCH_LIMIT || '10' }}
+          SPOTIFY_MAX_SAFE_OFFSET: ${{ vars.SPOTIFY_MAX_SAFE_OFFSET || '1000' }}
+          SPOTIFY_SPLIT_TOTAL_THRESHOLD: ${{ vars.SPOTIFY_SPLIT_TOTAL_THRESHOLD || '800' }}
+          SPOTIFY_ARTIST_CACHE_TTL_DAYS: ${{ vars.SPOTIFY_ARTIST_CACHE_TTL_DAYS || '30' }}

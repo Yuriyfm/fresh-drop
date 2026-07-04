@@ -25,6 +25,23 @@ export function mapSpotifyAlbumToRelease(album: SpotifyAlbumDto): Release | null
   };
 }
 
+export function enrichSpotifyAlbumArtists(
+  album: SpotifyAlbumDto,
+  artistsById: ReadonlyMap<string, SpotifyArtistDto>,
+): SpotifyAlbumDto {
+  return {
+    ...album,
+    artists: (album.artists ?? []).map((artist) => {
+      const enrichedArtist = artist.id ? artistsById.get(artist.id) : undefined;
+
+      return {
+        ...artist,
+        ...enrichedArtist,
+      };
+    }),
+  };
+}
+
 function mapSpotifyArtist(artist: SpotifyArtistDto): ArtistSummary {
   return {
     id: artist.id ?? '',

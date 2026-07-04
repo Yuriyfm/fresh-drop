@@ -31,9 +31,16 @@ export type GenreCount = {
   kind: GenreOptionKind;
 };
 
+export type SaveReleasesOptions = {
+  discoveredMarket?: string;
+  discoveredAt?: Date;
+};
+
 export type ReleaseRepository = {
-  saveReleases(releases: Release[]): Promise<{ saved: number }>;
+  saveReleases(releases: Release[], options?: SaveReleasesOptions): Promise<{ saved: number }>;
   findExistingReleaseIds(ids: string[]): Promise<Set<string>>;
+  findCachedArtists(ids: string[], options: { maxAgeDays: number; now?: Date }): Promise<Map<string, ArtistSummary>>;
+  saveReleaseMarkets(ids: string[], market: string, seenAt?: Date): Promise<void>;
   findReleases(query: ReleaseQuery): Promise<ReleasePage>;
   listActiveGenres(): Promise<GenreCount[]>;
   cleanupOldReleases(currentDate: Date, retentionDays: number): Promise<{ deleted: number }>;
@@ -43,12 +50,32 @@ export const DEFAULT_RELEASE_PAGE = 1;
 export const DEFAULT_RELEASE_LIMIT = 20;
 export const MAX_RELEASE_LIMIT = 50;
 
+type CachedArtistRecord = {
+  artist: ArtistSummary;
+  updatedAt: Date;
+};
+
 export class InMemoryReleaseRepository implements ReleaseRepository {
   private readonly releasesBySpotifyId = new Map<string, Release>();
+  private readonly artistsBySpotifyId = new Map<string, CachedArtistRecord>();
+  private readonly marketsByReleaseId = new Map<string, Map<string, { firstSeenAt: Date; lastSeenAt: Date }>>();
 
-  async saveReleases(releases: Release[]): Promise<{ saved: number }> {
+  async saveReleases(releases: Release[], options: SaveReleasesOptions = {}): Promise<{ saved: number }> {
+    const discoveredAt = options.discoveredAt ?? new Date();
+
     for (const release of releases) {
       this.releasesBySpotifyId.set(release.id, cloneRelease(release));
+
+      for (const artist of release.artists) {
+        this.artistsBySpotifyId.set(artist.id, {
+          artist: cloneArtist(artist),
+          updatedAt: discoveredAt,
+        });
+      }
+
+      if (options.discoveredMarket) {
+        upsertReleaseMarket(this.marketsByReleaseId, release.id, options.discoveredMarket, discoveredAt);
+      }
     }
 
     return { saved: releases.length };
@@ -56,6 +83,33 @@ export class InMemoryReleaseRepository implements ReleaseRepository {
 
   async findExistingReleaseIds(ids: string[]): Promise<Set<string>> {
     return new Set(ids.filter((id) => this.releasesBySpotifyId.has(id)));
+  }
+
+  async findCachedArtists(ids: string[], options: { maxAgeDays: number; now?: Date }): Promise<Map<string, ArtistSummary>> {
+    const cutoff = (options.now ?? new Date()).getTime() - options.maxAgeDays * 24 * 60 * 60 * 1000;
+    const cachedArtists = new Map<string, ArtistSummary>();
+
+    for (const id of Array.from(new Set(ids))) {
+      const cached = this.artistsBySpotifyId.get(id);
+
+      if (!cached || cached.updatedAt.getTime() < cutoff) {
+        continue;
+      }
+
+      cachedArtists.set(id, cloneArtist(cached.artist));
+    }
+
+    return cachedArtists;
+  }
+
+  async saveReleaseMarkets(ids: string[], market: string, seenAt = new Date()): Promise<void> {
+    for (const id of Array.from(new Set(ids))) {
+      if (!this.releasesBySpotifyId.has(id)) {
+        continue;
+      }
+
+      upsertReleaseMarket(this.marketsByReleaseId, id, market, seenAt);
+    }
   }
 
   async findReleases(query: ReleaseQuery): Promise<ReleasePage> {
@@ -131,6 +185,7 @@ export class InMemoryReleaseRepository implements ReleaseRepository {
 
       if (!Number.isNaN(releaseDate.getTime()) && releaseDate.getTime() < cutoff) {
         this.releasesBySpotifyId.delete(spotifyId);
+        this.marketsByReleaseId.delete(spotifyId);
         deleted += 1;
       }
     }
@@ -201,6 +256,21 @@ function cloneArtist(artist: ArtistSummary): ArtistSummary {
 
 function normalizeGenres(genres: string[]): string[] {
   return Array.from(new Set(genres.map(normalizeGenreText).filter(Boolean)));
+}
+
+function upsertReleaseMarket(
+  marketsByReleaseId: Map<string, Map<string, { firstSeenAt: Date; lastSeenAt: Date }>>,
+  releaseId: string,
+  market: string,
+  seenAt: Date,
+): void {
+  const markets = marketsByReleaseId.get(releaseId) ?? new Map<string, { firstSeenAt: Date; lastSeenAt: Date }>();
+  const existing = markets.get(market);
+
+  markets.set(market, existing
+    ? { firstSeenAt: existing.firstSeenAt, lastSeenAt: seenAt }
+    : { firstSeenAt: seenAt, lastSeenAt: seenAt });
+  marketsByReleaseId.set(releaseId, markets);
 }
 
 export type ReleaseRepositoryFilters = {

@@ -131,6 +131,8 @@ function makeRepository(
   return {
     saveReleases: vi.fn(),
     findExistingReleaseIds: vi.fn().mockResolvedValue(new Set()),
+    findCachedArtists: vi.fn().mockResolvedValue(new Map()),
+    saveReleaseMarkets: vi.fn(),
     cleanupOldReleases: vi.fn(),
     listActiveGenres: vi.fn().mockResolvedValue([{ genre: 'techno', releaseCount: 1, kind: 'exact' }]),
     findReleases: vi.fn().mockResolvedValue(findResult),

@@ -1,13 +1,20 @@
-import type { Release } from '../domain/release';
+import type { ArtistSummary, Release } from '../domain/release';
 import type { ReleaseRepository } from '../data/releaseRepository';
 import type { CompleteSyncTaskInput, SyncTask, SyncTaskInput, SyncTaskRepository } from '../data/syncTaskRepository';
+import { enrichSpotifyAlbumArtists, mapSpotifyAlbumToRelease } from '../spotify/mapSpotifyAlbum';
 import { SpotifyApiError } from '../spotify/spotifyApiAdapter';
-import type { SpotifyReleasePage } from '../spotify/spotifyApiAdapter';
+import type {
+  SpotifyArtistsByIdResult,
+  SpotifyReleasePage,
+  SpotifyReleaseSearchAlbumsPage,
+} from '../spotify/spotifyApiAdapter';
+import type { SpotifyAlbumDto, SpotifyArtistDto } from '../spotify/spotifyTypes';
 import type { ReleaseCrawlerConfig } from './crawlerConfig';
 import { buildSearchShardQuery, createChildSearchShardSeeds, getSearchShardPriority } from './searchShard';
 
 export type ReleaseCrawlerSource = {
-  fetchReleaseSearchPage(options: { query: string; market: string; limit: number; offset: number }): Promise<SpotifyReleasePage>;
+  fetchReleaseSearchAlbumsPage(options: { query: string; market: string; limit: number; offset: number }): Promise<SpotifyReleaseSearchAlbumsPage>;
+  fetchArtistsByIds(artistIds: string[]): Promise<SpotifyArtistsByIdResult>;
   fetchArtistAlbumsPage(options: { artistId: string; market: string; limit: number; offset: number }): Promise<SpotifyReleasePage>;
 };
 
@@ -28,6 +35,7 @@ export type ReleaseCrawlerResult = {
 
 export type ReleaseCrawlerTaskSummary = {
   query: string;
+  market: string;
   source: SyncTask['source'];
   family: SyncTask['family'];
   token: SyncTask['token'];
@@ -50,6 +58,8 @@ export type ReleaseCrawlerTaskSummary = {
   retryAfterSeconds: number | null;
   retryAt?: Date;
   errorMessage?: string | null;
+  artistCacheHits: number;
+  artistRequestsSaved: number;
 };
 
 type SearchTaskRunStats = {
@@ -65,6 +75,8 @@ type SearchTaskRunStats = {
   avgLatencyMs: number | null;
   rateLimitedCount: number;
   requestCount: number;
+  artistCacheHits: number;
+  artistRequestsSaved: number;
 };
 
 export async function runReleaseCrawler(
@@ -76,20 +88,19 @@ export async function runReleaseCrawler(
 ): Promise<ReleaseCrawlerResult> {
   await tasks.deactivateLegacySearchTasks(currentDate);
 
-  const seedResult = await tasks.enqueueTasks(
-    config.searchSeeds.map((seed) => ({
-      source: 'search',
-      query: buildSearchShardQuery(seed.family, seed.token),
-      market: config.market,
-      offset: 0,
-      limit: config.searchLimit,
-      priority: seed.priority,
-      nextRunAt: currentDate,
-      family: seed.family,
-      token: seed.token,
-      depth: seed.depth,
-    })),
-  );
+  const seedTasks = config.markets.flatMap((market) => config.searchSeeds.map<SyncTaskInput>((seed) => ({
+    source: 'search',
+    query: buildSearchShardQuery(seed.family, seed.token),
+    market,
+    offset: 0,
+    limit: config.searchLimit,
+    priority: seed.priority,
+    nextRunAt: currentDate,
+    family: seed.family,
+    token: seed.token,
+    depth: seed.depth,
+  })));
+  const seedResult = await tasks.enqueueTasks(seedTasks);
   const claimed = await tasks.claimPendingTasks(config.batchSize, currentDate);
   const result: ReleaseCrawlerResult = {
     tasksClaimed: claimed.length,
@@ -182,11 +193,13 @@ async function runSearchTask(
   let spotifyTotal: number | null = null;
   let latencyTotalMs = 0;
   let requestCount = 0;
+  let artistCacheHits = 0;
+  let artistRequestsSaved = 0;
 
   try {
     while (offset <= config.maxSafeOffset) {
       const startedAt = Date.now();
-      const page = await source.fetchReleaseSearchPage({
+      const page = await source.fetchReleaseSearchAlbumsPage({
         query: task.query,
         market: task.market,
         limit: task.limit,
@@ -197,44 +210,88 @@ async function runSearchTask(
       pagesFetched += 1;
       lastOffset = offset;
       spotifyTotal = page.total ?? spotifyTotal;
-    itemsFound += page.releases.length;
-    itemsSeen += page.releases.length;
-    requestCount = page.requestCount ?? 0;
+      requestCount += page.requestCount ?? 0;
 
-      if (page.releases.length === 0) {
+      if (page.albums.length === 0) {
         emptyPages += 1;
         break;
       }
 
-      const recentReleases = filterRecentDayPrecisionReleases(page.releases, currentDate, config.retentionDays);
-      const existingReleaseIds = await releases.findExistingReleaseIds(recentReleases.map((release) => release.id));
-      const newReleases = recentReleases.filter((release) => !existingReleaseIds.has(release.id));
-      const saveResult = await releases.saveReleases(newReleases);
+      const recentAlbums = filterRecentDayPrecisionAlbums(page.albums, currentDate, config.retentionDays);
+      const recentAlbumIds = recentAlbums
+        .map((album) => album.id)
+        .filter((id): id is string => Boolean(id));
 
-      uniqueAdded += saveResult.saved;
-      duplicatesSeen += recentReleases.length - newReleases.length;
+      itemsFound += recentAlbums.length;
+      itemsSeen += recentAlbums.length;
 
-      if (page.retryAfterSeconds !== null && page.retryAfterSeconds !== undefined) {
-        return buildRateLimitedSearchTaskResult({
-          task,
-          currentDate,
-          itemsFound,
-          itemsSeen,
-          uniqueAdded,
-          duplicatesSeen,
-          emptyPages,
-          lastOffset,
-          pagesFetched,
-          spotifyTotal,
-          latencyTotalMs,
-          requestCount,
-          retryAfterSeconds: page.retryAfterSeconds,
+      const existingReleaseIds = await releases.findExistingReleaseIds(recentAlbumIds);
+      const existingIds = recentAlbumIds.filter((id) => existingReleaseIds.has(id));
+
+      if (existingIds.length > 0) {
+        await releases.saveReleaseMarkets(existingIds, task.market, currentDate);
+      }
+
+      const newAlbums = recentAlbums.filter((album) => !album.id || !existingReleaseIds.has(album.id));
+
+      duplicatesSeen += recentAlbums.length - newAlbums.length;
+
+      if (newAlbums.length > 0) {
+        const artistIds = getAlbumArtistIds(newAlbums);
+        const cachedArtists = await releases.findCachedArtists(artistIds, {
+          maxAgeDays: config.artistCacheTtlDays,
+          now: currentDate,
         });
+        const missingArtistIds = artistIds.filter((artistId) => !cachedArtists.has(artistId));
+
+        artistCacheHits += cachedArtists.size;
+        artistRequestsSaved += cachedArtists.size;
+
+        let fetchedArtists = new Map<string, SpotifyArtistDto>();
+
+        if (missingArtistIds.length > 0) {
+          const artistResult = await source.fetchArtistsByIds(missingArtistIds);
+          requestCount += artistResult.requestCount ?? 0;
+
+          if (artistResult.retryAfterSeconds !== null && artistResult.retryAfterSeconds !== undefined) {
+            return buildRateLimitedSearchTaskResult({
+              task,
+              currentDate,
+              itemsFound,
+              itemsSeen,
+              uniqueAdded,
+              duplicatesSeen,
+              emptyPages,
+              lastOffset,
+              pagesFetched,
+              spotifyTotal,
+              latencyTotalMs,
+              requestCount,
+              artistCacheHits,
+              artistRequestsSaved,
+              retryAfterSeconds: artistResult.retryAfterSeconds,
+            });
+          }
+
+          fetchedArtists = artistResult.artistsById;
+        }
+
+        const artistsById = mergeArtistsById(cachedArtists, fetchedArtists);
+        const newReleases = newAlbums
+          .map((album) => enrichSpotifyAlbumArtists(album, artistsById))
+          .map(mapSpotifyAlbumToRelease)
+          .filter((release): release is Release => release !== null);
+        const saveResult = await releases.saveReleases(newReleases, {
+          discoveredMarket: task.market,
+          discoveredAt: currentDate,
+        });
+
+        uniqueAdded += saveResult.saved;
       }
 
       if (
         offset >= config.maxSafeOffset ||
-        page.releases.length < task.limit ||
+        page.albums.length < task.limit ||
         page.nextOffset === null ||
         (spotifyTotal !== null && offset + task.limit >= spotifyTotal)
       ) {
@@ -260,6 +317,8 @@ async function runSearchTask(
         spotifyTotal,
         latencyTotalMs,
         requestCount,
+        artistCacheHits,
+        artistRequestsSaved,
         retryAfterSeconds,
       });
     }
@@ -270,7 +329,7 @@ async function runSearchTask(
   const duplicateRate = duplicatesSeen / Math.max(itemsSeen, 1);
   const priority = getSearchShardPriority(task.depth, uniqueAdded, duplicateRate, spotifyTotal);
   const cooldownAt = getCompletedNextRunAt(config, currentDate, duplicateRate >= 0.95 && itemsSeen >= 300);
-  const saturated = spotifyTotal !== null && spotifyTotal >= config.maxSafeOffset;
+  const saturated = spotifyTotal !== null && spotifyTotal >= config.splitTotalThreshold;
   const canSplit = saturated && task.family !== null && task.depth < config.maxShardDepth;
   let insertedTasks = 0;
   let wasSplit = false;
@@ -313,6 +372,8 @@ async function runSearchTask(
     avgLatencyMs: pagesFetched === 0 ? null : Math.round(latencyTotalMs / pagesFetched),
     rateLimitedCount: 0,
     requestCount,
+    artistCacheHits,
+    artistRequestsSaved,
   };
 
   return {
@@ -333,6 +394,8 @@ async function runSearchTask(
       avgLatencyMs: stats.avgLatencyMs,
       rateLimitedCount: 0,
       requestCount: stats.requestCount,
+      artistCacheHits,
+      artistRequestsSaved,
       priority,
       wasSplit,
     }),
@@ -350,6 +413,7 @@ async function runArtistAlbumsTask(
 ): Promise<{ completeInput: CompleteSyncTaskInput; insertedTasks: number; stats: SearchTaskRunStats }> {
   const startedAt = Date.now();
   let requestCount = 0;
+
   try {
     const page = await source.fetchArtistAlbumsPage({
       artistId: task.query,
@@ -359,8 +423,17 @@ async function runArtistAlbumsTask(
     });
     const recentReleases = filterRecentDayPrecisionReleases(page.releases, currentDate, config.retentionDays);
     const existingReleaseIds = await releases.findExistingReleaseIds(recentReleases.map((release) => release.id));
+    const existingIds = recentReleases.map((release) => release.id).filter((id) => existingReleaseIds.has(id));
+
+    if (existingIds.length > 0) {
+      await releases.saveReleaseMarkets(existingIds, task.market, currentDate);
+    }
+
     const newReleases = recentReleases.filter((release) => !existingReleaseIds.has(release.id));
-    const saveResult = await releases.saveReleases(newReleases);
+    const saveResult = await releases.saveReleases(newReleases, {
+      discoveredMarket: task.market,
+      discoveredAt: currentDate,
+    });
     requestCount = page.requestCount ?? 0;
     const stats = {
       itemsFound: page.releases.length,
@@ -375,6 +448,8 @@ async function runArtistAlbumsTask(
       avgLatencyMs: Date.now() - startedAt,
       rateLimitedCount: page.retryAfterSeconds !== null && page.retryAfterSeconds !== undefined ? 1 : 0,
       requestCount,
+      artistCacheHits: 0,
+      artistRequestsSaved: 0,
     };
 
     if (page.retryAfterSeconds !== null && page.retryAfterSeconds !== undefined) {
@@ -396,6 +471,8 @@ async function runArtistAlbumsTask(
           avgLatencyMs: stats.avgLatencyMs,
           rateLimitedCount: stats.rateLimitedCount,
           requestCount,
+          artistCacheHits: 0,
+          artistRequestsSaved: 0,
           priority: task.priority,
           wasSplit: false,
           retryAfterSeconds: page.retryAfterSeconds,
@@ -423,6 +500,8 @@ async function runArtistAlbumsTask(
         avgLatencyMs: stats.avgLatencyMs,
         rateLimitedCount: 0,
         requestCount,
+        artistCacheHits: 0,
+        artistRequestsSaved: 0,
         priority: task.priority,
         wasSplit: false,
       }),
@@ -446,6 +525,8 @@ async function runArtistAlbumsTask(
         avgLatencyMs: task.avgLatencyMs,
         rateLimitedCount: isRateLimitError(error) ? task.rateLimitedCount + 1 : task.rateLimitedCount,
         requestCount: 0,
+        artistCacheHits: 0,
+        artistRequestsSaved: 0,
       };
 
       return {
@@ -463,12 +544,14 @@ async function runArtistAlbumsTask(
           duplicatesSeen: stats.duplicatesSeen,
           emptyPages: stats.emptyPages,
           lastOffset: stats.lastOffset,
-        avgLatencyMs: stats.avgLatencyMs,
-        rateLimitedCount: stats.rateLimitedCount,
-        requestCount: 0,
-        priority: task.priority,
-        wasSplit: false,
-        retryAfterSeconds,
+          avgLatencyMs: stats.avgLatencyMs,
+          rateLimitedCount: stats.rateLimitedCount,
+          requestCount: 0,
+          artistCacheHits: 0,
+          artistRequestsSaved: 0,
+          priority: task.priority,
+          wasSplit: false,
+          retryAfterSeconds,
         }),
         insertedTasks: 0,
         stats,
@@ -500,6 +583,8 @@ async function buildFailedTaskInput(
     avgLatencyMs: task.avgLatencyMs,
     rateLimitedCount: isRateLimitError(error) ? task.rateLimitedCount + 1 : task.rateLimitedCount,
     requestCount: 0,
+    artistCacheHits: 0,
+    artistRequestsSaved: 0,
   };
 
   return {
@@ -523,6 +608,8 @@ async function buildFailedTaskInput(
       completedAt: currentDate,
       priority: task.priority,
       wasSplit: task.wasSplit,
+      artistCacheHits: 0,
+      artistRequestsSaved: 0,
     },
     stats,
     retryNextRunAt,
@@ -548,6 +635,21 @@ function isExhaustedShard(itemsSeen: number, uniqueAdded: number, duplicatesSeen
   return uniqueYield < 0.01 || duplicateRate > 0.95;
 }
 
+function filterRecentDayPrecisionAlbums(albums: SpotifyAlbumDto[], currentDate: Date, retentionDays: number): SpotifyAlbumDto[] {
+  const cutoff = Date.UTC(currentDate.getUTCFullYear(), currentDate.getUTCMonth(), currentDate.getUTCDate()) -
+    retentionDays * 24 * 60 * 60 * 1000;
+
+  return albums.filter((album) => {
+    if (album.release_date_precision !== 'day' || !album.release_date) {
+      return false;
+    }
+
+    const timestamp = Date.parse(`${album.release_date}T00:00:00.000Z`);
+
+    return !Number.isNaN(timestamp) && timestamp >= cutoff;
+  });
+}
+
 function filterRecentDayPrecisionReleases(releases: Release[], currentDate: Date, retentionDays: number): Release[] {
   const cutoff = Date.UTC(currentDate.getUTCFullYear(), currentDate.getUTCMonth(), currentDate.getUTCDate()) -
     retentionDays * 24 * 60 * 60 * 1000;
@@ -570,7 +672,7 @@ function formatCrawlerError(error: unknown): string {
 function getRetryDelaySeconds(error: unknown): number | null {
   if (error instanceof SpotifyApiError) {
     if (error.code === 'rate_limited') {
-      return Math.max(error.retryAfterSeconds ?? 60, 1);
+      return Math.max(error.retryAfterSeconds ?? 30, 1);
     }
 
     if (error.code === 'network' || (error.status !== null && error.status >= 500)) {
@@ -603,6 +705,8 @@ function buildCompleteSearchTaskInput(input: {
   wasSplit: boolean;
   retryAfterSeconds?: number | null;
   requestCount?: number;
+  artistCacheHits: number;
+  artistRequestsSaved: number;
 }): CompleteSyncTaskInput {
   return {
     id: input.task.id,
@@ -624,6 +728,8 @@ function buildCompleteSearchTaskInput(input: {
     wasSplit: input.wasSplit,
     retryAfterSeconds: input.retryAfterSeconds ?? null,
     requestCount: input.requestCount ?? 0,
+    artistCacheHits: input.artistCacheHits,
+    artistRequestsSaved: input.artistRequestsSaved,
   };
 }
 
@@ -640,6 +746,8 @@ function buildRateLimitedSearchTaskResult(input: {
   spotifyTotal: number | null;
   latencyTotalMs: number;
   requestCount: number;
+  artistCacheHits: number;
+  artistRequestsSaved: number;
   retryAfterSeconds: number;
 }): { completeInput: CompleteSyncTaskInput; insertedTasks: number; stats: SearchTaskRunStats } {
   const stats = {
@@ -655,6 +763,8 @@ function buildRateLimitedSearchTaskResult(input: {
     avgLatencyMs: input.pagesFetched === 0 ? null : Math.round(input.latencyTotalMs / input.pagesFetched),
     rateLimitedCount: 1,
     requestCount: input.requestCount,
+    artistCacheHits: input.artistCacheHits,
+    artistRequestsSaved: input.artistRequestsSaved,
   };
 
   return {
@@ -675,6 +785,8 @@ function buildRateLimitedSearchTaskResult(input: {
       avgLatencyMs: stats.avgLatencyMs,
       rateLimitedCount: stats.rateLimitedCount,
       requestCount: stats.requestCount,
+      artistCacheHits: input.artistCacheHits,
+      artistRequestsSaved: input.artistRequestsSaved,
       priority: input.task.priority,
       wasSplit: false,
       retryAfterSeconds: input.retryAfterSeconds,
@@ -708,6 +820,7 @@ function buildTaskSummary(
 
   return {
     query: task.query,
+    market: task.market,
     source: task.source,
     family: task.family,
     token: task.token,
@@ -730,5 +843,37 @@ function buildTaskSummary(
     retryAt: completeInput.nextRunAt,
     errorMessage: completeInput.errorMessage ?? null,
     requestCount: completeInput.requestCount ?? 0,
+    artistCacheHits: completeInput.artistCacheHits ?? 0,
+    artistRequestsSaved: completeInput.artistRequestsSaved ?? 0,
   };
+}
+
+function getAlbumArtistIds(albums: SpotifyAlbumDto[]): string[] {
+  return Array.from(new Set(
+    albums.flatMap((album) => album.artists ?? [])
+      .map((artist) => artist.id)
+      .filter((id): id is string => Boolean(id)),
+  ));
+}
+
+function mergeArtistsById(
+  cachedArtists: Map<string, ArtistSummary>,
+  fetchedArtists: Map<string, SpotifyArtistDto>,
+): Map<string, SpotifyArtistDto> {
+  const artistsById = new Map<string, SpotifyArtistDto>();
+
+  for (const [artistId, artist] of cachedArtists) {
+    artistsById.set(artistId, {
+      id: artist.id,
+      name: artist.name,
+      genres: [...artist.genres],
+      popularity: artist.popularity ?? undefined,
+    });
+  }
+
+  for (const [artistId, artist] of fetchedArtists) {
+    artistsById.set(artistId, artist);
+  }
+
+  return artistsById;
 }
