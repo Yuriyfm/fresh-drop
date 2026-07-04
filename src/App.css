@@ -12,6 +12,9 @@
   --color-accent: #1ed760;
   --color-accent-strong: #18b954;
   --color-accent-surface: #183822;
+  --color-scrollbar-track: rgba(9, 15, 11, 0.92);
+  --color-scrollbar-thumb: rgba(111, 131, 118, 0.7);
+  --color-scrollbar-thumb-hover: rgba(142, 166, 150, 0.82);
   --radius-card: 18px;
   --radius-control: 12px;
   --radius-pill: 999px;
@@ -112,13 +115,45 @@ body {
 
 .primaryFilters,
 .desktopSecondaryFilters,
-.sheetFilters {
+.sheetFilters,
+.mobileFilterStack {
   display: grid;
   gap: 14px;
 }
 
 .primaryFilters {
   grid-template-columns: minmax(0, 1fr);
+}
+
+.mobileFilterSection {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid rgba(63, 86, 73, 0.72);
+  border-radius: calc(var(--radius-card) - 4px);
+  background: linear-gradient(180deg, rgba(17, 25, 19, 0.92), rgba(11, 17, 13, 0.96));
+}
+
+.mobileFilterSection .filterField {
+  gap: 8px;
+}
+
+.mobileFilterSection .fieldLabel {
+  font-size: 13px;
+}
+
+.mobileFilterSectionTrigger {
+  gap: 8px;
+}
+
+.mobileFilterSectionTrigger .filterPanelHeader {
+  min-height: 36px;
+}
+
+.mobileFilterSectionPeriod .segmentedControl,
+.mobileFilterSectionGenre .genreOptionList,
+.mobileFilterSectionGenre .genreSearchField {
+  box-shadow: none;
 }
 
 label,
@@ -151,10 +186,37 @@ input[type="search"] {
   padding: 0 34px 0 12px;
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-control);
-  background: linear-gradient(180deg, #0d1510, var(--color-field));
+  background-color: var(--color-field);
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath fill='none' stroke='%23b6c2b6' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M1.25 1.25 6 6l4.75-4.75'/%3E%3C/svg%3E"),
+    linear-gradient(180deg, #0d1510, var(--color-field));
+  background-position:
+    right 12px center,
+    0 0;
+  background-repeat: no-repeat, repeat;
+  background-size:
+    12px 8px,
+    auto;
   color: var(--color-text-primary);
   font: inherit;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  color-scheme: dark;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+}
+
+input[type="search"] {
+  background-image: none;
+}
+
+select::-ms-expand {
+  display: none;
+}
+
+select option {
+  background: #0d1510;
+  color: var(--color-text-primary);
 }
 
 select:focus-visible,
@@ -263,6 +325,11 @@ select:disabled {
   outline: none;
 }
 
+.genreSearchField input:focus-visible {
+  outline: none;
+  border-color: transparent;
+}
+
 .genreChip {
   flex: 0 0 auto;
   min-height: 32px;
@@ -297,6 +364,38 @@ select:disabled {
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-control);
   background: linear-gradient(180deg, #0d1510, var(--color-field));
+}
+
+.genreOptionList,
+.searchLayout.isDesktopSidebar .filterPanel {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-scrollbar-thumb) var(--color-scrollbar-track);
+}
+
+.genreOptionList::-webkit-scrollbar,
+.searchLayout.isDesktopSidebar .filterPanel::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.genreOptionList::-webkit-scrollbar-track,
+.searchLayout.isDesktopSidebar .filterPanel::-webkit-scrollbar-track {
+  background: var(--color-scrollbar-track);
+  border-radius: 999px;
+}
+
+.genreOptionList::-webkit-scrollbar-thumb,
+.searchLayout.isDesktopSidebar .filterPanel::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: var(--color-scrollbar-thumb);
+  background-clip: padding-box;
+}
+
+.genreOptionList::-webkit-scrollbar-thumb:hover,
+.searchLayout.isDesktopSidebar .filterPanel::-webkit-scrollbar-thumb:hover {
+  background: var(--color-scrollbar-thumb-hover);
+  background-clip: padding-box;
 }
 
 .genreOption {
@@ -564,8 +663,7 @@ button:disabled {
 }
 
 .stickySummaryBar {
-  position: sticky;
-  top: 10px;
+  position: static;
   z-index: 12;
   display: flex;
   align-items: center;
@@ -1084,6 +1182,19 @@ button:disabled {
   line-height: 1;
 }
 
+.backButtonIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+}
+
+.backButtonIcon svg {
+  width: 100%;
+  height: 100%;
+}
+
 .detailPage {
   min-height: 100dvh;
 }
@@ -1371,8 +1482,20 @@ dd {
     padding: 10px;
   }
 
+  .mobileFilterStack {
+    gap: 8px;
+  }
+
+  .mobileFilterSection {
+    gap: 8px;
+    padding: 9px;
+  }
+
+  .mobileFilterSectionTrigger .filterPanelHeader {
+    align-items: center;
+  }
+
   .stickySummaryBar {
-    top: 8px;
     margin-top: 12px;
     padding: 8px 10px;
   }
@@ -1400,6 +1523,11 @@ dd {
   .fieldHeader,
   .genreSelector {
     gap: 8px;
+  }
+
+  .mobileFilterSectionPeriod .fieldLabel,
+  .mobileFilterSectionGenre .fieldLabel {
+    font-size: 12px;
   }
 
   .genreSearchRow {

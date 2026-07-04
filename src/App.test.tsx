@@ -32,6 +32,11 @@ describe('App', () => {
       configurable: true,
       value: 0,
     });
+    Object.defineProperty(window, 'scrollTo', {
+      configurable: true,
+      writable: true,
+      value: vi.fn(),
+    });
     intersectionCallback = null;
     vi.stubGlobal('IntersectionObserver', MockIntersectionObserver);
   });
@@ -204,14 +209,20 @@ describe('App', () => {
       }),
     ));
 
-    render(<App />);
+    const { container } = render(<App />);
 
     expect(await screen.findByText('Release One')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '7 days' })).toBeInTheDocument();
     expect(screen.queryByRole('combobox', { name: 'Sorting' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /More filters/i })).toBeNull();
+    expect(container.querySelectorAll('.mobileFilterSection')).toHaveLength(3);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    const mobileSections = Array.from(container.querySelectorAll('.mobileFilterSection'));
+    expect(mobileSections[0]?.querySelector('[aria-label="Period"]')).not.toBeNull();
+    expect(mobileSections[1]?.querySelector('.filterPanelHeaderButton')).not.toBeNull();
+    expect(mobileSections[2]?.querySelector('.genreSelector')).not.toBeNull();
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Filters' })[0]);
     expect(screen.getByRole('dialog', { name: 'More filters' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Compilations' })).toBeInTheDocument();
 
@@ -317,7 +328,7 @@ describe('App', () => {
     });
   });
 
-  it('shows a sticky mobile summary bar with filter actions', async () => {
+  it('shows a mobile summary bar with filter actions', async () => {
     setViewportWidth(390);
 
     vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.resolve(
@@ -337,9 +348,9 @@ describe('App', () => {
 
     expect(await screen.findByText('Release One')).toBeInTheDocument();
     expect(screen.getByText('1 release · Last 7 days')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Filters' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Filters' })).toHaveLength(2);
     expect(screen.queryByRole('button', { name: 'Reset' })).not.toBeInTheDocument();
-    expect(container.querySelector('.stickySummaryButton')).toBeNull();
+    expect(container.querySelector('.stickySummaryButton')).not.toBeNull();
 
     const genreToggle = screen.getByRole('button', { name: 'Show genres' });
     expect(genreToggle).not.toHaveClass('isActive');
@@ -355,24 +366,12 @@ describe('App', () => {
     });
     expect(screen.getByRole('button', { name: 'Reset filters' })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    fireEvent.click(screen.getAllByRole('button', { name: 'Filters' })[0]);
     fireEvent.click(screen.getByRole('button', { name: 'Albums' }));
     fireEvent.click(screen.getByRole('button', { name: 'Most popular' }));
 
     await waitFor(() => {
       expect(screen.getByText('1 release · techno · Albums · Most popular')).toBeInTheDocument();
-    });
-
-    Object.defineProperty(window, 'scrollY', {
-      configurable: true,
-      value: Math.ceil(window.innerHeight * 0.7),
-    });
-    act(() => {
-      window.dispatchEvent(new Event('scroll'));
-    });
-
-    await waitFor(() => {
-      expect(container.querySelector('.stickySummaryButton')).not.toBeNull();
     });
 
     fireEvent.click(container.querySelector('.stickySummaryButton') as HTMLButtonElement);
@@ -948,6 +947,10 @@ describe('App', () => {
       }),
     );
     window.history.pushState(null, '', '/?period=14d&type=all&sort=newest&genre=hip-hop');
+    Object.defineProperty(window, 'scrollY', {
+      configurable: true,
+      value: 640,
+    });
 
     const { container } = render(<App />);
 
@@ -962,11 +965,19 @@ describe('App', () => {
     expect(screen.getAllByText('Unknown').length).toBeGreaterThanOrEqual(3);
     expect(container.querySelector('.detailCoverPlaceholder')).not.toBeNull();
     expect(container.querySelector('.releaseTopBarTitle')).toBeNull();
+    expect(window.scrollTo).toHaveBeenCalledWith({
+      top: 0,
+      behavior: 'auto',
+    });
 
     fireEvent.click(screen.getByRole('button', { name: 'Back' }));
 
     await waitFor(() => {
       expect(`${window.location.pathname}${window.location.search}`).toBe('/?period=14d&type=all&sort=newest&genre=hip-hop');
+    });
+    expect(window.scrollTo).toHaveBeenLastCalledWith({
+      top: 640,
+      behavior: 'auto',
     });
     expect(await screen.findByRole('button', { name: 'Open Release One' })).toBeInTheDocument();
   });

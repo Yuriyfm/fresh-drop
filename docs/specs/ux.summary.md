@@ -75,6 +75,7 @@ Last 7 days
 
 * period и genre видны сверху;
 * period использует segmented control `7 days / 14 days / Month`;
+* mobile search controls визуально разделены на отдельные блоки `Period`, `Filters`, `Genre`, при этом compact trigger `Filters` находится под period и над genre;
 * genre занимает всю ширину и в свернутом состоянии не вытесняет список релизов за первый экран;
 * genre search занимает всю ширину, выбранные жанры показываются chips прямо внутри search field;
 * если выбраны жанры, справа от search field доступно явное действие `Clear genres`;

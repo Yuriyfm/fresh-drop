@@ -94,6 +94,7 @@ function App() {
   const filterPanelRef = useRef<HTMLElement | null>(null);
   const releaseListRef = useRef<HTMLElement | null>(null);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
+  const searchScrollRestoreRef = useRef<number | null>(null);
   const t = translations[language];
   const isMobile = viewportWidth < MOBILE_BREAKPOINT;
   const isDesktopSidebar = viewportWidth >= DESKTOP_SIDEBAR_BREAKPOINT;
@@ -108,9 +109,12 @@ function App() {
   }, [genres, period, sort, type]);
 
   useEffect(() => {
-    function handlePopState(): void {
+    function handlePopState(event: PopStateEvent): void {
+      const nextRoute = getRouteFromPath(window.location.pathname);
+
+      searchScrollRestoreRef.current = nextRoute.view === 'search' ? getSavedSearchScrollPosition(event.state) : null;
       applyLocationState(window.location);
-      setRoute(getRouteFromPath(window.location.pathname));
+      setRoute(nextRoute);
     }
 
     window.addEventListener('popstate', handlePopState);
@@ -221,6 +225,24 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (route.view !== 'search' || searchScrollRestoreRef.current === null) {
+      return;
+    }
+
+    const nextScrollTop = searchScrollRestoreRef.current;
+
+    searchScrollRestoreRef.current = null;
+    setScrollPosition({
+      top: nextScrollTop,
+      height: window.innerHeight,
+    });
+    window.scrollTo({
+      top: nextScrollTop,
+      behavior: 'auto',
+    });
+  }, [releases.length, route.view]);
+
+  useEffect(() => {
     const target = loadMoreRef.current;
 
     if (!target || !pagination.hasNextPage || status !== 'success') {
@@ -265,7 +287,6 @@ function App() {
     ? t.results.loadingSummary(mobileSummaryDetails)
     : getMobileSummaryText(pagination.total, mobileSummaryDetails, t);
   const hasActiveSearchFilters = hasActiveFilters(period, genres, type, sort);
-  const isMobileFilterPanelVisible = isMobile && isElementVisible(filterPanelRef.current, scrollPosition);
   const virtualRange = getVirtualReleaseRange(releases.length, scrollPosition, releaseListRef.current);
   const visibleReleases = releases.slice(virtualRange.startIndex, virtualRange.endIndex);
 
@@ -317,31 +338,53 @@ function App() {
       <div className={isDesktopSidebar ? 'searchLayout isDesktopSidebar' : 'searchLayout'}>
         <aside className="searchSidebar">
           <section className="filterPanel" aria-label={t.filters.aria} ref={filterPanelRef}>
-            <div className="filterPanelHeader">
-              <p className="filterGroupTitle">{t.filters.filters}</p>
-              {isMobile && (
-                <button
-                  type="button"
-                  className="secondaryButton filterPanelHeaderButton"
-                  aria-haspopup="dialog"
-                  aria-expanded={isFiltersOpen}
-                  onClick={openFiltersSheet}
-                >
-                  {t.filters.filters}
-                </button>
-              )}
-            </div>
+            {isMobile ? (
+              <div className="mobileFilterStack">
+                <div className="mobileFilterSection mobileFilterSectionPeriod">
+                  <PeriodFilter period={period} t={t} onChange={updatePeriod} />
+                </div>
+                <div className="mobileFilterSection mobileFilterSectionTrigger">
+                  <div className="filterPanelHeader">
+                    <p className="filterGroupTitle">{t.filters.filters}</p>
+                    <button
+                      type="button"
+                      className="secondaryButton filterPanelHeaderButton"
+                      aria-haspopup="dialog"
+                      aria-expanded={isFiltersOpen}
+                      onClick={openFiltersSheet}
+                    >
+                      {t.filters.filters}
+                    </button>
+                  </div>
+                </div>
+                <div className="mobileFilterSection mobileFilterSectionGenre">
+                  <GenreFilter
+                    isMobile={isMobile}
+                    selectedGenres={genres}
+                    genreOptions={genreOptions}
+                    t={t}
+                    onChange={updateGenres}
+                  />
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="filterPanelHeader">
+                  <p className="filterGroupTitle">{t.filters.filters}</p>
+                </div>
 
-            <div className="primaryFilters">
-              <PeriodFilter period={period} t={t} onChange={updatePeriod} />
-              <GenreFilter
-                isMobile={isMobile}
-                selectedGenres={genres}
-                genreOptions={genreOptions}
-                t={t}
-                onChange={updateGenres}
-              />
-            </div>
+                <div className="primaryFilters">
+                  <PeriodFilter period={period} t={t} onChange={updatePeriod} />
+                  <GenreFilter
+                    isMobile={isMobile}
+                    selectedGenres={genres}
+                    genreOptions={genreOptions}
+                    t={t}
+                    onChange={updateGenres}
+                  />
+                </div>
+              </>
+            )}
 
             {!isMobile && (
               <div className="desktopSecondaryFilters">
@@ -379,31 +422,22 @@ function App() {
                 <p className="stickySummaryText">{mobileSummaryText}</p>
                 {isSummaryUpdating && <span className="summaryLoadingIndicator">{t.results.updating}</span>}
               </div>
-              {(!isMobileFilterPanelVisible || hasActiveSearchFilters) && (
-                <div className="stickySummaryActions">
-                  {!isMobileFilterPanelVisible && (
-                    <button
-                      type="button"
-                      className="secondaryButton stickySummaryButton"
-                      aria-haspopup="dialog"
-                      aria-expanded={isFiltersOpen}
-                      onClick={openFiltersSheet}
-                    >
-                      {t.filters.filters}
-                    </button>
-                  )}
-                  {hasActiveSearchFilters && (
-                    <button
-                      type="button"
-                      className="stickyResetLink"
-                      aria-label={t.filters.reset}
-                      onClick={resetFilters}
-                    >
-                      {t.filters.resetShort}
-                    </button>
-                  )}
-                </div>
-              )}
+              <div className="stickySummaryActions">
+                <button
+                  type="button"
+                  className="secondaryButton stickySummaryButton"
+                  aria-haspopup="dialog"
+                  aria-expanded={isFiltersOpen}
+                  onClick={openFiltersSheet}
+                >
+                  {t.filters.filters}
+                </button>
+                {hasActiveSearchFilters && (
+                  <button type="button" className="stickyResetLink" aria-label={t.filters.reset} onClick={resetFilters}>
+                    {t.filters.resetShort}
+                  </button>
+                )}
+              </div>
             </section>
           )}
 
@@ -561,10 +595,26 @@ function App() {
   }
 
   function openRelease(release: Release): void {
+    window.history.replaceState(
+      {
+        searchScrollY: window.scrollY,
+      },
+      '',
+      buildSearchUrl({ period, genres, type, sort }, language),
+    );
+
     const nextPath = getReleasePath(release.id, { period, genres, type, sort }, language);
 
     window.history.pushState(null, '', nextPath);
     setRoute({ view: 'release', releaseId: release.id });
+    setScrollPosition({
+      top: 0,
+      height: window.innerHeight,
+    });
+    window.scrollTo({
+      top: 0,
+      behavior: 'auto',
+    });
   }
 
   function goBackToSearch(): void {
@@ -1210,7 +1260,18 @@ function ReleaseDetailTopBar({ t, onBack }: ReleaseDetailTopBarProps) {
   return (
     <div className="pageTopBar releaseTopBar">
       <button type="button" className="backButton iconBackButton" aria-label={t.release.back} onClick={onBack}>
-        <span aria-hidden="true">&larr;</span>
+        <span className="backButtonIcon" aria-hidden="true">
+          <svg viewBox="0 0 16 16" focusable="false">
+            <path
+              d="M9.75 3.5 5.25 8l4.5 4.5"
+              fill="none"
+              stroke="currentColor"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="1.8"
+            />
+          </svg>
+        </span>
       </button>
     </div>
   );
@@ -1353,14 +1414,6 @@ function getCompactGenreSummary(genres: string[], t: Translation): string[] {
   return [...labels.slice(0, 2), `+${labels.length - 2}`];
 }
 
-function isElementVisible(element: HTMLElement | null, scrollPosition: ScrollPosition): boolean {
-  if (!element || element.offsetHeight === 0) {
-    return scrollPosition.top < scrollPosition.height * 0.55;
-  }
-
-  return scrollPosition.top + 24 < element.offsetTop + element.offsetHeight;
-}
-
 function getStoredReleaseSearchState(storage: Storage = window.localStorage): ReleaseSearchState {
   const rawValue = storage.getItem(RELEASE_SEARCH_STORAGE_KEY);
 
@@ -1411,6 +1464,21 @@ function getInitialLanguage(location: Location, storage: Storage = window.localS
   const rawLanguage = searchParams.get('lang');
 
   return rawLanguage === 'en' || rawLanguage === 'ru' ? rawLanguage : getStoredLanguage(storage);
+}
+
+function getSavedSearchScrollPosition(state: unknown): number | null {
+  if (
+    typeof state === 'object'
+    && state !== null
+    && 'searchScrollY' in state
+    && typeof state.searchScrollY === 'number'
+    && Number.isFinite(state.searchScrollY)
+    && state.searchScrollY >= 0
+  ) {
+    return state.searchScrollY;
+  }
+
+  return null;
 }
 
 function getUrlGenres(searchParams: URLSearchParams): string[] | undefined {
