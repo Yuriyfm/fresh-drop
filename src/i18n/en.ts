@@ -2,7 +2,7 @@ export const en = {
   language: {
     label: 'Language',
     en: 'English',
-    ru: 'Russian',
+    ru: 'Русский',
     shortEn: 'EN',
     shortRu: 'RU',
   },
@@ -29,6 +29,7 @@ export const en = {
     selectedGenres: 'Selected genres',
     genreResults: 'Genre results',
     clearGenres: 'Clear genres',
+    maxGenres: 'Select up to 3 genres.',
     noGenresFound: 'No genres found',
     releasesCount: 'releases',
     countsHelp: 'Counts reflect the last month of releases.',

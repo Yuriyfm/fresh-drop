@@ -231,7 +231,7 @@ describe('App', () => {
     expect(screen.getByText('Language')).toBeInTheDocument();
     expect(screen.getByRole('group', { name: 'Language' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'English' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Russian' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Русский' })).toBeInTheDocument();
   });
 
   it('uses desktop sidebar layout with sorting above the results on wide screens', async () => {
@@ -258,6 +258,41 @@ describe('App', () => {
     expect(container.querySelector('.searchSidebar select')).toBeNull();
     expect(container.querySelector('.resultsToolbar select')).not.toBeNull();
     expect(container.querySelector('.searchSidebar .sidebarResetButton')).toBeNull();
+  });
+
+  it('opens how it works as a desktop modal without changing the route', async () => {
+    setViewportWidth(1280);
+
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      makeResponse({
+        items: [makeRelease()],
+        pagination: {
+          page: 1,
+          limit: 20,
+          total: 1,
+          hasNextPage: false,
+        },
+        error: null,
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByText('Release One')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'How it works' }));
+
+    const dialog = screen.getByRole('dialog', { name: 'How it works' });
+
+    expect(window.location.pathname).toBe('/');
+    expect(dialog).toHaveClass('dialogPanel', 'helpModal');
+    expect(screen.getByText('What the filters use')).toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'How it works' })).toBeNull();
+    });
   });
 
   it('shows a sticky mobile summary bar with filter actions', async () => {
@@ -344,6 +379,61 @@ describe('App', () => {
     await waitFor(() => {
       expect(screen.getByText('No genres found')).toBeInTheDocument();
     });
+  });
+
+  it('limits genre selection to three items', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      makeResponse({
+        items: [
+          makeRelease({ id: 'release-1', genres: ['techno'] }),
+          makeRelease({ id: 'release-2', genres: ['house'] }),
+          makeRelease({ id: 'release-3', genres: ['ambient'] }),
+          makeRelease({ id: 'release-4', genres: ['jazz'] }),
+        ],
+        pagination: {
+          page: 1,
+          limit: 20,
+          total: 4,
+          hasNextPage: false,
+        },
+        error: null,
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole('checkbox', { name: /techno/i })).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('checkbox', { name: /techno/i }));
+    });
+    await waitFor(() => {
+      expect(screen.getByText('techno x')).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('checkbox', { name: /house/i }));
+    });
+    await waitFor(() => {
+      expect(screen.getByText('house x')).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('checkbox', { name: /ambient/i }));
+    });
+
+    expect(screen.getByText('Select up to 3 genres.')).toBeInTheDocument();
+
+    const fourthGenre = screen.getByRole('checkbox', { name: /jazz/i });
+    expect(fourthGenre).toBeDisabled();
+    await act(async () => {
+      fireEvent.click(fourthGenre);
+    });
+
+    expect(screen.getByText('techno x')).toBeInTheDocument();
+    expect(screen.getByText('house x')).toBeInTheDocument();
+    expect(screen.getByText('ambient x')).toBeInTheDocument();
+    expect(screen.queryByText('jazz x')).toBeNull();
   });
 
   it('loads saved filters and sorting from local storage', async () => {
@@ -1001,10 +1091,10 @@ describe('App', () => {
 
     render(<App />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Russian' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Language' }), { target: { value: 'ru' } });
 
     expect(screen.getByText('Свежие релизы Spotify с быстрым поиском по фильтрам.')).toBeInTheDocument();
-    expect(screen.getByRole('group', { name: 'Язык' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Язык' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Как это работает' })).toBeInTheDocument();
     expect(window.localStorage.getItem(LANGUAGE_STORAGE_KEY)).toBe('ru');
   });

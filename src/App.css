@@ -329,6 +329,11 @@ select:disabled {
   background: rgba(21, 43, 29, 0.78);
 }
 
+.genreOption.isDisabled {
+  color: var(--color-text-tertiary);
+  opacity: 0.62;
+}
+
 .genreCheckbox {
   display: inline-flex;
   align-items: center;
@@ -507,7 +512,9 @@ button:disabled {
 }
 
 .languageSwitcher {
+  display: grid;
   justify-self: start;
+  width: 100%;
 }
 
 .resultsHeader {
@@ -1521,7 +1528,7 @@ dd {
   }
 
   .languageSwitcher {
-    min-width: 112px;
+    min-width: 160px;
   }
 
   .sidebarResetButton {
@@ -1567,9 +1574,6 @@ dd {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .sheetLayer {
-    display: none;
-  }
 }
 
 @media (min-width: 1024px) {
@@ -1605,23 +1609,53 @@ dd {
     align-self: start;
   }
 
+  .searchLayout.isDesktopSidebar .primaryFilters,
   .searchLayout.isDesktopSidebar .desktopSecondaryFilters {
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .searchLayout.isDesktopSidebar .genreSearchRow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .searchLayout.isDesktopSidebar .clearGenresButton {
+    justify-self: start;
+  }
+
+  .searchLayout.isDesktopSidebar .desktopSecondaryFilters .segmentedControl {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .searchLayout.isDesktopSidebar .searchContent {
-    padding-top: 2px;
+    display: grid;
+    gap: 14px;
+    align-content: start;
+    padding-top: 0;
   }
 
   .searchLayout.isDesktopSidebar .resultsHeader {
-    padding-top: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(220px, 280px);
+    gap: 16px;
+    align-items: start;
+    padding: 14px 16px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-card);
+    background: linear-gradient(180deg, rgba(19, 29, 23, 0.94), rgba(12, 18, 14, 0.98));
+    box-shadow: var(--shadow-card);
   }
 
   .searchLayout.isDesktopSidebar .resultsToolbar {
     justify-content: flex-end;
   }
 
+  .searchLayout.isDesktopSidebar .resultsSummaryBlock {
+    display: flex;
+    align-items: center;
+    min-height: 100%;
+  }
+
   .searchLayout.isDesktopSidebar .releaseList {
-    padding-top: 12px;
+    padding-top: 0;
   }
 }

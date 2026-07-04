@@ -1,7 +1,7 @@
 export const ru = {
   language: {
     label: 'Язык',
-    en: 'Английский',
+    en: 'English',
     ru: 'Русский',
     shortEn: 'EN',
     shortRu: 'RU',
@@ -29,6 +29,7 @@ export const ru = {
     selectedGenres: 'Выбранные жанры',
     genreResults: 'Результаты жанров',
     clearGenres: 'Очистить жанры',
+    maxGenres: 'Можно выбрать не больше 3 жанров.',
     noGenresFound: 'Жанры не найдены',
     releasesCount: 'релизов',
     countsHelp: 'Счётчики показаны за последний месяц.',

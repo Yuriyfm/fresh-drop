@@ -16,6 +16,7 @@ const PAGE_LIMIT = 20;
 const MOBILE_BREAKPOINT = 768;
 const DESKTOP_SIDEBAR_BREAKPOINT = 1024;
 const GENRE_SEARCH_DEBOUNCE_MS = 180;
+const MAX_SELECTED_GENRES = 3;
 const VIRTUAL_RELEASE_ROW_HEIGHT = 92;
 const VIRTUAL_RELEASE_OVERSCAN = 8;
 const RELEASE_ROUTE_PREFIX = '/releases/';
@@ -642,6 +643,7 @@ function GenreFilter({ isMobile, selectedGenres, genreOptions, t, onChange }: Ge
   const debouncedQuery = useDebouncedValue(normalizedQuery, GENRE_SEARCH_DEBOUNCE_MS);
   const visibleOptions = genreOptions.filter((option) => getGenreLabel(option.name, t).toLowerCase().includes(debouncedQuery));
   const showOptions = !isMobile || isExpanded || normalizedQuery.length > 0;
+  const hasReachedGenreLimit = selectedGenres.length >= MAX_SELECTED_GENRES;
 
   useEffect(() => {
     if (!isMobile) {
@@ -698,14 +700,16 @@ function GenreFilter({ isMobile, selectedGenres, genreOptions, t, onChange }: Ge
             {visibleOptions.length > 0 ? (
               visibleOptions.map((option) => {
                 const isSelected = selectedGenres.includes(option.name);
+                const isDisabled = !isSelected && hasReachedGenreLimit;
 
                 return (
                   <button
                     type="button"
                     role="checkbox"
                     aria-checked={isSelected}
-                    className={isSelected ? 'genreOption isSelected' : 'genreOption'}
+                    className={isDisabled ? 'genreOption isDisabled' : isSelected ? 'genreOption isSelected' : 'genreOption'}
                     key={`${option.kind}-${option.name}`}
+                    disabled={isDisabled}
                     onClick={() => toggleGenre(option.name)}
                   >
                     <span className={isSelected ? 'genreCheckbox isChecked' : 'genreCheckbox'} aria-hidden="true">
@@ -721,6 +725,7 @@ function GenreFilter({ isMobile, selectedGenres, genreOptions, t, onChange }: Ge
             )}
           </div>
           <p className="genreHelperText">{t.filters.countsHelp}</p>
+          {hasReachedGenreLimit && <p className="genreHelperText">{t.filters.maxGenres}</p>}
         </>
       )}
     </div>
@@ -729,6 +734,10 @@ function GenreFilter({ isMobile, selectedGenres, genreOptions, t, onChange }: Ge
   function toggleGenre(nextGenre: string): void {
     if (selectedGenres.includes(nextGenre)) {
       onChange(selectedGenres.filter((genre) => genre !== nextGenre));
+      return;
+    }
+
+    if (selectedGenres.length >= MAX_SELECTED_GENRES) {
       return;
     }
 
@@ -1143,29 +1152,13 @@ type LanguageSwitcherProps = {
 
 function LanguageSwitcher({ language, t, onChange }: LanguageSwitcherProps) {
   return (
-    <div className="languageSwitcher">
+    <label className="languageSwitcher">
       <span className="srOnly">{t.language.label}</span>
-      <div className="segmentedControl segmentedControlCompact" role="group" aria-label={t.language.label}>
-        <button
-          type="button"
-          className={language === 'en' ? 'segmentButton isActive' : 'segmentButton'}
-          aria-label={t.language.en}
-          aria-pressed={language === 'en'}
-          onClick={() => onChange('en')}
-        >
-          {t.language.shortEn}
-        </button>
-        <button
-          type="button"
-          className={language === 'ru' ? 'segmentButton isActive' : 'segmentButton'}
-          aria-label={t.language.ru}
-          aria-pressed={language === 'ru'}
-          onClick={() => onChange('ru')}
-        >
-          {t.language.shortRu}
-        </button>
-      </div>
-    </div>
+      <select aria-label={t.language.label} value={language} onChange={(event) => onChange(event.target.value as Language)}>
+        <option value="en">{t.language.en}</option>
+        <option value="ru">{t.language.ru}</option>
+      </select>
+    </label>
   );
 }
 
