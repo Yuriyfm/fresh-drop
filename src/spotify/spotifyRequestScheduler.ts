@@ -9,7 +9,6 @@ export type SpotifyRequestSchedulerConfig = {
   rateDecreaseFactor?: number;
   stableWindowMs?: number;
   retryJitterMs?: number;
-  minRequestIntervalMs?: number;
   nowFn?: () => number;
   sleepFn?: SleepFn;
   randomFn?: () => number;
@@ -35,7 +34,6 @@ export class SpotifyRequestScheduler {
   private readonly rateDecreaseFactor: number;
   private readonly stableWindowMs: number;
   private readonly retryJitterMs: number;
-  private readonly minRequestIntervalMs: number;
   private readonly nowFn: () => number;
   private readonly sleepFn: SleepFn;
   private readonly randomFn: () => number;
@@ -78,11 +76,6 @@ export class SpotifyRequestScheduler {
       config.retryJitterMs,
       DEFAULT_RETRY_JITTER_MS,
       'Spotify retry jitter',
-    );
-    this.minRequestIntervalMs = normalizeNonNegativeInteger(
-      config.minRequestIntervalMs,
-      0,
-      'Spotify min request interval',
     );
     this.nowFn = config.nowFn ?? Date.now;
     this.sleepFn = config.sleepFn ?? sleep;
@@ -192,9 +185,7 @@ export class SpotifyRequestScheduler {
   }
 
   private getIntervalMs(): number {
-    const adaptiveIntervalMs = Math.ceil(1000 / this.currentRps);
-
-    return Math.max(adaptiveIntervalMs, this.minRequestIntervalMs);
+    return Math.ceil(1000 / this.currentRps);
   }
 
   private getJitterMs(): number {

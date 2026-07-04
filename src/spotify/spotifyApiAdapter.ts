@@ -22,7 +22,6 @@ type FetchLike = typeof fetch;
 export type SpotifyApiAdapterConfig = {
   clientId: string;
   clientSecret: string;
-  minRequestIntervalMs?: number;
   requestScheduler?: SpotifyRequestScheduler;
   requestSchedulerConfig?: Omit<SpotifyRequestSchedulerConfig, 'nowFn' | 'sleepFn'>;
   fetchFn?: FetchLike;
@@ -108,7 +107,6 @@ export class SpotifyApiAdapter {
     this.sleepFn = config.sleepFn ?? sleep;
     this.requestScheduler = config.requestScheduler ?? new SpotifyRequestScheduler({
       ...config.requestSchedulerConfig,
-      minRequestIntervalMs: normalizeMinRequestIntervalMs(config.minRequestIntervalMs),
       nowFn: this.nowFn,
       sleepFn: this.sleepFn,
     });
@@ -517,18 +515,6 @@ function getRetryDelaySeconds(error: unknown): number | null {
   }
 
   return null;
-}
-
-function normalizeMinRequestIntervalMs(value: number | undefined): number {
-  if (value === undefined) {
-    return 0;
-  }
-
-  if (!Number.isFinite(value) || value < 0) {
-    throw new Error('Spotify API min request interval must be a non-negative number.');
-  }
-
-  return Math.trunc(value);
 }
 
 function sleep(delayMs: number): Promise<void> {

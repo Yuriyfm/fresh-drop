@@ -17,13 +17,11 @@ const MAX_PAGES = 10;
 export function getReleaseSyncConfigFromEnv(env: SyncEnv): ReleaseSyncConfig {
   const clientId = getRequiredEnv(env, 'SPOTIFY_CLIENT_ID');
   const clientSecret = getRequiredEnv(env, 'SPOTIFY_CLIENT_SECRET');
-  const minRequestIntervalMs = normalizeOptionalNonNegativeInteger(env.SPOTIFY_API_MIN_REQUEST_INTERVAL_MS);
 
   return {
     spotify: {
       clientId,
       clientSecret,
-      minRequestIntervalMs,
       requestSchedulerConfig: getSpotifyRequestSchedulerConfigFromEnv(env),
     },
     fetchOptions: {
@@ -89,20 +87,6 @@ function normalizePages(value: string | undefined): number {
   }
 
   return Math.min(parsed, MAX_PAGES);
-}
-
-function normalizeOptionalNonNegativeInteger(value: string | undefined): number | undefined {
-  if (!value) {
-    return undefined;
-  }
-
-  const parsed = Number(value);
-
-  if (!Number.isInteger(parsed) || parsed < 0) {
-    throw new Error('SPOTIFY_API_MIN_REQUEST_INTERVAL_MS must be a non-negative integer.');
-  }
-
-  return parsed;
 }
 
 function normalizeNonNegativeInteger(value: string | undefined, fallback: number, name: string): number {

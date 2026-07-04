@@ -18,13 +18,11 @@ describe('getReleaseSyncConfigFromEnv', () => {
         SPOTIFY_RATE_DECREASE_FACTOR: '0.4',
         SPOTIFY_RATE_STABLE_WINDOW_MS: '600000',
         SPOTIFY_RETRY_JITTER_MS: '750',
-        SPOTIFY_API_MIN_REQUEST_INTERVAL_MS: '250',
       }),
     ).toEqual({
       spotify: {
         clientId: 'client-id',
         clientSecret: 'client-secret',
-        minRequestIntervalMs: 250,
         requestSchedulerConfig: {
           initialRps: 1.5,
           maxRps: 3,
@@ -44,7 +42,7 @@ describe('getReleaseSyncConfigFromEnv', () => {
     });
   });
 
-  it('uses adaptive defaults and leaves legacy request interval disabled by default', () => {
+  it('uses adaptive defaults for Spotify requests', () => {
     expect(
       getReleaseSyncConfigFromEnv({
         SPOTIFY_CLIENT_ID: 'client-id',
@@ -54,7 +52,6 @@ describe('getReleaseSyncConfigFromEnv', () => {
       spotify: {
         clientId: 'client-id',
         clientSecret: 'client-secret',
-        minRequestIntervalMs: undefined,
         requestSchedulerConfig: {
           initialRps: 1,
           maxRps: 2,
@@ -117,7 +114,7 @@ describe('getReleaseSyncConfigFromEnv', () => {
     ).toThrow('SPOTIFY_SYNC_PAGES must be a positive integer.');
   });
 
-  it('validates scheduler and legacy interval env values', () => {
+  it('validates scheduler env values', () => {
     expect(() =>
       getReleaseSyncConfigFromEnv({
         SPOTIFY_CLIENT_ID: 'client-id',
@@ -133,13 +130,5 @@ describe('getReleaseSyncConfigFromEnv', () => {
         SPOTIFY_RATE_DECREASE_FACTOR: '2',
       }),
     ).toThrow('SPOTIFY_RATE_DECREASE_FACTOR must be greater than 0 and at most 1.');
-
-    expect(() =>
-      getReleaseSyncConfigFromEnv({
-        SPOTIFY_CLIENT_ID: 'client-id',
-        SPOTIFY_CLIENT_SECRET: 'client-secret',
-        SPOTIFY_API_MIN_REQUEST_INTERVAL_MS: '-1',
-      }),
-    ).toThrow('SPOTIFY_API_MIN_REQUEST_INTERVAL_MS must be a non-negative integer.');
   });
 });
