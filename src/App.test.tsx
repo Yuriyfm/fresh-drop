@@ -27,6 +27,7 @@ describe('App', () => {
   beforeEach(() => {
     window.localStorage.clear();
     window.history.pushState(null, '', '/');
+    setViewportWidth(1024);
     Object.defineProperty(window, 'scrollY', {
       configurable: true,
       value: 0,
@@ -39,6 +40,7 @@ describe('App', () => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
     window.localStorage.clear();
+    setViewportWidth(1024);
     window.history.pushState(null, '', '/');
   });
 
@@ -59,7 +61,8 @@ describe('App', () => {
     render(<App />);
 
     expect(await screen.findByText('Release One')).toBeInTheDocument();
-    expect(screen.getByRole('checkbox', { name: 'indie pop 1' })).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: /indie pop/i })).toBeInTheDocument();
+    expect(screen.getByText('Counts match the current period and release type.')).toBeInTheDocument();
     expect(screen.queryByLabelText('Country / market')).not.toBeInTheDocument();
     expect(fetchSpy).toHaveBeenCalledWith(
       expect.stringMatching(
@@ -119,7 +122,9 @@ describe('App', () => {
 
     render(<App />);
 
-    fireEvent.click(await screen.findByRole('checkbox', { name: 'techno 1' }));
+    fireEvent.click(await screen.findByRole('checkbox', { name: /techno/i }));
+
+    expect(screen.getByRole('button', { name: 'Clear genres' })).toBeInTheDocument();
 
     await waitFor(() => {
       expect(fetchSpy).toHaveBeenLastCalledWith(
@@ -146,8 +151,8 @@ describe('App', () => {
 
     render(<App />);
 
-    fireEvent.click(await screen.findByRole('checkbox', { name: 'techno 1' }));
-    fireEvent.change(screen.getAllByLabelText('Type')[0], { target: { value: 'album' } });
+    fireEvent.click(await screen.findByRole('checkbox', { name: /techno/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Albums' }));
     fireEvent.change(screen.getAllByLabelText('Sorting')[0], { target: { value: 'popular' } });
 
     await waitFor(() => {
@@ -155,6 +160,102 @@ describe('App', () => {
         '/api/releases?period=7d&type=album&sort=popular&page=1&limit=20&genre=techno',
         expect.any(Object),
       );
+    });
+  });
+
+  it('uses mobile-friendly controls for period, type, and sorting on small screens', async () => {
+    setViewportWidth(390);
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.resolve(
+      makeResponse({
+        items: [makeRelease({ genres: ['techno'], country: 'DE', type: 'album', popularity: 80 })],
+        pagination: {
+          page: 1,
+          limit: 20,
+          total: 1,
+          hasNextPage: false,
+        },
+        error: null,
+      }),
+    ));
+
+    render(<App />);
+
+    expect(await screen.findByText('Release One')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '7 days' })).toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'Sorting' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /More filters/i }));
+    expect(screen.getByRole('dialog', { name: 'More filters' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Albums' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Most popular' }));
+
+    await waitFor(() => {
+      expect(fetchSpy).toHaveBeenLastCalledWith(
+        expect.stringContaining('type=album&sort=popular'),
+        expect.any(Object),
+      );
+    });
+  });
+
+  it('shows a sticky mobile summary bar with filter actions', async () => {
+    setViewportWidth(390);
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.resolve(
+      makeResponse({
+        items: [makeRelease({ genres: ['techno'] })],
+        pagination: {
+          page: 1,
+          limit: 20,
+          total: 1,
+          hasNextPage: false,
+        },
+        error: null,
+      }),
+    ));
+
+    render(<App />);
+
+    expect(await screen.findByText('Release One')).toBeInTheDocument();
+    expect(screen.getByText('1 release · Last 7 days')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Filters' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reset' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Browse' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /techno/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('1 release · techno')).toBeInTheDocument();
+    });
+    expect(screen.getByText('1 filter')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reset' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    expect(screen.getByRole('dialog', { name: 'More filters' })).toBeInTheDocument();
+  });
+
+  it('shows an empty state when genre search has no matches', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      makeResponse({
+        items: [makeRelease({ genres: ['techno'] })],
+        pagination: {
+          page: 1,
+          limit: 20,
+          total: 1,
+          hasNextPage: false,
+        },
+        error: null,
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByText('Release One')).toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText('Search genres'), { target: { value: 'ambient' } });
+
+    await waitFor(() => {
+      expect(screen.getByText('No genres found')).toBeInTheDocument();
     });
   });
 
@@ -519,10 +620,10 @@ describe('App', () => {
 
     render(<App />);
 
-    fireEvent.change(screen.getByLabelText('Language'), { target: { value: 'ru' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Russian' }));
 
     expect(screen.getByText('Свежие релизы Spotify с быстрым поиском по фильтрам.')).toBeInTheDocument();
-    expect(screen.getByLabelText('Язык')).toHaveValue('ru');
+    expect(screen.getByRole('group', { name: 'Язык' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Как это работает' })).toBeInTheDocument();
     expect(window.localStorage.getItem(LANGUAGE_STORAGE_KEY)).toBe('ru');
   });
@@ -604,5 +705,12 @@ function scrollToVirtualRelease(releaseNumber: number): void {
 
   act(() => {
     window.dispatchEvent(new Event('scroll'));
+  });
+}
+
+function setViewportWidth(width: number): void {
+  Object.defineProperty(window, 'innerWidth', {
+    configurable: true,
+    value: width,
   });
 }

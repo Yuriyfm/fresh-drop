@@ -74,8 +74,20 @@ Last 7 days
 На мобильном:
 
 * period и genre видны сверху;
+* period использует segmented control `7 days / 14 days / Month`;
+* genre занимает всю ширину и в свернутом состоянии не вытесняет список релизов за первый экран;
+* genre search занимает всю ширину, выбранные жанры показываются chips над списком;
+* если выбраны жанры, рядом доступно явное действие `Clear genres`;
+* список жанров имеет ограниченную высоту и внутренний scroll;
+* если поиск жанров ничего не нашёл, показывается `No genres found`;
+* count у жанра явно относится к текущему search context и сопровождается helper text;
 * остальные фильтры в bottom sheet;
+* type в bottom sheet использует segmented control `All / Singles / Albums / Compilations`;
+* sorting открывается через compact trigger и bottom sheet, а не системный select;
 * в bottom sheet также есть `Reset filters`.
+* language находится в header/settings area и не конкурирует с фильтрами за главное внимание.
+* над списком релизов есть sticky summary bar с количеством результатов, кратким контекстом периода/жанров и быстрым открытием фильтров;
+* reset filters на мобильном доступен из sticky summary bar и не занимает отдельную большую строку ниже.
 
 Ограничения MVP:
 
@@ -95,10 +107,18 @@ Last 7 days
 * title;
 * artist;
 * release date;
-* release type;
+* release type badge;
 * chevron/индикатор перехода.
 
 Вся строка кликабельна и открывает страницу релиза.
+
+На мобильном карточка релиза:
+
+* имеет стабильную высоту примерно `80-88px`;
+* использует обложку `64x64` или `72x72`;
+* показывает placeholder/skeleton, пока cover ещё загружается;
+* имеет более заметный title и читаемые вторичные metadata;
+* имеет pressed state, а на десктопе hover/focus state.
 
 Кнопки Spotify в списке нет.
 

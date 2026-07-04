@@ -3,6 +3,8 @@ export const ru = {
     label: 'Язык',
     en: 'Английский',
     ru: 'Русский',
+    shortEn: 'EN',
+    shortRu: 'RU',
   },
   app: {
     eyebrow: 'Поиск релизов Spotify',
@@ -19,12 +21,33 @@ export const ru = {
     allGenres: 'Все жанры',
     noGenre: 'Без жанра',
     searchGenres: 'Поиск жанров',
+    browseGenres: 'Показать',
+    hideGenres: 'Скрыть',
     selectedGenres: 'Выбранные жанры',
+    genreResults: 'Результаты жанров',
+    clearGenres: 'Очистить жанры',
+    noGenresFound: 'Жанры не найдены',
+    releasesCount: 'релизов',
+    countsHelp: 'Счётчики соответствуют текущему периоду и типу релиза.',
     allTypes: 'Все',
     filters: 'Фильтры',
+    moreFilters: 'Ещё фильтры',
     reset: 'Сбросить фильтры',
+    resetShort: 'Сброс',
     close: 'Закрыть фильтры',
     additional: 'Дополнительные фильтры',
+    activeFilters: (count: number) => formatRuFiltersCount(count),
+    periodOptions: {
+      '7d': '7 дней',
+      '14d': '14 дней',
+      '1m': 'Месяц',
+    },
+    typeOptions: {
+      all: 'Все',
+      single: 'Синглы',
+      album: 'Альбомы',
+      compilation: 'Сборники',
+    },
   },
   sorts: {
     newest: 'Сначала новые',
@@ -47,6 +70,7 @@ export const ru = {
   results: {
     loading: 'Загружаем релизы...',
     summary: (count: number, filters: string[]) => [summaryCount(count), ...filters].join(' \u00b7 '),
+    releasesShort: (count: number) => formatRuReleasesShort(count),
     noTitle: 'Релизы не найдены',
     noDescription: 'Попробуйте выбрать более длинный период или убрать часть фильтров.',
     errorTitle: 'Не удалось загрузить релизы',
@@ -57,6 +81,7 @@ export const ru = {
   },
   release: {
     openLabel: (title: string) => `Открыть ${title}`,
+    coverAlt: (title: string) => `Обложка ${title}`,
     unknownArtist: 'Неизвестный артист',
     back: 'Назад',
     detailsAria: 'Данные релиза',
@@ -106,4 +131,34 @@ function summaryCount(count: number): string {
   }
 
   return `${count} релизов найдено`;
+}
+
+function formatRuFiltersCount(count: number): string {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+
+  if (mod10 === 1 && mod100 !== 11) {
+    return `${count} фильтр`;
+  }
+
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) {
+    return `${count} фильтра`;
+  }
+
+  return `${count} фильтров`;
+}
+
+function formatRuReleasesShort(count: number): string {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+
+  if (mod10 === 1 && mod100 !== 11) {
+    return 'релиз';
+  }
+
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) {
+    return 'релиза';
+  }
+
+  return 'релизов';
 }

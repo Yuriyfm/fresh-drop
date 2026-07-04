@@ -13,6 +13,8 @@ import {
 import { fetchReleases } from './releasesClient';
 
 const PAGE_LIMIT = 20;
+const MOBILE_BREAKPOINT = 768;
+const GENRE_SEARCH_DEBOUNCE_MS = 180;
 const VIRTUAL_RELEASE_ROW_HEIGHT = 92;
 const VIRTUAL_RELEASE_OVERSCAN = 8;
 const RELEASE_ROUTE_PREFIX = '/releases/';
@@ -73,6 +75,7 @@ function App() {
   const [genres, setGenres] = useState<string[]>(storedSearchState.genres);
   const [type, setType] = useState<ReleaseTypeFilter>(storedSearchState.type);
   const [sort, setSort] = useState<ReleaseSort>(storedSearchState.sort);
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < MOBILE_BREAKPOINT);
   const [randomStartSeed] = useState(() => createRandomStartSeed());
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
   const [page, setPage] = useState(1);
@@ -111,6 +114,38 @@ function App() {
       window.removeEventListener('popstate', handlePopState);
     };
   }, []);
+
+  useEffect(() => {
+    function updateViewport(): void {
+      setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
+    }
+
+    updateViewport();
+    window.addEventListener('resize', updateViewport);
+
+    return () => {
+      window.removeEventListener('resize', updateViewport);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isMobile) {
+      setIsFiltersOpen(false);
+    }
+  }, [isMobile]);
+
+  useEffect(() => {
+    if (!isFiltersOpen) {
+      return undefined;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isFiltersOpen]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -198,12 +233,14 @@ function App() {
       [
         ...genres.map((selectedGenre) => getGenreLabel(selectedGenre, t)),
         getPeriodLabel(period, t),
-        type === 'all' ? undefined : getReleaseTypeLabel(type, t),
+        type === 'all' ? undefined : getReleaseTypeFilterLabel(type, t),
         sort === 'newest' ? undefined : getReleaseSortLabel(sort, t),
       ].filter(isPresent),
     [genres, period, sort, t, type],
   );
   const summaryText = t.results.summary(pagination.total, summaryFilters);
+  const mobileSummaryText = status === 'loading' ? t.results.loading : getMobileSummaryText(pagination.total, period, genres, t);
+  const mobileActiveFilterCount = getMobileActiveFilterCount(period, genres, type, sort);
   const virtualRange = getVirtualReleaseRange(releases.length, scrollPosition, releaseListRef.current);
   const visibleReleases = releases.slice(virtualRange.startIndex, virtualRange.endIndex);
 
@@ -243,39 +280,78 @@ function App() {
       </header>
 
       <section className="filterPanel" aria-label={t.filters.aria}>
-        <div className="filterGroup">
+        <div className="filterPanelHeader">
           <p className="filterGroupTitle">{t.filters.filters}</p>
-          <div className="primaryFilters">
-            <PeriodFilter period={period} t={t} onChange={updatePeriod} />
-            <GenreFilter selectedGenres={genres} genreOptions={genreOptions} t={t} onChange={updateGenres} />
-            <button type="button" className="secondaryButton mobileFilterButton" onClick={() => setIsFiltersOpen(true)}>
-              {t.filters.filters}
+          {isMobile && (
+            <button
+              type="button"
+              className="secondaryButton compactFilterButton"
+              aria-haspopup="dialog"
+              aria-expanded={isFiltersOpen}
+              onClick={() => setIsFiltersOpen(true)}
+            >
+              <span>{t.filters.moreFilters}</span>
+              <span className="compactFilterValue">{getMobileFilterSummary(type, sort, t)}</span>
             </button>
-          </div>
-
-          <div className="desktopFilters">
-            <AdditionalFilters
-              type={type}
-              t={t}
-              onTypeChange={updateType}
-            />
-          </div>
+          )}
         </div>
 
-        <div className="filterGroup desktopSortGroup">
-          <p className="filterGroupTitle">{t.filters.sorting}</p>
-          <SortFilter sort={sort} t={t} onChange={updateSort} />
+        <div className="primaryFilters">
+          <PeriodFilter period={period} t={t} onChange={updatePeriod} />
+          <GenreFilter
+            isMobile={isMobile}
+            selectedGenres={genres}
+            genreOptions={genreOptions}
+            t={t}
+            onChange={updateGenres}
+          />
         </div>
-      </section>
 
-      <section className="resultsHeader" aria-live="polite">
-        <p>{status === 'loading' ? t.results.loading : summaryText}</p>
-        {hasActiveFilters(period, genres, type, sort) && (
-          <button type="button" className="ghostButton" onClick={resetFilters}>
-            {t.filters.reset}
-          </button>
+        {!isMobile && (
+          <div className="desktopSecondaryFilters">
+            <TypeFilter type={type} t={t} onChange={updateType} />
+            <SortFilter sort={sort} t={t} onChange={updateSort} />
+          </div>
         )}
       </section>
+
+      {!isMobile && (
+        <section className="resultsHeader" aria-live="polite">
+          <p>{status === 'loading' ? t.results.loading : summaryText}</p>
+          {hasActiveFilters(period, genres, type, sort) && (
+            <button type="button" className="ghostButton" onClick={resetFilters}>
+              {t.filters.reset}
+            </button>
+          )}
+        </section>
+      )}
+
+      {isMobile && (
+        <section className="stickySummaryBar" aria-live="polite">
+          <div className="stickySummaryContent">
+            <p className="stickySummaryText">{mobileSummaryText}</p>
+            {mobileActiveFilterCount > 0 && (
+              <span className="stickySummaryIndicator">{t.filters.activeFilters(mobileActiveFilterCount)}</span>
+            )}
+          </div>
+          <div className="stickySummaryActions">
+            <button
+              type="button"
+              className="secondaryButton stickySummaryButton"
+              aria-haspopup="dialog"
+              aria-expanded={isFiltersOpen}
+              onClick={() => setIsFiltersOpen(true)}
+            >
+              {t.filters.filters}
+            </button>
+            {hasActiveFilters(period, genres, type, sort) && (
+              <button type="button" className="ghostButton stickyResetButton" onClick={resetFilters}>
+                {t.filters.resetShort}
+              </button>
+            )}
+          </div>
+        </section>
+      )}
 
       <section className="releaseList" aria-label={t.filters.aria} ref={releaseListRef}>
         {status === 'loading' && <ReleaseSkeleton />}
@@ -353,13 +429,11 @@ function App() {
 
   function updateType(nextType: ReleaseTypeFilter): void {
     setType(nextType);
-    setIsFiltersOpen(false);
     resetResults();
   }
 
   function updateSort(nextSort: ReleaseSort): void {
     setSort(nextSort);
-    setIsFiltersOpen(false);
     resetResults();
   }
 
@@ -419,64 +493,107 @@ type PeriodFilterProps = {
 
 function PeriodFilter({ period, t, onChange }: PeriodFilterProps) {
   return (
-    <label>
-      {t.filters.period}
-      <select value={period} onChange={(event) => onChange(event.target.value as ReleasePeriod)}>
-        <option value="7d">{t.periods['7d']}</option>
-        <option value="14d">{t.periods['14d']}</option>
-        <option value="1m">{t.periods['1m']}</option>
-      </select>
-    </label>
+    <SegmentedControl
+      label={t.filters.period}
+      value={period}
+      options={[
+        { value: '7d', label: t.filters.periodOptions['7d'] },
+        { value: '14d', label: t.filters.periodOptions['14d'] },
+        { value: '1m', label: t.filters.periodOptions['1m'] },
+      ]}
+      onChange={onChange}
+    />
   );
 }
 
 type GenreFilterProps = {
+  isMobile: boolean;
   selectedGenres: string[];
   genreOptions: GenreOption[];
   t: Translation;
   onChange: (genres: string[]) => void;
 };
 
-function GenreFilter({ selectedGenres, genreOptions, t, onChange }: GenreFilterProps) {
+function GenreFilter({ isMobile, selectedGenres, genreOptions, t, onChange }: GenreFilterProps) {
   const [query, setQuery] = useState('');
+  const [isExpanded, setIsExpanded] = useState(false);
   const normalizedQuery = query.trim().toLowerCase();
-  const visibleOptions = genreOptions.filter((option) => getGenreLabel(option.name, t).toLowerCase().includes(normalizedQuery));
+  const debouncedQuery = useDebouncedValue(normalizedQuery, GENRE_SEARCH_DEBOUNCE_MS);
+  const visibleOptions = genreOptions.filter((option) => getGenreLabel(option.name, t).toLowerCase().includes(debouncedQuery));
+  const showOptions = !isMobile || isExpanded || normalizedQuery.length > 0;
+
+  useEffect(() => {
+    if (!isMobile) {
+      setIsExpanded(true);
+      return;
+    }
+
+    setIsExpanded(false);
+  }, [isMobile]);
 
   return (
-    <div className="genreSelector">
-      <label>
-        {t.filters.genre}
+    <div className="genreSelector filterField">
+      <div className="fieldHeader">
+        <span className="fieldLabel">{t.filters.genre}</span>
+        {isMobile && (
+          <button
+            type="button"
+            className="inlineFilterButton"
+            aria-expanded={showOptions}
+            onClick={() => setIsExpanded((current) => !current)}
+          >
+            {showOptions ? t.filters.hideGenres : t.filters.browseGenres}
+          </button>
+        )}
+      </div>
+      <div className="genreSearchField">
         <input
           type="search"
           value={query}
           placeholder={t.filters.searchGenres}
+          onFocus={() => setIsExpanded(true)}
           onChange={(event) => setQuery(event.target.value)}
         />
-      </label>
-      <div className="selectedGenreChips" aria-label={t.filters.selectedGenres}>
-        {selectedGenres.length === 0 ? (
-          <span className="emptyGenreChip">{t.filters.allGenres}</span>
-        ) : (
-          selectedGenres.map((genre) => (
-            <button type="button" className="genreChip" key={genre} onClick={() => toggleGenre(genre)}>
-              {getGenreLabel(genre, t)} x
-            </button>
-          ))
-        )}
       </div>
-      <div className="genreOptionList">
-        {visibleOptions.map((option) => (
-          <label className="genreOption" key={`${option.kind}-${option.name}`}>
-            <input
-              type="checkbox"
-              checked={selectedGenres.includes(option.name)}
-              onChange={() => toggleGenre(option.name)}
-            />
-            <span>{getGenreLabel(option.name, t)}</span>
-            <span className="genreCount">{option.releaseCount}</span>
-          </label>
-        ))}
-      </div>
+      {selectedGenres.length > 0 && (
+        <div className="selectedGenreBar">
+          <div className="selectedGenreChips" aria-label={t.filters.selectedGenres}>
+            {selectedGenres.map((genre) => (
+              <button type="button" className="genreChip" key={genre} onClick={() => toggleGenre(genre)}>
+                {getGenreLabel(genre, t)} x
+              </button>
+            ))}
+          </div>
+          <button type="button" className="clearGenresButton" onClick={clearGenres}>
+            {t.filters.clearGenres}
+          </button>
+        </div>
+      )}
+      {showOptions && (
+        <>
+          <div className="genreOptionList" role="list" aria-label={t.filters.genreResults}>
+            {visibleOptions.length > 0 ? (
+              visibleOptions.map((option) => (
+                <label className="genreOption" key={`${option.kind}-${option.name}`}>
+                  <input
+                    type="checkbox"
+                    checked={selectedGenres.includes(option.name)}
+                    onChange={() => toggleGenre(option.name)}
+                  />
+                  <span className="genreOptionLabel">{getGenreLabel(option.name, t)}</span>
+                  <span className="genreCount">
+                    <span className="genreCountValue">{option.releaseCount}</span>
+                    <span>{t.filters.releasesCount}</span>
+                  </span>
+                </label>
+              ))
+            ) : (
+              <div className="genreEmptyState">{t.filters.noGenresFound}</div>
+            )}
+          </div>
+          <p className="genreHelperText">{t.filters.countsHelp}</p>
+        </>
+      )}
     </div>
   );
 
@@ -488,29 +605,31 @@ function GenreFilter({ selectedGenres, genreOptions, t, onChange }: GenreFilterP
 
     onChange([...selectedGenres, nextGenre]);
   }
+
+  function clearGenres(): void {
+    onChange([]);
+  }
 }
 
-type AdditionalFiltersProps = {
+type TypeFilterProps = {
   type: ReleaseTypeFilter;
   t: Translation;
-  onTypeChange: (type: ReleaseTypeFilter) => void;
+  onChange: (type: ReleaseTypeFilter) => void;
 };
 
-function AdditionalFilters({
-  type,
-  t,
-  onTypeChange,
-}: AdditionalFiltersProps) {
+function TypeFilter({ type, t, onChange }: TypeFilterProps) {
   return (
-    <label>
-      {t.filters.type}
-      <select value={type} onChange={(event) => onTypeChange(event.target.value as ReleaseTypeFilter)}>
-        <option value="all">{t.releaseTypes.all}</option>
-        <option value="single">{t.releaseTypes.single}</option>
-        <option value="album">{t.releaseTypes.album}</option>
-        <option value="compilation">{t.releaseTypes.compilation}</option>
-      </select>
-    </label>
+    <SegmentedControl
+      label={t.filters.type}
+      value={type}
+      options={[
+        { value: 'all', label: t.filters.typeOptions.all },
+        { value: 'single', label: t.filters.typeOptions.single },
+        { value: 'album', label: t.filters.typeOptions.album },
+        { value: 'compilation', label: t.filters.typeOptions.compilation },
+      ]}
+      onChange={onChange}
+    />
   );
 }
 
@@ -522,8 +641,8 @@ type SortFilterProps = {
 
 function SortFilter({ sort, t, onChange }: SortFilterProps) {
   return (
-    <label>
-      {t.filters.sorting}
+    <label className="filterField">
+      <span className="fieldLabel">{t.filters.sorting}</span>
       <select value={sort} onChange={(event) => onChange(event.target.value as ReleaseSort)}>
         <option value="newest">{t.sorts.newest}</option>
         <option value="oldest">{t.sorts.oldest}</option>
@@ -534,10 +653,13 @@ function SortFilter({ sort, t, onChange }: SortFilterProps) {
   );
 }
 
-type MobileFiltersSheetProps = AdditionalFiltersProps & {
+type MobileFiltersSheetProps = {
   isOpen: boolean;
+  type: ReleaseTypeFilter;
+  t: Translation;
   sort: ReleaseSort;
   onClose: () => void;
+  onTypeChange: (type: ReleaseTypeFilter) => void;
   onSortChange: (sort: ReleaseSort) => void;
   onReset: () => void;
 };
@@ -555,31 +677,86 @@ function MobileFiltersSheet({
   return (
     <div className="sheetLayer" hidden={!isOpen}>
       <button type="button" className="sheetBackdrop" aria-label={t.filters.close} onClick={onClose} />
-      <section className="bottomSheet" role="dialog" aria-modal="true" aria-label={t.filters.additional}>
+      <section className="bottomSheet" role="dialog" aria-modal="true" aria-label={t.filters.moreFilters}>
         <div className="sheetHeader">
-          <h2>{t.filters.filters}</h2>
+          <h2>{t.filters.moreFilters}</h2>
           <button type="button" className="iconButton" aria-label={t.filters.close} onClick={onClose}>
             x
           </button>
         </div>
         <div className="sheetFilters">
-          <div className="filterGroup">
-            <p className="filterGroupTitle">{t.filters.filters}</p>
-            <AdditionalFilters
-              type={type}
-              t={t}
-              onTypeChange={onTypeChange}
-            />
-          </div>
-          <div className="filterGroup">
-            <p className="filterGroupTitle">{t.filters.sorting}</p>
-            <SortFilter sort={sort} t={t} onChange={onSortChange} />
-          </div>
+          <TypeFilter type={type} t={t} onChange={onTypeChange} />
+          <SortOptions sort={sort} t={t} onChange={onSortChange} />
         </div>
         <button type="button" className="ghostButton fullWidthButton" onClick={onReset}>
           {t.filters.reset}
         </button>
       </section>
+    </div>
+  );
+}
+
+type SegmentedControlOption<TValue extends string> = {
+  value: TValue;
+  label: string;
+};
+
+type SegmentedControlProps<TValue extends string> = {
+  label: string;
+  value: TValue;
+  options: SegmentedControlOption<TValue>[];
+  onChange: (value: TValue) => void;
+};
+
+function SegmentedControl<TValue extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: SegmentedControlProps<TValue>) {
+  return (
+    <div className="filterField">
+      <span className="fieldLabel">{label}</span>
+      <div className="segmentedControl" role="group" aria-label={label}>
+        {options.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            className={value === option.value ? 'segmentButton isActive' : 'segmentButton'}
+            aria-pressed={value === option.value}
+            onClick={() => onChange(option.value)}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SortOptions({ sort, t, onChange }: SortFilterProps) {
+  return (
+    <div className="filterField">
+      <span className="fieldLabel">{t.filters.sorting}</span>
+      <div className="sheetOptionList" role="group" aria-label={t.filters.sorting}>
+        {[
+          { value: 'newest', label: t.sorts.newest },
+          { value: 'oldest', label: t.sorts.oldest },
+          { value: 'popular', label: t.sorts.popular },
+          { value: 'less-popular', label: t.sorts.lessPopular },
+        ].map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            className={sort === option.value ? 'sheetOption isActive' : 'sheetOption'}
+            aria-pressed={sort === option.value}
+            onClick={() => onChange(option.value as ReleaseSort)}
+          >
+            <span>{option.label}</span>
+            {sort === option.value && <span aria-hidden="true">✓</span>}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -594,17 +771,13 @@ function ReleaseRow({ release, t, onSelect }: ReleaseRowProps) {
   return (
     <article className="releaseItem">
       <button type="button" className="releaseRow" onClick={onSelect} aria-label={t.release.openLabel(release.title)}>
-        {release.coverUrl ? (
-          <img className="coverImage" src={release.coverUrl} alt="" loading="lazy" />
-        ) : (
-          <span className="coverPlaceholder" aria-hidden="true" />
-        )}
+        <ReleaseCover coverUrl={release.coverUrl} title={release.title} t={t} />
         <span className="releaseInfo">
           <span className="releaseTitle">{release.title}</span>
           <span className="releaseArtist">{formatArtists(release, t)}</span>
           <span className="releaseMeta">
-            <span>{formatUnknown(release.releaseDate, t)}</span>
-            <span>{getReleaseTypeLabel(release.type, t)}</span>
+            <span className="releaseDateMeta">{formatUnknown(release.releaseDate, t)}</span>
+            <span className="releaseTypeBadge">{getReleaseTypeLabel(release.type, t)}</span>
           </span>
         </span>
         <span className="chevron" aria-hidden="true">
@@ -612,6 +785,41 @@ function ReleaseRow({ release, t, onSelect }: ReleaseRowProps) {
         </span>
       </button>
     </article>
+  );
+}
+
+type ReleaseCoverProps = {
+  coverUrl: string | null;
+  title: string;
+  t: Translation;
+};
+
+function ReleaseCover({ coverUrl, title, t }: ReleaseCoverProps) {
+  const [isLoaded, setIsLoaded] = useState(false);
+
+  useEffect(() => {
+    setIsLoaded(false);
+  }, [coverUrl]);
+
+  if (!coverUrl) {
+    return (
+      <span className="coverFrame" aria-hidden="true">
+        <span className="coverPlaceholder" />
+      </span>
+    );
+  }
+
+  return (
+    <span className="coverFrame">
+      <span className={isLoaded ? 'coverPlaceholder isHidden' : 'coverPlaceholder'} aria-hidden="true" />
+      <img
+        className={isLoaded ? 'coverImage isLoaded' : 'coverImage'}
+        src={coverUrl}
+        alt={t.release.coverAlt(title)}
+        loading="lazy"
+        onLoad={() => setIsLoaded(true)}
+      />
+    </span>
   );
 }
 
@@ -722,13 +930,29 @@ type LanguageSwitcherProps = {
 
 function LanguageSwitcher({ language, t, onChange }: LanguageSwitcherProps) {
   return (
-    <label className="languageSwitcher">
-      {t.language.label}
-      <select value={language} onChange={(event) => onChange(event.target.value as Language)}>
-        <option value="en">{t.language.en}</option>
-        <option value="ru">{t.language.ru}</option>
-      </select>
-    </label>
+    <div className="languageSwitcher">
+      <span className="srOnly">{t.language.label}</span>
+      <div className="segmentedControl segmentedControlCompact" role="group" aria-label={t.language.label}>
+        <button
+          type="button"
+          className={language === 'en' ? 'segmentButton isActive' : 'segmentButton'}
+          aria-label={t.language.en}
+          aria-pressed={language === 'en'}
+          onClick={() => onChange('en')}
+        >
+          {t.language.shortEn}
+        </button>
+        <button
+          type="button"
+          className={language === 'ru' ? 'segmentButton isActive' : 'segmentButton'}
+          aria-label={t.language.ru}
+          aria-pressed={language === 'ru'}
+          onClick={() => onChange('ru')}
+        >
+          {t.language.shortRu}
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -835,8 +1059,38 @@ function getReleaseTypeLabel(type: ReleaseTypeFilter | Release['type'], t: Trans
   return t.releaseTypes[type] ?? t.releaseTypes.unknown;
 }
 
+function getReleaseTypeFilterLabel(type: ReleaseTypeFilter, t: Translation): string {
+  return t.filters.typeOptions[type];
+}
+
 function getReleaseSortLabel(sort: ReleaseSort, t: Translation): string {
   return t.sorts[sort === 'less-popular' ? 'lessPopular' : sort];
+}
+
+function getMobileFilterSummary(type: ReleaseTypeFilter, sort: ReleaseSort, t: Translation): string {
+  return [getReleaseTypeFilterLabel(type, t), getReleaseSortLabel(sort, t)].join(' · ');
+}
+
+function getMobileSummaryText(
+  count: number,
+  period: ReleasePeriod,
+  genres: string[],
+  t: Translation,
+): string {
+  const formattedCount = new Intl.NumberFormat().format(count);
+  const genreLabels = genres.slice(0, 2).map((genre) => getGenreLabel(genre, t));
+  const context = genreLabels.length > 0 ? genreLabels : [getPeriodLabel(period, t)];
+
+  return [`${formattedCount} ${t.results.releasesShort(count)}`, ...context].join(' · ');
+}
+
+function getMobileActiveFilterCount(
+  period: ReleasePeriod,
+  genres: string[],
+  type: ReleaseTypeFilter,
+  sort: ReleaseSort,
+): number {
+  return (period !== '7d' ? 1 : 0) + genres.length + (type !== 'all' ? 1 : 0) + (sort !== 'newest' ? 1 : 0);
 }
 
 function getStoredReleaseSearchState(storage: Storage = window.localStorage): ReleaseSearchState {
@@ -882,6 +1136,22 @@ function isReleaseSort(value: unknown): value is ReleaseSort {
 
 function createRandomStartSeed(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function useDebouncedValue<TValue>(value: TValue, delayMs: number): TValue {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setDebouncedValue(value);
+    }, delayMs);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [delayMs, value]);
+
+  return debouncedValue;
 }
 
 function formatArtists(release: Release, t: Translation): string {
