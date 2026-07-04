@@ -12,7 +12,7 @@ const DEFAULT_LIMIT = 50;
 const DEFAULT_PAGES = 1;
 const MAX_LIMIT = 50;
 const MAX_PAGES = 10;
-const DEFAULT_MIN_REQUEST_INTERVAL_MS = 1_000;
+const DEFAULT_MIN_REQUEST_INTERVAL_MS = 10_000;
 const MAX_MIN_REQUEST_INTERVAL_MS = 60_000;
 
 export function getReleaseSyncConfigFromEnv(env: SyncEnv): ReleaseSyncConfig {

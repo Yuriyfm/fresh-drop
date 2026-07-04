@@ -227,6 +227,7 @@ Sync job отвечает за загрузку свежих релизов из
 * корректно обрабатывать ошибки и rate limit.
 
 Правила поведения crawler при `429`, временных `5xx` и retry описаны в `docs/specs/crawler-rate-limit.spec.md`.
+Правила adaptive sharding, saturated query и low-yield shard описаны в `docs/specs/crawler-adaptive-sharding.spec.md`.
 
 ## Spotify sync smoke output
 

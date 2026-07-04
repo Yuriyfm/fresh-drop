@@ -4,31 +4,24 @@ import { InMemoryReleaseRepository } from '../data/releaseRepository';
 import { InMemorySyncTaskRepository } from '../data/syncTaskRepository';
 import { SpotifyApiError } from '../spotify/spotifyApiAdapter';
 import { runReleaseCrawler } from './releaseCrawlerService';
+import type { ReleaseCrawlerConfig } from './crawlerConfig';
 
 describe('runReleaseCrawler', () => {
-  it('processes search tasks, saves recent releases, and enqueues artist expansion tasks', async () => {
-    const release = makeRelease();
+  it('seeds adaptive search shards and saves unique recent releases', async () => {
     const source = {
       fetchReleaseSearchPage: vi.fn().mockResolvedValue({
-        releases: [release],
-        total: 100,
-        nextOffset: 50,
+        releases: [makeRelease()],
+        total: 1,
+        nextOffset: null,
       }),
       fetchArtistAlbumsPage: vi.fn(),
     };
     const releases = new InMemoryReleaseRepository();
     const tasks = new InMemorySyncTaskRepository();
 
-    const result = await runReleaseCrawler(source, releases, tasks, {
-      market: 'TR',
-      batchSize: 1,
-      searchLimit: 50,
-      artistAlbumsLimit: 10,
-      retentionDays: 30,
-      searchQueries: ['tag:new'],
-      enableArtistExpansion: true,
-      searchTaskCooldownMinutes: 720,
-    }, new Date('2026-07-02T12:00:00.000Z'));
+    const result = await runReleaseCrawler(source, releases, tasks, makeConfig({
+      searchSeeds: [{ family: 'plain', token: '', priority: 100, depth: 0 }],
+    }), new Date('2026-07-02T12:00:00.000Z'));
 
     expect(result).toMatchObject({
       tasksClaimed: 1,
@@ -37,302 +30,255 @@ describe('runReleaseCrawler', () => {
       itemsFound: 1,
       itemsSaved: 1,
     });
-    expect(source.fetchReleaseSearchPage).toHaveBeenCalledWith({
+    expect(result.taskSummaries).toEqual([
+      expect.objectContaining({
+        query: 'tag:new',
+        family: 'plain',
+        status: 'completed',
+        itemsSeen: 1,
+        uniqueAdded: 1,
+        wasSplit: false,
+      }),
+    ]);
+
+    const [recurring] = await tasks.claimPendingTasks(1, new Date('2026-07-03T00:00:00.000Z'));
+    expect(recurring).toEqual(expect.objectContaining({
+      source: 'search',
       query: 'tag:new',
-      market: 'TR',
-      limit: 50,
-      offset: 0,
-    });
-
-    const nextTasks = await tasks.claimPendingTasks(10, new Date('2026-07-02T12:00:01.000Z'));
-    expect(nextTasks.map((task) => `${task.source}:${task.query}:${task.offset}`).sort()).toEqual([
-      'artist_albums:artist-1:0',
-      'search:tag:new:50',
-    ]);
+      family: 'plain',
+      token: '',
+      attempts: 2,
+    }));
   });
 
-  it('does not save releases outside the retention window', async () => {
-    const source = {
-      fetchReleaseSearchPage: vi.fn().mockResolvedValue({
-        releases: [makeRelease({ id: 'old', releaseDate: '2026-05-01' })],
-        total: 1,
-        nextOffset: null,
-      }),
-      fetchArtistAlbumsPage: vi.fn(),
-    };
-    const releases = new InMemoryReleaseRepository();
-    const tasks = new InMemorySyncTaskRepository();
-
-    const result = await runReleaseCrawler(source, releases, tasks, {
-      market: 'TR',
-      batchSize: 1,
-      searchLimit: 50,
-      artistAlbumsLimit: 10,
-      retentionDays: 30,
-      searchQueries: ['tag:new'],
-      enableArtistExpansion: false,
-      searchTaskCooldownMinutes: 720,
-    }, new Date('2026-07-02T12:00:00.000Z'));
-
-    expect(result.itemsFound).toBe(1);
-    expect(result.itemsSaved).toBe(0);
-  });
-
-  it('saves only releases that are not already in the repository', async () => {
-    const existingRelease = makeRelease({ id: 'existing-release' });
-    const newRelease = makeRelease({ id: 'new-release' });
-    const source = {
-      fetchReleaseSearchPage: vi.fn().mockResolvedValue({
-        releases: [existingRelease, newRelease],
-        total: 2,
-        nextOffset: null,
-      }),
-      fetchArtistAlbumsPage: vi.fn(),
-    };
-    const releases = new InMemoryReleaseRepository();
-    const tasks = new InMemorySyncTaskRepository();
-    await releases.saveReleases([existingRelease]);
-
-    const result = await runReleaseCrawler(source, releases, tasks, {
-      market: 'TR',
-      batchSize: 1,
-      searchLimit: 50,
-      artistAlbumsLimit: 10,
-      retentionDays: 30,
-      searchQueries: ['tag:new'],
-      enableArtistExpansion: false,
-      searchTaskCooldownMinutes: 720,
-    }, new Date('2026-07-02T12:00:00.000Z'));
-
-    expect(result.itemsFound).toBe(2);
-    expect(result.itemsSaved).toBe(1);
-
-    const saved = await releases.findReleases({
-      period: '7d',
-      type: 'all',
-      sort: 'newest',
-      currentDate: new Date('2026-07-02T12:00:00.000Z'),
-    });
-    expect(saved.items.map((release) => release.id).sort()).toEqual(['existing-release', 'new-release']);
-  });
-
-  it('does not enqueue the next search offset when the page contains no new releases', async () => {
-    const release = makeRelease();
-    const source = {
-      fetchReleaseSearchPage: vi.fn().mockResolvedValue({
-        releases: [release],
-        total: 100,
-        nextOffset: 50,
-      }),
-      fetchArtistAlbumsPage: vi.fn(),
-    };
-    const releases = new InMemoryReleaseRepository();
-    const tasks = new InMemorySyncTaskRepository();
-    await releases.saveReleases([release]);
-
-    const result = await runReleaseCrawler(source, releases, tasks, {
-      market: 'TR',
-      batchSize: 1,
-      searchLimit: 50,
-      artistAlbumsLimit: 10,
-      retentionDays: 30,
-      searchQueries: ['tag:new'],
-      enableArtistExpansion: true,
-      searchTaskCooldownMinutes: 720,
-    }, new Date('2026-07-02T12:00:00.000Z'));
-
-    expect(result.itemsSaved).toBe(0);
-    await expect(tasks.claimPendingTasks(10, new Date('2026-07-02T12:00:01.000Z'))).resolves.toEqual([]);
-  });
-
-  it('skips artist expansion tasks when disabled', async () => {
-    const source = {
-      fetchReleaseSearchPage: vi.fn().mockResolvedValue({
-        releases: [makeRelease()],
-        total: 1,
-        nextOffset: null,
-      }),
-      fetchArtistAlbumsPage: vi.fn(),
-    };
-    const releases = new InMemoryReleaseRepository();
-    const tasks = new InMemorySyncTaskRepository();
-
-    await runReleaseCrawler(source, releases, tasks, {
-      market: 'TR',
-      batchSize: 1,
-      searchLimit: 50,
-      artistAlbumsLimit: 10,
-      retentionDays: 30,
-      searchQueries: ['tag:new'],
-      enableArtistExpansion: false,
-      searchTaskCooldownMinutes: 720,
-    }, new Date('2026-07-02T12:00:00.000Z'));
-
-    await expect(tasks.claimPendingTasks(10, new Date('2026-07-02T12:00:01.000Z'))).resolves.toEqual([]);
-  });
-
-  it('makes completed terminal search tasks recurring after the configured cooldown', async () => {
-    const source = {
-      fetchReleaseSearchPage: vi.fn().mockResolvedValue({
-        releases: [makeRelease()],
-        total: 1,
-        nextOffset: null,
-      }),
-      fetchArtistAlbumsPage: vi.fn(),
-    };
-    const releases = new InMemoryReleaseRepository();
-    const tasks = new InMemorySyncTaskRepository();
-
-    await runReleaseCrawler(source, releases, tasks, {
-      market: 'TR',
-      batchSize: 1,
-      searchLimit: 50,
-      artistAlbumsLimit: 10,
-      retentionDays: 30,
-      searchQueries: ['tag:new'],
-      enableArtistExpansion: false,
-      searchTaskCooldownMinutes: 720,
-    }, new Date('2026-07-02T12:00:00.000Z'));
-
-    const recurring = await tasks.claimPendingTasks(10, new Date('2026-07-03T00:00:00.000Z'));
-
-    expect(recurring).toEqual([
-      expect.objectContaining({
-        source: 'search',
-        query: 'tag:new',
-        offset: 0,
-      }),
-    ]);
-  });
-
-  it('requeues retryable crawler failures after backoff', async () => {
-    const source = {
-      fetchReleaseSearchPage: vi.fn().mockRejectedValue(new SpotifyApiError('Rate limited.', 'rate_limited', 429, 120)),
-      fetchArtistAlbumsPage: vi.fn(),
-    };
-    const releases = new InMemoryReleaseRepository();
-    const tasks = new InMemorySyncTaskRepository();
-
-    const result = await runReleaseCrawler(source, releases, tasks, {
-      market: 'TR',
-      batchSize: 1,
-      searchLimit: 50,
-      artistAlbumsLimit: 10,
-      retentionDays: 30,
-      searchQueries: ['tag:new'],
-      enableArtistExpansion: false,
-      searchTaskCooldownMinutes: 720,
-    }, new Date('2026-07-03T12:00:00.000Z'));
-
-    expect(result).toMatchObject({
-      tasksClaimed: 1,
-      tasksSucceeded: 0,
-      tasksFailed: 1,
-      itemsFound: 0,
-      itemsSaved: 0,
-    });
-    await expect(tasks.claimPendingTasks(1, new Date('2026-07-03T12:01:59.000Z'))).resolves.toEqual([]);
-    await expect(tasks.claimPendingTasks(1, new Date('2026-07-03T12:02:00.000Z'))).resolves.toEqual([
-      expect.objectContaining({
-        source: 'search',
-        query: 'tag:new',
-        offset: 0,
-        attempts: 2,
-      }),
-    ]);
-  });
-
-  it('stops the batch after the first rate limit and requeues the remaining claimed tasks', async () => {
+  it('splits saturated search shards into child queries', async () => {
     const source = {
       fetchReleaseSearchPage: vi
         .fn()
         .mockResolvedValueOnce({
-          releases: [makeRelease({ id: 'release-1' })],
-          total: 10,
-          nextOffset: null,
+          releases: Array.from({ length: 50 }, (_, index) => makeRelease({ id: `release-${index}` })),
+          total: 1200,
+          nextOffset: 50,
         })
-        .mockRejectedValueOnce(new SpotifyApiError('Rate limited.', 'rate_limited', 429, 120)),
+        .mockResolvedValueOnce({
+          releases: Array.from({ length: 50 }, (_, index) => makeRelease({ id: `release-${50 + index}` })),
+          total: 1200,
+          nextOffset: 100,
+        })
+        .mockResolvedValueOnce({
+          releases: Array.from({ length: 50 }, (_, index) => makeRelease({ id: `release-${100 + index}` })),
+          total: 1200,
+          nextOffset: 150,
+        })
+        .mockResolvedValueOnce({
+          releases: Array.from({ length: 50 }, (_, index) => makeRelease({ id: `release-${150 + index}` })),
+          total: 1200,
+          nextOffset: 200,
+        })
+        .mockResolvedValueOnce({
+          releases: Array.from({ length: 50 }, (_, index) => makeRelease({ id: `release-${200 + index}` })),
+          total: 1200,
+          nextOffset: 250,
+        })
+        .mockResolvedValueOnce({
+          releases: Array.from({ length: 50 }, (_, index) => makeRelease({ id: `release-${250 + index}` })),
+          total: 1200,
+          nextOffset: null,
+        }),
       fetchArtistAlbumsPage: vi.fn(),
     };
     const releases = new InMemoryReleaseRepository();
     const tasks = new InMemorySyncTaskRepository();
 
-    const result = await runReleaseCrawler(source, releases, tasks, {
-      market: 'TR',
-      batchSize: 3,
-      searchLimit: 50,
-      artistAlbumsLimit: 10,
-      retentionDays: 30,
-      searchQueries: ['tag:new', 'ab year:2026', 'cd year:2026'],
-      enableArtistExpansion: false,
-      searchTaskCooldownMinutes: 720,
-    }, new Date('2026-07-03T12:00:00.000Z'));
+    const result = await runReleaseCrawler(source, releases, tasks, makeConfig({
+      searchSeeds: [{ family: 'album', token: 'a', priority: 90, depth: 1 }],
+    }), new Date('2026-07-02T12:00:00.000Z'));
 
     expect(result).toMatchObject({
-      tasksClaimed: 3,
+      tasksClaimed: 1,
       tasksSucceeded: 1,
-      tasksFailed: 1,
-      tasksDeferred: 1,
-      itemsFound: 1,
-      itemsSaved: 1,
-      stoppedDueToRateLimit: true,
+      tasksInserted: 27,
+      itemsFound: 300,
+      itemsSaved: 300,
     });
-    expect(source.fetchReleaseSearchPage).toHaveBeenCalledTimes(2);
-
-    await expect(tasks.claimPendingTasks(10, new Date('2026-07-03T12:01:59.000Z'))).resolves.toEqual([]);
-    await expect(tasks.claimPendingTasks(10, new Date('2026-07-03T12:02:00.000Z'))).resolves.toEqual([
+    expect(result.taskSummaries).toEqual([
       expect.objectContaining({
-        query: 'ab year:2026',
-        attempts: 2,
-      }),
-      expect.objectContaining({
-        query: 'cd year:2026',
-        attempts: 2,
+        query: 'tag:new album:a',
+        status: 'completed',
+        wasSplit: true,
+        childTasksInserted: 26,
+        spotifyTotal: 1200,
       }),
     ]);
+
+    const children = await tasks.claimPendingTasks(30, new Date('2026-07-03T00:00:00.000Z'));
+    expect(children).toEqual(expect.arrayContaining([
+      expect.objectContaining({ query: 'tag:new album:aa', family: 'album', token: 'aa', depth: 2 }),
+      expect.objectContaining({ query: 'tag:new album:az', family: 'album', token: 'az', depth: 2 }),
+    ]));
   });
 
-  it('postpones pending tasks that were not part of the claimed batch after a rate limit', async () => {
+  it('marks low-yield shards as exhausted and reruns them later with lower priority', async () => {
     const source = {
-      fetchReleaseSearchPage: vi.fn().mockRejectedValue(new SpotifyApiError('Rate limited.', 'rate_limited', 429, 120)),
+      fetchReleaseSearchPage: vi
+        .fn()
+        .mockResolvedValueOnce({
+          releases: Array.from({ length: 50 }, (_, index) => makeRelease({ id: `first-${index}` })),
+          total: 400,
+          nextOffset: 50,
+        })
+        .mockResolvedValueOnce({
+          releases: Array.from({ length: 50 }, (_, index) => makeRelease({ id: `first-${50 + index}` })),
+          total: 400,
+          nextOffset: 100,
+        })
+        .mockResolvedValueOnce({
+          releases: Array.from({ length: 50 }, (_, index) => makeRelease({ id: `first-${100 + index}` })),
+          total: 400,
+          nextOffset: 150,
+        })
+        .mockResolvedValueOnce({
+          releases: Array.from({ length: 50 }, (_, index) => makeRelease({ id: `first-${150 + index}` })),
+          total: 400,
+          nextOffset: 200,
+        })
+        .mockResolvedValueOnce({
+          releases: Array.from({ length: 50 }, (_, index) => makeRelease({ id: `first-${200 + index}` })),
+          total: 400,
+          nextOffset: 250,
+        })
+        .mockResolvedValueOnce({
+          releases: Array.from({ length: 50 }, (_, index) => makeRelease({ id: `first-${250 + index}` })),
+          total: 400,
+          nextOffset: null,
+        }),
+      fetchArtistAlbumsPage: vi.fn(),
+    };
+    const releases = new InMemoryReleaseRepository();
+    const tasks = new InMemorySyncTaskRepository();
+    await releases.saveReleases(Array.from({ length: 299 }, (_, index) => makeRelease({ id: `first-${index}` })));
+
+    await runReleaseCrawler(source, releases, tasks, makeConfig({
+      searchSeeds: [{ family: 'plain', token: 'z', priority: 100, depth: 1 }],
+    }), new Date('2026-07-02T12:00:00.000Z'));
+
+    const [rerun] = await tasks.claimPendingTasks(1, new Date('2026-07-04T12:00:00.000Z'));
+    expect(rerun).toEqual(expect.objectContaining({
+      query: 'tag:new z',
+      attempts: 2,
+    }));
+    expect(rerun.priority).toBeLessThan(100);
+  });
+
+  it('requeues rate-limited search shards after retry-after and stops the batch', async () => {
+    const source = {
+      fetchReleaseSearchPage: vi
+        .fn()
+        .mockRejectedValueOnce(new SpotifyApiError('Rate limited.', 'rate_limited', 429, 120))
+        .mockResolvedValueOnce({
+          releases: [makeRelease({ id: 'after-retry' })],
+          total: 1,
+          nextOffset: null,
+        }),
       fetchArtistAlbumsPage: vi.fn(),
     };
     const releases = new InMemoryReleaseRepository();
     const tasks = new InMemorySyncTaskRepository();
     const currentDate = new Date('2026-07-03T12:00:00.000Z');
 
-    await tasks.enqueueTasks([
-      { source: 'search', query: 'tag:new', market: 'TR', priority: 0, nextRunAt: currentDate },
-      { source: 'search', query: 'ab year:2026', market: 'TR', priority: 1, nextRunAt: currentDate },
-      { source: 'search', query: 'cd year:2026', market: 'TR', priority: 2, nextRunAt: currentDate },
-    ]);
-
-    const result = await runReleaseCrawler(source, releases, tasks, {
-      market: 'TR',
-      batchSize: 1,
-      searchLimit: 50,
-      artistAlbumsLimit: 10,
-      retentionDays: 30,
-      searchQueries: ['tag:new', 'ab year:2026', 'cd year:2026'],
-      enableArtistExpansion: false,
-      searchTaskCooldownMinutes: 720,
-    }, currentDate);
+    const result = await runReleaseCrawler(source, releases, tasks, makeConfig({
+      searchSeeds: [
+        { family: 'plain', token: '', priority: 100, depth: 0 },
+        { family: 'plain', token: 'a', priority: 100, depth: 1 },
+      ],
+      batchSize: 2,
+    }), currentDate);
 
     expect(result).toMatchObject({
-      tasksClaimed: 1,
+      tasksClaimed: 2,
+      tasksSucceeded: 0,
       tasksFailed: 1,
-      tasksDeferred: 2,
+      tasksDeferred: 1,
       stoppedDueToRateLimit: true,
       retryAt: new Date('2026-07-03T12:02:00.000Z'),
     });
+    expect(result.taskSummaries).toEqual([
+      expect.objectContaining({
+        query: 'tag:new',
+        status: 'rate_limited',
+        retryAfterSeconds: 120,
+        retryAt: new Date('2026-07-03T12:02:00.000Z'),
+      }),
+    ]);
+
     await expect(tasks.claimPendingTasks(10, new Date('2026-07-03T12:01:59.000Z'))).resolves.toEqual([]);
     await expect(tasks.claimPendingTasks(10, new Date('2026-07-03T12:02:00.000Z'))).resolves.toEqual([
       expect.objectContaining({ query: 'tag:new', attempts: 2 }),
-      expect.objectContaining({ query: 'ab year:2026', attempts: 1 }),
-      expect.objectContaining({ query: 'cd year:2026', attempts: 1 }),
+      expect.objectContaining({ query: 'tag:new a', attempts: 2 }),
     ]);
   });
+
+  it('saves partial search results before stopping on rate limit', async () => {
+    const source = {
+      fetchReleaseSearchPage: vi
+        .fn()
+        .mockResolvedValueOnce({
+          releases: [
+            makeRelease({ id: 'saved-1' }),
+            makeRelease({ id: 'saved-2' }),
+          ],
+          total: 2,
+          nextOffset: null,
+          retryAfterSeconds: 120,
+        }),
+      fetchArtistAlbumsPage: vi.fn(),
+    };
+    const releases = new InMemoryReleaseRepository();
+    const tasks = new InMemorySyncTaskRepository();
+
+    const result = await runReleaseCrawler(source, releases, tasks, makeConfig({
+      searchSeeds: [{ family: 'plain', token: '', priority: 100, depth: 0 }],
+    }), new Date('2026-07-03T12:00:00.000Z'));
+
+    expect(result).toMatchObject({
+      tasksClaimed: 1,
+      tasksSucceeded: 0,
+      tasksFailed: 1,
+      requestsMade: 0,
+      itemsFound: 2,
+      itemsSaved: 2,
+      stoppedDueToRateLimit: true,
+      retryAt: new Date('2026-07-03T12:02:00.000Z'),
+    });
+    expect(result.taskSummaries).toEqual([
+      expect.objectContaining({
+        query: 'tag:new',
+        status: 'rate_limited',
+        itemsFound: 2,
+        itemsSaved: 2,
+        requestCount: 0,
+        retryAfterSeconds: 120,
+      }),
+    ]);
+    await expect(releases.findExistingReleaseIds(['saved-1', 'saved-2'])).resolves.toEqual(new Set(['saved-1', 'saved-2']));
+  });
 });
+
+function makeConfig(overrides: Partial<ReleaseCrawlerConfig> = {}): ReleaseCrawlerConfig {
+  return {
+    market: 'TR',
+    batchSize: 1,
+    searchLimit: 50,
+    artistAlbumsLimit: 10,
+    retentionDays: 30,
+    searchSeeds: [{ family: 'plain', token: '', priority: 100, depth: 0 }],
+    enableArtistExpansion: false,
+    searchTaskCooldownMinutes: 720,
+    maxShardDepth: 4,
+    maxSafeOffset: 950,
+    ...overrides,
+  };
+}
 
 function makeRelease(overrides: Partial<Release> = {}): Release {
   const artist = {

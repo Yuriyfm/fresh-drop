@@ -20,7 +20,7 @@ async function main(): Promise<void> {
     console.info(
       `Starting release crawler: market=${crawlerConfig.market}` +
         ` batch=${crawlerConfig.batchSize}` +
-        ` queries=${crawlerConfig.searchQueries.length}`,
+        ` queries=${crawlerConfig.searchSeeds.length}`,
     );
 
     const result = await runReleaseCrawler(spotify, releases, tasks, crawlerConfig);
@@ -32,12 +32,70 @@ async function main(): Promise<void> {
         ` tasksFailed=${result.tasksFailed}` +
         ` tasksInserted=${result.tasksInserted}` +
         ` tasksDeferred=${result.tasksDeferred}` +
+        ` requests=${result.requestsMade}` +
         ` found=${result.itemsFound}` +
         ` saved=${result.itemsSaved}` +
         ` deleted=${result.itemsDeleted}` +
         ` rateLimited=${result.stoppedDueToRateLimit}` +
         ` retryAt=${result.retryAt?.toISOString() ?? 'n/a'}`,
     );
+
+    for (const task of result.taskSummaries) {
+      console.info(
+        `Crawler task:` +
+          ` query="${task.query}"` +
+          ` source=${task.source}` +
+          ` family=${task.family ?? 'n/a'}` +
+          ` token=${task.token ?? 'n/a'}` +
+          ` depth=${task.depth}` +
+          ` status=${task.status}` +
+          ` requests=${task.requestCount}` +
+          ` spotifyTotal=${task.spotifyTotal ?? 'n/a'}` +
+          ` pages=${task.pagesFetched}` +
+          ` seen=${task.itemsSeen}` +
+          ` found=${task.itemsFound}` +
+          ` saved=${task.itemsSaved}` +
+          ` duplicates=${task.duplicatesSeen}` +
+          ` duplicateRate=${task.duplicateRate.toFixed(4)}` +
+          ` emptyPages=${task.emptyPages}` +
+          ` avgLatencyMs=${task.avgLatencyMs ?? 'n/a'}` +
+          ` priority=${task.priority}` +
+          ` split=${task.wasSplit}` +
+          ` childTasksInserted=${task.childTasksInserted}` +
+          ` retryAfterSeconds=${task.retryAfterSeconds ?? 'n/a'}` +
+          ` retryAt=${task.retryAt?.toISOString() ?? 'n/a'}` +
+          ` error=${JSON.stringify(task.errorMessage ?? null)}`,
+      );
+
+      if (task.wasSplit) {
+        console.info(
+          `Crawler split:` +
+            ` query="${task.query}"` +
+            ` depth=${task.depth}` +
+            ` spotifyTotal=${task.spotifyTotal ?? 'n/a'}` +
+            ` childTasksInserted=${task.childTasksInserted}`,
+        );
+      }
+
+      if (task.status === 'exhausted') {
+        console.info(
+          `Crawler exhausted:` +
+            ` query="${task.query}"` +
+            ` seen=${task.itemsSeen}` +
+            ` uniqueAdded=${task.uniqueAdded}` +
+            ` duplicateRate=${task.duplicateRate.toFixed(4)}`,
+        );
+      }
+
+      if (task.status === 'rate_limited') {
+        console.info(
+          `Crawler rate limit:` +
+            ` query="${task.query}"` +
+            ` retryAfterSeconds=${task.retryAfterSeconds ?? 'n/a'}` +
+            ` retryAt=${task.retryAt?.toISOString() ?? 'n/a'}`,
+        );
+      }
+    }
 
     if (result.tasksFailed > 0 && !result.stoppedDueToRateLimit) {
       process.exitCode = 1;

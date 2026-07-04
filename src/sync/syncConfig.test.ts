@@ -15,7 +15,7 @@ describe('getReleaseSyncConfigFromEnv', () => {
       spotify: {
         clientId: 'client-id',
         clientSecret: 'client-secret',
-        minRequestIntervalMs: 1000,
+        minRequestIntervalMs: 10000,
       },
       fetchOptions: {
         market: 'DE',
@@ -41,7 +41,7 @@ describe('getReleaseSyncConfigFromEnv', () => {
         SPOTIFY_CLIENT_ID: 'client-id',
         SPOTIFY_CLIENT_SECRET: 'client-secret',
       }).spotify.minRequestIntervalMs,
-    ).toBe(1000);
+    ).toBe(10000);
   });
 
   it('requires Spotify credentials', () => {

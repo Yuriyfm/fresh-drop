@@ -223,6 +223,54 @@ describe('SpotifyApiAdapter', () => {
     expect(fetchFn).toHaveBeenCalledTimes(2);
   });
 
+  it('returns partial search results when artist enrichment hits rate limit', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(makeJsonResponse({ access_token: 'token-1', expires_in: 3600 }))
+      .mockResolvedValueOnce(
+        makeJsonResponse({
+          albums: {
+            items: [
+              {
+                id: 'album-1',
+                name: 'Fresh Single',
+                album_type: 'single',
+                release_date: '2026-06-30',
+                release_date_precision: 'day',
+                artists: [{ id: 'artist-1', name: 'Artist One' }],
+              },
+            ],
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        makeJsonResponse(
+          { error: { message: 'Too many requests' } },
+          {
+            ok: false,
+            status: 429,
+            headers: new Headers({ 'retry-after': '7' }),
+          },
+        ),
+      );
+
+    const adapter = new SpotifyApiAdapter({
+      clientId: 'client-id',
+      clientSecret: 'client-secret',
+      fetchFn,
+    });
+
+    const page = await adapter.fetchReleaseSearchPage({ query: 'tag:new', market: 'US', limit: 50, offset: 0 });
+
+    expect(page.releases).toHaveLength(1);
+    expect(page.retryAfterSeconds).toBe(7);
+    expect(page.requestCount).toBe(3);
+    expect(page.releases[0]).toEqual(expect.objectContaining({
+      id: 'album-1',
+      title: 'Fresh Single',
+    }));
+  });
+
   it('maps network failures to adapter errors', async () => {
     const fetchFn = vi.fn().mockRejectedValueOnce(new Error('network down'));
     const adapter = new SpotifyApiAdapter({

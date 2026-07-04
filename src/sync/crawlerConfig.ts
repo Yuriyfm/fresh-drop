@@ -1,3 +1,6 @@
+import type { SearchShardSeed } from './searchShard';
+import { createDefaultSearchShardSeeds, parseSearchShardSeeds } from './searchShard';
+
 export type CrawlerEnv = Record<string, string | undefined>;
 
 export type ReleaseCrawlerConfig = {
@@ -6,9 +9,11 @@ export type ReleaseCrawlerConfig = {
   searchLimit: number;
   artistAlbumsLimit: number;
   retentionDays: number;
-  searchQueries: string[];
+  searchSeeds: SearchShardSeed[];
   enableArtistExpansion: boolean;
   searchTaskCooldownMinutes: number;
+  maxShardDepth: number;
+  maxSafeOffset: number;
 };
 
 const DEFAULT_MARKET = 'US';
@@ -16,6 +21,8 @@ const DEFAULT_BATCH_SIZE = 5;
 const DEFAULT_SEARCH_LIMIT = 50;
 const DEFAULT_ARTIST_ALBUMS_LIMIT = 10;
 const DEFAULT_RETENTION_DAYS = 30;
+const DEFAULT_MAX_SHARD_DEPTH = 4;
+const DEFAULT_MAX_SAFE_OFFSET = 950;
 
 export function getReleaseCrawlerConfigFromEnv(env: CrawlerEnv, currentDate = new Date()): ReleaseCrawlerConfig {
   return {
@@ -24,9 +31,11 @@ export function getReleaseCrawlerConfigFromEnv(env: CrawlerEnv, currentDate = ne
     searchLimit: normalizePositiveInteger(env.SPOTIFY_CRAWLER_SEARCH_LIMIT ?? env.SPOTIFY_SYNC_LIMIT, DEFAULT_SEARCH_LIMIT, 50),
     artistAlbumsLimit: normalizePositiveInteger(env.SPOTIFY_CRAWLER_ARTIST_ALBUMS_LIMIT, DEFAULT_ARTIST_ALBUMS_LIMIT, 10),
     retentionDays: normalizePositiveInteger(env.RELEASE_RETENTION_DAYS, DEFAULT_RETENTION_DAYS, 365),
-    searchQueries: normalizeSearchQueries(env.SPOTIFY_CRAWLER_SEARCH_QUERIES, currentDate),
+    searchSeeds: normalizeSearchSeeds(env.SPOTIFY_CRAWLER_SEARCH_QUERIES, currentDate),
     enableArtistExpansion: normalizeBoolean(env.SPOTIFY_CRAWLER_ENABLE_ARTIST_EXPANSION, false),
     searchTaskCooldownMinutes: normalizePositiveInteger(env.SPOTIFY_CRAWLER_SEARCH_TASK_COOLDOWN_MINUTES, 360, 10080),
+    maxShardDepth: normalizePositiveInteger(env.SPOTIFY_CRAWLER_MAX_SHARD_DEPTH, DEFAULT_MAX_SHARD_DEPTH, 8),
+    maxSafeOffset: normalizePositiveInteger(env.SPOTIFY_CRAWLER_MAX_SAFE_OFFSET, DEFAULT_MAX_SAFE_OFFSET, 1000),
   };
 }
 
@@ -50,17 +59,12 @@ function normalizePositiveInteger(value: string | undefined, defaultValue: numbe
   return Math.min(parsed, max);
 }
 
-function normalizeSearchQueries(value: string | undefined, currentDate: Date): string[] {
+function normalizeSearchSeeds(value: string | undefined, _currentDate: Date): SearchShardSeed[] {
   if (value?.trim()) {
-    return Array.from(new Set(value.split(',').map((query) => query.trim()).filter(Boolean)));
+    return parseSearchShardSeeds(value);
   }
 
-  const year = currentDate.getUTCFullYear();
-  const terms = 'abcdefghijklmnopqrstuvwxyz0123456789'.split('');
-  const singleCharShards = terms.map((term) => `${term} year:${year}`);
-  const bigramShards = terms.flatMap((left) => terms.map((right) => `${left}${right} year:${year}`));
-
-  return ['tag:new', ...singleCharShards, ...bigramShards];
+  return createDefaultSearchShardSeeds();
 }
 
 function normalizeBoolean(value: string | undefined, defaultValue: boolean): boolean {

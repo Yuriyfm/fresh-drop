@@ -64,11 +64,27 @@ create table if not exists sync_tasks (
   market text not null check (length(trim(market)) > 0),
   offset_value integer not null default 0 check (offset_value >= 0),
   limit_value integer not null default 50 check (limit_value > 0),
-  status text not null default 'pending' check (status in ('pending', 'running', 'success', 'failed')),
+  status text not null default 'pending' check (status in ('pending', 'running', 'completed', 'exhausted', 'failed', 'rate_limited')),
   priority integer not null default 100,
   attempts integer not null default 0 check (attempts >= 0),
+  family text check (family is null or family in ('plain', 'album', 'artist', 'year_album', 'year_artist')),
+  token text,
+  depth integer not null default 0 check (depth >= 0),
+  parent_query_id bigint references sync_tasks(id) on delete set null,
   items_found integer not null default 0 check (items_found >= 0),
   items_saved integer not null default 0 check (items_saved >= 0),
+  spotify_total integer check (spotify_total is null or spotify_total >= 0),
+  pages_fetched integer not null default 0 check (pages_fetched >= 0),
+  items_seen integer not null default 0 check (items_seen >= 0),
+  unique_added integer not null default 0 check (unique_added >= 0),
+  duplicates_seen integer not null default 0 check (duplicates_seen >= 0),
+  empty_pages integer not null default 0 check (empty_pages >= 0),
+  last_offset integer check (last_offset is null or last_offset >= 0),
+  avg_latency_ms integer check (avg_latency_ms is null or avg_latency_ms >= 0),
+  rate_limited_count integer not null default 0 check (rate_limited_count >= 0),
+  last_error text,
+  completed_at timestamptz,
+  was_split boolean not null default false,
   error_message text,
   next_run_at timestamptz not null default now(),
   last_run_at timestamptz,
@@ -76,6 +92,53 @@ create table if not exists sync_tasks (
   updated_at timestamptz not null default now(),
   unique (source, query, market, offset_value)
 );
+
+alter table sync_tasks add column if not exists family text;
+alter table sync_tasks add column if not exists token text;
+alter table sync_tasks add column if not exists depth integer not null default 0;
+alter table sync_tasks add column if not exists parent_query_id bigint references sync_tasks(id) on delete set null;
+alter table sync_tasks add column if not exists spotify_total integer;
+alter table sync_tasks add column if not exists pages_fetched integer not null default 0;
+alter table sync_tasks add column if not exists items_seen integer not null default 0;
+alter table sync_tasks add column if not exists unique_added integer not null default 0;
+alter table sync_tasks add column if not exists duplicates_seen integer not null default 0;
+alter table sync_tasks add column if not exists empty_pages integer not null default 0;
+alter table sync_tasks add column if not exists last_offset integer;
+alter table sync_tasks add column if not exists avg_latency_ms integer;
+alter table sync_tasks add column if not exists rate_limited_count integer not null default 0;
+alter table sync_tasks add column if not exists last_error text;
+alter table sync_tasks add column if not exists completed_at timestamptz;
+alter table sync_tasks add column if not exists was_split boolean not null default false;
+
+do $$
+begin
+  if exists (
+    select 1
+    from pg_constraint
+    where conname = 'sync_tasks_status_check'
+  ) then
+    alter table sync_tasks drop constraint sync_tasks_status_check;
+  end if;
+end $$;
+
+alter table sync_tasks
+  add constraint sync_tasks_status_check
+  check (status in ('pending', 'running', 'completed', 'exhausted', 'failed', 'rate_limited'));
+
+do $$
+begin
+  if exists (
+    select 1
+    from pg_constraint
+    where conname = 'sync_tasks_family_check'
+  ) then
+    alter table sync_tasks drop constraint sync_tasks_family_check;
+  end if;
+end $$;
+
+alter table sync_tasks
+  add constraint sync_tasks_family_check
+  check (family is null or family in ('plain', 'album', 'artist', 'year_album', 'year_artist'));
 
 create index if not exists idx_releases_release_date on releases(release_date);
 create index if not exists idx_releases_fresh_search on releases(release_date desc, popularity desc, spotify_id)
