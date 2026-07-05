@@ -276,9 +276,7 @@ select:disabled {
 
 .genreSearchRow {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
-  align-items: start;
 }
 
 .genreSearchField {
@@ -331,6 +329,9 @@ select:disabled {
 }
 
 .genreChip {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--color-accent);
   flex: 0 0 auto;
   min-height: 32px;
   padding: 0 12px;
@@ -345,7 +346,20 @@ select:disabled {
   color: #dffce7;
 }
 
-.clearGenresButton {
+.genreChipOverflow {
+  border: 1px solid rgba(63, 86, 73, 0.82);
+  background: rgba(22, 33, 26, 0.92);
+  color: var(--color-text-secondary);
+}
+
+.genreSearchActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.genreActionButton {
   min-height: 32px;
   padding: 0 12px;
   border: 1px solid var(--color-border);
@@ -354,6 +368,12 @@ select:disabled {
   color: var(--color-text-secondary);
   font-size: 12px;
   font-weight: 800;
+}
+
+.genreSelectMatchesButton {
+  border-color: rgba(30, 215, 96, 0.38);
+  background: rgba(24, 185, 84, 0.14);
+  color: #dffce7;
 }
 
 .genreOptionList {
@@ -1534,6 +1554,10 @@ dd {
     gap: 6px;
   }
 
+  .genreSearchActions {
+    gap: 6px;
+  }
+
   .genreOption {
     padding: 6px 10px;
   }
@@ -1770,8 +1794,8 @@ dd {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .searchLayout.isDesktopSidebar .clearGenresButton {
-    justify-self: start;
+  .searchLayout.isDesktopSidebar .genreSearchActions {
+    justify-content: flex-start;
   }
 
   .searchLayout.isDesktopSidebar .desktopSecondaryFilters .segmentedControl {

@@ -15,8 +15,7 @@ import { fetchReleases } from './releasesClient';
 const PAGE_LIMIT = 20;
 const MOBILE_BREAKPOINT = 768;
 const DESKTOP_SIDEBAR_BREAKPOINT = 1024;
-const GENRE_SEARCH_DEBOUNCE_MS = 180;
-const MAX_SELECTED_GENRES = 3;
+const MAX_VISIBLE_SELECTED_GENRES = 5;
 const VIRTUAL_RELEASE_ROW_HEIGHT = 92;
 const VIRTUAL_RELEASE_OVERSCAN = 8;
 const RELEASE_ROUTE_PREFIX = '/releases/';
@@ -690,10 +689,12 @@ function GenreFilter({ isMobile, selectedGenres, genreOptions, t, onChange }: Ge
   const [query, setQuery] = useState('');
   const [isExpanded, setIsExpanded] = useState(false);
   const normalizedQuery = query.trim().toLowerCase();
-  const debouncedQuery = useDebouncedValue(normalizedQuery, GENRE_SEARCH_DEBOUNCE_MS);
-  const visibleOptions = genreOptions.filter((option) => getGenreLabel(option.name, t).toLowerCase().includes(debouncedQuery));
-  const showOptions = !isMobile || isExpanded || normalizedQuery.length > 0;
-  const hasReachedGenreLimit = selectedGenres.length >= MAX_SELECTED_GENRES;
+  const visibleOptions = genreOptions.filter((option) => getGenreLabel(option.name, t).toLowerCase().includes(normalizedQuery));
+  const visibleSelectedGenres = selectedGenres.slice(0, MAX_VISIBLE_SELECTED_GENRES);
+  const hiddenSelectedGenresCount = Math.max(selectedGenres.length - visibleSelectedGenres.length, 0);
+  const selectableVisibleOptions = visibleOptions.filter((option) => !selectedGenres.includes(option.name));
+  const showOptions = !isMobile || isExpanded;
+  const showSelectMatchesButton = normalizedQuery.length > 0 && selectableVisibleOptions.length > 0;
 
   useEffect(() => {
     if (!isMobile) {
@@ -723,11 +724,12 @@ function GenreFilter({ isMobile, selectedGenres, genreOptions, t, onChange }: Ge
         <div className="genreSearchField">
           {selectedGenres.length > 0 && (
             <div className="selectedGenreChips" aria-label={t.filters.selectedGenres}>
-              {selectedGenres.map((genre) => (
+              {visibleSelectedGenres.map((genre) => (
                 <button type="button" className="genreChip" key={genre} onClick={() => toggleGenre(genre)}>
                   {getGenreLabel(genre, t)} x
                 </button>
               ))}
+              {hiddenSelectedGenresCount > 0 && <span className="genreChip genreChipOverflow">+{hiddenSelectedGenresCount}</span>}
             </div>
           )}
           <input
@@ -738,10 +740,19 @@ function GenreFilter({ isMobile, selectedGenres, genreOptions, t, onChange }: Ge
             onChange={(event) => setQuery(event.target.value)}
           />
         </div>
-        {selectedGenres.length > 0 && (
-          <button type="button" className="clearGenresButton" onClick={clearGenres}>
-            {t.filters.clearGenres}
-          </button>
+        {(showSelectMatchesButton || selectedGenres.length > 0) && (
+          <div className="genreSearchActions">
+            {showSelectMatchesButton && (
+              <button type="button" className="genreActionButton genreSelectMatchesButton" onClick={selectVisibleGenres}>
+                {t.filters.selectMatches}
+              </button>
+            )}
+            {selectedGenres.length > 0 && (
+              <button type="button" className="genreActionButton clearGenresButton" onClick={clearGenres}>
+                {t.filters.clearGenres}
+              </button>
+            )}
+          </div>
         )}
       </div>
       {showOptions && (
@@ -750,16 +761,14 @@ function GenreFilter({ isMobile, selectedGenres, genreOptions, t, onChange }: Ge
             {visibleOptions.length > 0 ? (
               visibleOptions.map((option) => {
                 const isSelected = selectedGenres.includes(option.name);
-                const isDisabled = !isSelected && hasReachedGenreLimit;
 
                 return (
                   <button
                     type="button"
                     role="checkbox"
                     aria-checked={isSelected}
-                    className={isDisabled ? 'genreOption isDisabled' : isSelected ? 'genreOption isSelected' : 'genreOption'}
+                    className={isSelected ? 'genreOption isSelected' : 'genreOption'}
                     key={`${option.kind}-${option.name}`}
-                    disabled={isDisabled}
                     onClick={() => toggleGenre(option.name)}
                   >
                     <span className={isSelected ? 'genreCheckbox isChecked' : 'genreCheckbox'} aria-hidden="true">
@@ -775,7 +784,6 @@ function GenreFilter({ isMobile, selectedGenres, genreOptions, t, onChange }: Ge
             )}
           </div>
           <p className="genreHelperText">{t.filters.countsHelp}</p>
-          {hasReachedGenreLimit && <p className="genreHelperText">{t.filters.maxGenres}</p>}
         </>
       )}
     </div>
@@ -787,11 +795,11 @@ function GenreFilter({ isMobile, selectedGenres, genreOptions, t, onChange }: Ge
       return;
     }
 
-    if (selectedGenres.length >= MAX_SELECTED_GENRES) {
-      return;
-    }
-
     onChange([...selectedGenres, nextGenre]);
+  }
+
+  function selectVisibleGenres(): void {
+    onChange([...selectedGenres, ...selectableVisibleOptions.map((option) => option.name)]);
   }
 
   function clearGenres(): void {
@@ -1516,22 +1524,6 @@ function isReleaseSort(value: unknown): value is ReleaseSort {
 
 function createRandomStartSeed(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
-
-function useDebouncedValue<TValue>(value: TValue, delayMs: number): TValue {
-  const [debouncedValue, setDebouncedValue] = useState(value);
-
-  useEffect(() => {
-    const timeoutId = window.setTimeout(() => {
-      setDebouncedValue(value);
-    }, delayMs);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
-  }, [delayMs, value]);
-
-  return debouncedValue;
 }
 
 function formatArtists(release: Release, t: Translation): string {

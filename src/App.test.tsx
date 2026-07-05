@@ -5,7 +5,6 @@ import type { Release } from './domain/release';
 import { LANGUAGE_STORAGE_KEY } from './i18n';
 
 const RELEASE_SEARCH_STORAGE_KEY = 'fresh-drop-release-search-state';
-
 let intersectionCallback: IntersectionObserverCallback | null = null;
 
 class MockIntersectionObserver implements IntersectionObserver {
@@ -65,8 +64,7 @@ describe('App', () => {
 
     render(<App />);
 
-    expect(await screen.findByText('Release One')).toBeInTheDocument();
-    expect(screen.getByRole('checkbox', { name: /indie pop/i })).toBeInTheDocument();
+    expect(await screen.findByRole('checkbox', { name: /indie pop/i })).toBeInTheDocument();
     expect(screen.getByText('Counts reflect the last month of releases.')).toBeInTheDocument();
     expect(screen.queryByLabelText('Country / market')).not.toBeInTheDocument();
     expect(fetchSpy).toHaveBeenCalledWith(
@@ -211,7 +209,7 @@ describe('App', () => {
 
     const { container } = render(<App />);
 
-    expect(await screen.findByText('Release One')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Show genres' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '7 days' })).toBeInTheDocument();
     expect(screen.queryByRole('combobox', { name: 'Sorting' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /More filters/i })).toBeNull();
@@ -255,7 +253,7 @@ describe('App', () => {
 
     render(<App />);
 
-    expect(await screen.findByText('Release One')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Settings' })).toBeInTheDocument();
     expect(screen.queryByRole('group', { name: 'Language' })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
@@ -285,7 +283,7 @@ describe('App', () => {
 
     const { container } = render(<App />);
 
-    expect(await screen.findByText('Release One')).toBeInTheDocument();
+    expect(await screen.findByRole('checkbox', { name: /indie pop/i })).toBeInTheDocument();
     expect(container.querySelector('.searchLayout.isDesktopSidebar')).not.toBeNull();
     expect(container.querySelector('.searchSidebar .filterPanel')).not.toBeNull();
     expect(container.querySelector('.searchSidebar select')).toBeNull();
@@ -402,13 +400,109 @@ describe('App', () => {
     });
   });
 
-  it('limits genre selection to three items', async () => {
+  it('keeps the mobile genre toggle working with a search query and selected genres', async () => {
+    setViewportWidth(390);
+
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      makeResponse({
+        items: [
+          makeRelease({ id: 'release-1', genres: ['techno'] }),
+          makeRelease({ id: 'release-2', genres: ['dark techno'] }),
+        ],
+        pagination: {
+          page: 1,
+          limit: 20,
+          total: 2,
+          hasNextPage: false,
+        },
+        error: null,
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole('button', { name: 'Show genres' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show genres' }));
+    fireEvent.change(screen.getByPlaceholderText('Search genres'), { target: { value: 'tech' } });
+
+    await waitFor(() => {
+      expect(screen.getByRole('checkbox', { name: /^techno 1$/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('checkbox', { name: /^techno 1$/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Hide genres' })).toBeInTheDocument();
+      expect(screen.getByText('techno x')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hide genres' }));
+
+    expect(screen.getByRole('button', { name: 'Show genres' })).toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: /^techno$/i })).toBeNull();
+    expect(screen.getByText('techno x')).toBeInTheDocument();
+  });
+
+  it('allows selecting more than five genres and collapses extra chips into a counter', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       makeResponse({
         items: [
           makeRelease({ id: 'release-1', genres: ['techno'] }),
           makeRelease({ id: 'release-2', genres: ['house'] }),
           makeRelease({ id: 'release-3', genres: ['ambient'] }),
+          makeRelease({ id: 'release-4', genres: ['jazz'] }),
+          makeRelease({ id: 'release-5', genres: ['darkwave'] }),
+          makeRelease({ id: 'release-6', genres: ['shoegaze'] }),
+        ],
+        pagination: {
+          page: 1,
+          limit: 20,
+          total: 6,
+          hasNextPage: false,
+        },
+        error: null,
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole('checkbox', { name: /techno/i })).toBeInTheDocument();
+
+    const genreNames = ['techno', 'house', 'ambient', 'jazz', 'darkwave', 'shoegaze'] as const;
+
+    for (const genre of genreNames) {
+      fireEvent.click(screen.getByRole('checkbox', { name: new RegExp(genre, 'i') }));
+    }
+
+    await waitFor(() => {
+      expect(screen.getByText('techno x')).toBeInTheDocument();
+      expect(screen.getByText('house x')).toBeInTheDocument();
+      expect(screen.getByText('ambient x')).toBeInTheDocument();
+      expect(screen.getByText('jazz x')).toBeInTheDocument();
+      expect(screen.getByText('darkwave x')).toBeInTheDocument();
+      expect(screen.getByText('+1')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText('shoegaze x')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'house x' }));
+
+    await waitFor(() => {
+      expect(screen.queryByText('house x')).toBeNull();
+      expect(screen.getByText('shoegaze x')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText('+1')).toBeNull();
+  });
+
+  it('shows a select matches action only for a non-empty genre search and adds all matched genres', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      makeResponse({
+        items: [
+          makeRelease({ id: 'release-1', genres: ['dark ambient'] }),
+          makeRelease({ id: 'release-2', genres: ['dark techno'] }),
+          makeRelease({ id: 'release-3', genres: ['darkwave'] }),
           makeRelease({ id: 'release-4', genres: ['jazz'] }),
         ],
         pagination: {
@@ -423,38 +517,30 @@ describe('App', () => {
 
     render(<App />);
 
-    expect(await screen.findByRole('checkbox', { name: /techno/i })).toBeInTheDocument();
+    expect(await screen.findByRole('checkbox', { name: /dark ambient/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Select matches' })).toBeNull();
 
-    await act(async () => {
-      fireEvent.click(screen.getByRole('checkbox', { name: /techno/i }));
-    });
+    fireEvent.change(screen.getByPlaceholderText('Search genres'), { target: { value: 'dark' } });
+
     await waitFor(() => {
-      expect(screen.getByText('techno x')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Select matches' })).toBeInTheDocument();
     });
 
-    await act(async () => {
-      fireEvent.click(screen.getByRole('checkbox', { name: /house/i }));
-    });
+    fireEvent.click(screen.getByRole('button', { name: 'Select matches' }));
+
     await waitFor(() => {
-      expect(screen.getByText('house x')).toBeInTheDocument();
+      expect(screen.getByText('dark ambient x')).toBeInTheDocument();
+      expect(screen.getByText('dark techno x')).toBeInTheDocument();
+      expect(screen.getByText('darkwave x')).toBeInTheDocument();
     });
 
-    await act(async () => {
-      fireEvent.click(screen.getByRole('checkbox', { name: /ambient/i }));
-    });
-
-    expect(screen.getByText('Select up to 3 genres.')).toBeInTheDocument();
-
-    const fourthGenre = screen.getByRole('checkbox', { name: /jazz/i });
-    expect(fourthGenre).toBeDisabled();
-    await act(async () => {
-      fireEvent.click(fourthGenre);
-    });
-
-    expect(screen.getByText('techno x')).toBeInTheDocument();
-    expect(screen.getByText('house x')).toBeInTheDocument();
-    expect(screen.getByText('ambient x')).toBeInTheDocument();
     expect(screen.queryByText('jazz x')).toBeNull();
+
+    fireEvent.change(screen.getByPlaceholderText('Search genres'), { target: { value: '' } });
+
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'Select matches' })).toBeNull();
+    });
   });
 
   it('loads saved filters and sorting from local storage', async () => {
