@@ -65,6 +65,23 @@ create table if not exists sync_runs (
   check ((status = 'success' and error_message is null) or status <> 'success')
 );
 
+create table if not exists artist_enrichment (
+  spotify_artist_id text primary key check (length(trim(spotify_artist_id)) > 0),
+  spotify_artist_name text,
+  spotify_artist_url text not null check (length(trim(spotify_artist_url)) > 0),
+  musicbrainz_artist_mbid text,
+  musicbrainz_artist_name text,
+  genres jsonb not null default '[]'::jsonb,
+  match_status text not null check (match_status in ('pending', 'matched', 'not_found', 'ambiguous', 'failed', 'disabled')),
+  match_method text check (match_method is null or match_method in ('spotify_url_lookup')),
+  error_message text,
+  fetched_at timestamptz,
+  next_retry_at timestamptz,
+  retry_count integer not null default 0 check (retry_count >= 0),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists sync_tasks (
   id bigserial primary key,
   source text not null check (source in ('search', 'artist_albums')),
@@ -162,6 +179,8 @@ create index if not exists idx_genre_counts_release_count on genre_counts(releas
 create index if not exists idx_release_artists_release_id on release_artists(release_id);
 create index if not exists idx_release_artists_artist_id on release_artists(artist_id);
 create index if not exists idx_sync_runs_started_at on sync_runs(started_at desc, id desc);
+create index if not exists idx_artist_enrichment_queue on artist_enrichment(match_status, next_retry_at, spotify_artist_id);
+create index if not exists idx_artist_enrichment_mbid on artist_enrichment(musicbrainz_artist_mbid);
 create index if not exists idx_sync_tasks_pending on sync_tasks(status, next_run_at, priority, id);
 create unique index if not exists idx_release_artists_release_position on release_artists(release_id, position);
 create unique index if not exists idx_release_artists_primary on release_artists(release_id) where is_primary;

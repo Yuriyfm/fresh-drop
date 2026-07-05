@@ -15,6 +15,7 @@
     "sync:scheduled": "yarn sync:releases",
     "crawl:releases": "vite-node scripts/crawlReleases.ts",
     "crawl:scheduled": "yarn crawl:releases",
+    "enrich:musicbrainz:artists": "vite-node scripts/enrichMusicBrainzArtists.ts",
     "cleanup:releases": "vite-node scripts/cleanupReleases.ts",
     "sync:last": "vite-node scripts/printLatestSyncRun.ts",
     "typecheck": "tsc --noEmit",

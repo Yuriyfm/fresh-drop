@@ -2,17 +2,19 @@ import process from 'node:process';
 import { Pool } from 'pg';
 import { PostgresReleaseRepository } from '../src/data/postgresReleaseRepository';
 import { PostgresSyncRunRepository } from '../src/data/syncRunRepository';
+import { getMusicBrainzConfigFromEnv } from '../src/integrations/musicbrainz/musicbrainzConfig';
 import { SpotifyApiAdapter } from '../src/spotify/spotifyApiAdapter';
 import { createReleaseSyncService } from '../src/sync/releaseSyncService';
 import { getReleaseSyncConfigFromEnv } from '../src/sync/syncConfig';
 
 async function main(): Promise<void> {
   const config = getReleaseSyncConfigFromEnv(process.env);
+  const musicBrainzConfig = getMusicBrainzConfigFromEnv(process.env);
   const pool = new Pool(getDatabasePoolConfig());
 
   try {
     const spotify = new SpotifyApiAdapter(config.spotify);
-    const releases = new PostgresReleaseRepository({ pool });
+    const releases = new PostgresReleaseRepository({ pool, artistEnrichmentEnabled: musicBrainzConfig.enabled });
     const syncRuns = new PostgresSyncRunRepository({ pool });
     const service = createReleaseSyncService(spotify, releases, syncRuns);
 

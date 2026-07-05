@@ -24,9 +24,13 @@ import {
   type ReleaseRepository,
   type SaveReleasesOptions,
 } from './releaseRepository';
+import { extractUniqueSpotifyArtistsFromReleases } from '../enrichment/artistEnrichment';
+import { upsertArtistEnrichmentQueue } from './postgresArtistEnrichmentRepository';
+import { decrementGenreCountsForReleaseIds, rebuildReleaseGenresForReleaseIds } from './releaseGenreMaterializer';
 
 type PostgresReleaseRepositoryOptions = {
   pool: Pool;
+  artistEnrichmentEnabled?: boolean;
 };
 
 type ReleaseRow = {
@@ -81,9 +85,11 @@ type SqlFilter = {
 
 export class PostgresReleaseRepository implements ReleaseRepository {
   private readonly pool: Pool;
+  private readonly artistEnrichmentEnabled: boolean;
 
   constructor(options: PostgresReleaseRepositoryOptions) {
     this.pool = options.pool;
+    this.artistEnrichmentEnabled = options.artistEnrichmentEnabled ?? true;
   }
 
   async saveReleases(releases: Release[], options: SaveReleasesOptions = {}): Promise<{ saved: number }> {
@@ -103,6 +109,12 @@ export class PostgresReleaseRepository implements ReleaseRepository {
           await upsertReleaseMarket(client, releaseId, options.discoveredMarket, options.discoveredAt ?? new Date());
         }
       }
+
+      await upsertArtistEnrichmentQueue(
+        client,
+        extractUniqueSpotifyArtistsFromReleases(releases),
+        { enabled: this.artistEnrichmentEnabled },
+      );
 
       await client.query('commit');
 
@@ -208,7 +220,17 @@ export class PostgresReleaseRepository implements ReleaseRepository {
               json_build_object(
                 'spotify_id', a.spotify_id,
                 'name', a.name,
-                'genres', a.genres,
+                'genres',
+                (
+                  select coalesce(array_agg(distinct lower(trim(merged_artist_genre.genre)) order by lower(trim(merged_artist_genre.genre))), '{}'::text[])
+                  from (
+                    select unnest(a.genres) as genre
+                    union all
+                    select genre_item->>'name' as genre
+                    from jsonb_array_elements(coalesce(ae.genres, '[]'::jsonb)) as genre_item
+                  ) as merged_artist_genre
+                  where length(trim(merged_artist_genre.genre)) > 0
+                ),
                 'country', a.country,
                 'popularity', a.popularity,
                 'is_primary', ra.is_primary
@@ -220,6 +242,9 @@ export class PostgresReleaseRepository implements ReleaseRepository {
         from releases r
         left join release_artists ra on ra.release_id = r.id
         left join artists a on a.id = ra.artist_id
+        left join artist_enrichment ae
+          on ae.spotify_artist_id = a.spotify_id
+         and ae.match_status = 'matched'
         ${filter.whereSql}
         group by r.id
         ${getOrderBySql(query.sort ?? 'newest')}
@@ -377,8 +402,6 @@ export class PostgresReleaseRepository implements ReleaseRepository {
       throw new Error(`Failed to save release ${release.id}.`);
     }
 
-    await decrementGenreCountsForReleaseIds(client, [releaseId]);
-    await client.query('delete from release_genres where release_id = $1', [releaseId]);
     await client.query('delete from release_artists where release_id = $1', [releaseId]);
 
     for (const [index, artist] of release.artists.entries()) {
@@ -396,20 +419,7 @@ export class PostgresReleaseRepository implements ReleaseRepository {
       );
     }
 
-    const releaseGenres = normalizeGenres(release.artists.flatMap((artist) => artist.genres));
-
-    for (const genre of releaseGenres) {
-      await client.query(
-        `
-          insert into release_genres (release_id, genre)
-          values ($1, $2)
-          on conflict do nothing
-        `,
-        [releaseId, genre],
-      );
-    }
-
-    await incrementGenreCounts(client, releaseGenres);
+    await rebuildReleaseGenresForReleaseIds(client, [releaseId]);
 
     return releaseId;
   }
@@ -567,44 +577,6 @@ function mapArtistRow(row: ArtistRow): ArtistSummary {
     country: row.country,
     popularity: row.popularity,
   };
-}
-
-async function decrementGenreCountsForReleaseIds(client: PoolClient, releaseIds: string[]): Promise<void> {
-  if (releaseIds.length === 0) {
-    return;
-  }
-
-  await client.query(
-    `
-      with deleted_counts as (
-        select genre, count(*)::integer as release_count
-        from release_genres
-        where release_id = any($1::bigint[])
-        group by genre
-      )
-      update genre_counts gc
-      set release_count = greatest(gc.release_count - deleted_counts.release_count, 0),
-          updated_at = now()
-      from deleted_counts
-      where gc.genre = deleted_counts.genre
-    `,
-    [releaseIds],
-  );
-}
-
-async function incrementGenreCounts(client: PoolClient, genres: string[]): Promise<void> {
-  for (const genre of normalizeGenres(genres)) {
-    await client.query(
-      `
-        insert into genre_counts (genre, release_count, updated_at)
-        values ($1, 1, now())
-        on conflict (genre) do update set
-          release_count = genre_counts.release_count + 1,
-          updated_at = now()
-      `,
-      [genre],
-    );
-  }
 }
 
 async function upsertReleaseMarket(client: PoolClient, releaseId: string, market: string, seenAt: Date): Promise<void> {

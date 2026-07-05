@@ -2,6 +2,7 @@ import process from 'node:process';
 import { Pool } from 'pg';
 import { PostgresReleaseRepository } from '../src/data/postgresReleaseRepository';
 import { PostgresSyncTaskRepository } from '../src/data/syncTaskRepository';
+import { getMusicBrainzConfigFromEnv } from '../src/integrations/musicbrainz/musicbrainzConfig';
 import { SpotifyApiAdapter } from '../src/spotify/spotifyApiAdapter';
 import { getReleaseCrawlerConfigFromEnv } from '../src/sync/crawlerConfig';
 import { runReleaseCrawler } from '../src/sync/releaseCrawlerService';
@@ -10,11 +11,12 @@ import { getReleaseSyncConfigFromEnv } from '../src/sync/syncConfig';
 async function main(): Promise<void> {
   const syncConfig = getReleaseSyncConfigFromEnv(process.env);
   const crawlerConfig = getReleaseCrawlerConfigFromEnv(process.env);
+  const musicBrainzConfig = getMusicBrainzConfigFromEnv(process.env);
   const pool = new Pool(getDatabasePoolConfig());
 
   try {
     const spotify = new SpotifyApiAdapter(syncConfig.spotify);
-    const releases = new PostgresReleaseRepository({ pool });
+    const releases = new PostgresReleaseRepository({ pool, artistEnrichmentEnabled: musicBrainzConfig.enabled });
     const tasks = new PostgresSyncTaskRepository({ pool });
 
     console.info(

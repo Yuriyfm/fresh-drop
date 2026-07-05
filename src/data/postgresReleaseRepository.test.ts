@@ -4,6 +4,7 @@ import process from 'node:process';
 import { Pool } from 'pg';
 import { beforeAll, beforeEach, afterAll, describe, expect, it } from 'vitest';
 import type { ArtistSummary, Release } from '../domain/release';
+import { PostgresArtistEnrichmentRepository } from './postgresArtistEnrichmentRepository';
 import { PostgresReleaseRepository } from './postgresReleaseRepository';
 
 const testDatabaseUrl = process.env.TEST_DATABASE_URL;
@@ -13,6 +14,7 @@ describeWithPostgres('PostgresReleaseRepository', () => {
   const schemaName = `fresh_drop_test_${Date.now()}_${Math.random().toString(36).slice(2)}`;
   let pool: Pool;
   let repository: PostgresReleaseRepository;
+  let enrichments: PostgresArtistEnrichmentRepository;
 
   beforeAll(async () => {
     pool = new Pool({
@@ -21,13 +23,14 @@ describeWithPostgres('PostgresReleaseRepository', () => {
       options: `-c search_path=${schemaName}`,
     });
     repository = new PostgresReleaseRepository({ pool });
+    enrichments = new PostgresArtistEnrichmentRepository({ pool });
 
     await pool.query(`create schema ${quoteIdentifier(schemaName)}`);
     await pool.query(readFileSync(resolve(process.cwd(), 'db/schema.sql'), 'utf8'));
   });
 
   beforeEach(async () => {
-    await pool.query('truncate genre_counts, release_genres, release_artists, artists, releases restart identity cascade');
+    await pool.query('truncate artist_enrichment, genre_counts, release_genres, release_artists, artists, releases restart identity cascade');
   });
 
   afterAll(async () => {
@@ -110,6 +113,60 @@ describeWithPostgres('PostgresReleaseRepository', () => {
     ]);
 
     await expect(repository.findExistingReleaseIds(['spotify-2', 'missing', 'spotify-2'])).resolves.toEqual(new Set(['spotify-2']));
+  });
+
+  it('queues unique artists for enrichment without resetting matched status', async () => {
+    const artist = makeArtist({ id: 'artist-queue', name: 'First Name' });
+
+    await repository.saveReleases([
+      makeRelease({
+        id: 'release-queue-1',
+        artists: [artist],
+        primaryArtist: artist,
+      }),
+      makeRelease({
+        id: 'release-queue-2',
+        artists: [artist],
+        primaryArtist: artist,
+      }),
+    ]);
+
+    await pool.query(
+      `
+        update artist_enrichment
+        set match_status = 'matched',
+            musicbrainz_artist_mbid = 'mbid-1',
+            genres = '[{"name":"dance-pop","count":3,"source":"musicbrainz"}]'::jsonb
+        where spotify_artist_id = 'artist-queue'
+      `,
+    );
+
+    await repository.saveReleases([
+      makeRelease({
+        id: 'release-queue-3',
+        artists: [makeArtist({ id: 'artist-queue', name: 'Updated Name' })],
+        primaryArtist: makeArtist({ id: 'artist-queue', name: 'Updated Name' }),
+      }),
+    ]);
+
+    const result = await pool.query<{
+      spotify_artist_name: string;
+      match_status: string;
+      total: number;
+    }>(`
+      select
+        max(spotify_artist_name) as spotify_artist_name,
+        max(match_status) as match_status,
+        count(*)::integer as total
+      from artist_enrichment
+      where spotify_artist_id = 'artist-queue'
+    `);
+
+    expect(result.rows[0]).toEqual({
+      spotify_artist_name: 'Updated Name',
+      match_status: 'matched',
+      total: 1,
+    });
   });
 
   it('reuses fresh artists from the cache and tracks discovery markets', async () => {
@@ -310,6 +367,45 @@ describeWithPostgres('PostgresReleaseRepository', () => {
       { genre: 'pop', releaseCount: 2, kind: 'general' },
       { genre: 'ambient', releaseCount: 1, kind: 'general' },
       { genre: 'techno', releaseCount: 1, kind: 'general' },
+    ]);
+  });
+
+  it('merges matched MusicBrainz genres into release genres and filters', async () => {
+    const artist = makeArtist({ id: 'artist-mb', genres: ['Pop'] });
+
+    await repository.saveReleases([
+      makeRelease({
+        id: 'release-mb',
+        artists: [artist],
+        primaryArtist: artist,
+      }),
+    ]);
+
+    await enrichments.markMatched({
+      spotifyArtistId: 'artist-mb',
+      musicBrainzArtistMbid: 'mbid-artist-mb',
+      musicBrainzArtistName: 'Artist MB',
+      genres: [
+        { id: 'g-1', name: 'dance-pop', count: 5, source: 'musicbrainz' },
+        { id: 'g-2', name: 'pop', count: 3, source: 'musicbrainz' },
+      ],
+      fetchedAt: new Date('2026-07-01T12:00:00.000Z'),
+    });
+
+    const result = await repository.findReleases({
+      period: '7d',
+      genre: 'dance-pop',
+      type: 'all',
+      sort: 'newest',
+      currentDate: new Date('2026-07-02T12:00:00.000Z'),
+    });
+
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]?.genres).toEqual(['dance-pop', 'pop']);
+    expect(result.items[0]?.artists[0]?.genres).toEqual(['dance-pop', 'pop']);
+    await expect(repository.listActiveGenres()).resolves.toEqual([
+      { genre: 'pop', releaseCount: 1, kind: 'general' },
+      { genre: 'dance-pop', releaseCount: 1, kind: 'exact' },
     ]);
   });
 });
