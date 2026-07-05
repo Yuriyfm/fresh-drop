@@ -479,7 +479,7 @@ function App() {
                     style={{ transform: `translateY(${virtualRange.offsetTop}px)` }}
                   >
                     {visibleReleases.map((release) => (
-                      <ReleaseRow release={release} key={release.id} t={t} onSelect={() => openRelease(release)} />
+                      <ReleaseRow isMobile={isMobile} release={release} key={release.id} t={t} onSelect={() => openRelease(release)} />
                     ))}
                   </div>
                 </div>
@@ -989,16 +989,17 @@ function SortOptions({ sort, t, onChange }: SortFilterProps) {
 }
 
 type ReleaseRowProps = {
+  isMobile: boolean;
   release: Release;
   t: Translation;
   onSelect: () => void;
 };
 
-function ReleaseRow({ release, t, onSelect }: ReleaseRowProps) {
+function ReleaseRow({ isMobile, release, t, onSelect }: ReleaseRowProps) {
   return (
     <article className="releaseItem">
       <button type="button" className="releaseRow" onClick={onSelect} aria-label={t.release.openLabel(release.title)}>
-        <ReleaseCover coverUrl={release.coverUrl} title={release.title} t={t} />
+        <ReleaseCover coverUrl={release.coverUrl} title={release.title} isMobile={isMobile} t={t} />
         <span className="releaseInfo">
           <span className="releaseTitle">{release.title}</span>
           <span className="releaseSubtitle">
@@ -1023,18 +1024,34 @@ function ReleaseRow({ release, t, onSelect }: ReleaseRowProps) {
 
 type ReleaseCoverProps = {
   coverUrl: string | null;
+  isMobile: boolean;
   title: string;
   t: Translation;
 };
 
-function ReleaseCover({ coverUrl, title, t }: ReleaseCoverProps) {
+function ReleaseCover({ coverUrl, isMobile, title, t }: ReleaseCoverProps) {
+  const imageRef = useRef<HTMLImageElement | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [hasError, setHasError] = useState(false);
 
   useEffect(() => {
     setIsLoaded(false);
+    setHasError(false);
   }, [coverUrl]);
 
-  if (!coverUrl) {
+  useEffect(() => {
+    if (!coverUrl) {
+      return;
+    }
+
+    const image = imageRef.current;
+
+    if (image?.complete && image.naturalWidth > 0) {
+      setIsLoaded(true);
+    }
+  }, [coverUrl]);
+
+  if (!coverUrl || hasError) {
     return (
       <span className="coverFrame" aria-hidden="true">
         <span className="coverPlaceholder" />
@@ -1046,11 +1063,14 @@ function ReleaseCover({ coverUrl, title, t }: ReleaseCoverProps) {
     <span className="coverFrame">
       <span className={isLoaded ? 'coverPlaceholder isHidden' : 'coverPlaceholder'} aria-hidden="true" />
       <img
+        ref={imageRef}
         className={isLoaded ? 'coverImage isLoaded' : 'coverImage'}
         src={coverUrl}
         alt={t.release.coverAlt(title)}
-        loading="lazy"
+        loading={isMobile ? 'eager' : 'lazy'}
+        decoding="async"
         onLoad={() => setIsLoaded(true)}
+        onError={() => setHasError(true)}
       />
     </span>
   );
