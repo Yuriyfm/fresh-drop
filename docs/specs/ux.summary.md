@@ -62,7 +62,7 @@ Last 7 days
 
 ## Фильтры MVP
 
-* period: `7 days / 14 days / Month`;
+* period: `Today / 7 days / 14 days / Month`;
 * genres;
 * release type: `album / single / compilation`;
 * sorting.

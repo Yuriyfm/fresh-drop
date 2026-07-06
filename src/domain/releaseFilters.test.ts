@@ -174,6 +174,11 @@ describe('sortReleasesForSearch', () => {
 });
 
 describe('matchesPeriod', () => {
+  it('includes only releases from the current day for today period', () => {
+    expect(matchesPeriod(makeRelease({ releaseDate: '2026-06-28' }), 'today', currentDate)).toBe(true);
+    expect(matchesPeriod(makeRelease({ releaseDate: '2026-06-27' }), 'today', currentDate)).toBe(false);
+  });
+
   it('includes releases on the selected period boundary', () => {
     const release = makeRelease({ releaseDate: '2026-06-21' });
 

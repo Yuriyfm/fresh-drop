@@ -98,6 +98,8 @@ function App() {
   const releaseListRef = useRef<HTMLElement | null>(null);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const searchScrollRestoreRef = useRef<number | null>(null);
+  const currentSearchStateRef = useRef<ReleaseSearchState>(initialSearchState);
+  const currentLanguageRef = useRef<Language>(initialLanguage);
   const t = translations[language];
   const isMobile = viewportWidth < MOBILE_BREAKPOINT;
   const isDesktopSidebar = viewportWidth >= DESKTOP_SIDEBAR_BREAKPOINT;
@@ -112,11 +114,39 @@ function App() {
   }, [countries, genres, period, sort, type]);
 
   useEffect(() => {
+    currentSearchStateRef.current = { period, genres, countries, type, sort };
+    currentLanguageRef.current = language;
+  }, [countries, genres, language, period, sort, type]);
+
+  useEffect(() => {
+    if (!('scrollRestoration' in window.history)) {
+      return undefined;
+    }
+
+    const previousScrollRestoration = window.history.scrollRestoration;
+    window.history.scrollRestoration = 'manual';
+
+    return () => {
+      window.history.scrollRestoration = previousScrollRestoration;
+    };
+  }, []);
+
+  useEffect(() => {
     function handlePopState(event: PopStateEvent): void {
       const nextRoute = getRouteFromPath(window.location.pathname);
+      const nextSearchState = getInitialReleaseSearchState(window.location);
+      const nextLanguage = getInitialLanguage(window.location);
+      const shouldPreserveLoadedSearch =
+        nextRoute.view === 'search' &&
+        areSearchStatesEqual(nextSearchState, currentSearchStateRef.current) &&
+        nextLanguage === currentLanguageRef.current;
 
       searchScrollRestoreRef.current = nextRoute.view === 'search' ? getSavedSearchScrollPosition(event.state) : null;
-      applyLocationState(window.location);
+
+      if (!shouldPreserveLoadedSearch) {
+        applySearchState(nextSearchState, nextLanguage);
+      }
+
       setRoute(nextRoute);
     }
 
@@ -665,10 +695,7 @@ function App() {
     });
   }
 
-  function applyLocationState(location: Location): void {
-    const nextSearchState = getInitialReleaseSearchState(location);
-    const nextLanguage = getInitialLanguage(location);
-
+  function applySearchState(nextSearchState: ReleaseSearchState, nextLanguage: Language): void {
     setPeriod(nextSearchState.period);
     setGenres(nextSearchState.genres);
     setCountries(nextSearchState.countries);
@@ -688,9 +715,11 @@ type PeriodFilterProps = {
 function PeriodFilter({ period, t, onChange }: PeriodFilterProps) {
   return (
     <SegmentedControl
+      className="isPeriodControl"
       label={t.filters.period}
       value={period}
       options={[
+        { value: 'today', label: t.filters.periodOptions.today },
         { value: '7d', label: t.filters.periodOptions['7d'] },
         { value: '14d', label: t.filters.periodOptions['14d'] },
         { value: '1m', label: t.filters.periodOptions['1m'] },
@@ -1505,6 +1534,20 @@ function isDefaultSearch(
   return period === '7d' && genres.length === 0 && countries.length === 0 && type === 'all' && sort === 'newest';
 }
 
+function areSearchStatesEqual(left: ReleaseSearchState, right: ReleaseSearchState): boolean {
+  return (
+    left.period === right.period &&
+    left.type === right.type &&
+    left.sort === right.sort &&
+    areStringArraysEqual(left.genres, right.genres) &&
+    areStringArraysEqual(left.countries, right.countries)
+  );
+}
+
+function areStringArraysEqual(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
 function getPeriodLabel(period: ReleasePeriod, t: Translation): string {
   return t.periods[period];
 }
@@ -1682,7 +1725,7 @@ function getUrlCountries(searchParams: URLSearchParams): string[] | undefined {
 }
 
 function isReleasePeriod(value: unknown): value is ReleasePeriod {
-  return value === '7d' || value === '14d' || value === '1m';
+  return value === 'today' || value === '7d' || value === '14d' || value === '1m';
 }
 
 function isReleaseTypeFilter(value: unknown): value is ReleaseTypeFilter {

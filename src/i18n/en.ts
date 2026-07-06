@@ -50,6 +50,7 @@ export const en = {
     additional: 'Additional filters',
     activeFilters: (count: number) => `${count} ${count === 1 ? 'filter' : 'filters'}`,
     periodOptions: {
+      today: 'Today',
       '7d': '7 days',
       '14d': '14 days',
       '1m': 'Month',
@@ -68,6 +69,7 @@ export const en = {
     lessPopular: 'Least popular',
   },
   periods: {
+    today: 'Today',
     '7d': 'Last 7 days',
     '14d': 'Last 14 days',
     '1m': 'Month',

@@ -50,6 +50,7 @@ export const ru = {
     additional: 'Дополнительные фильтры',
     activeFilters: (count: number) => formatRuFiltersCount(count),
     periodOptions: {
+      today: 'Сегодня',
       '7d': '7 дней',
       '14d': '14 дней',
       '1m': 'Месяц',
@@ -68,6 +69,7 @@ export const ru = {
     lessPopular: 'Сначала менее популярные',
   },
   periods: {
+    today: 'Сегодня',
     '7d': 'Последние 7 дней',
     '14d': 'Последние 14 дней',
     '1m': 'Месяц',

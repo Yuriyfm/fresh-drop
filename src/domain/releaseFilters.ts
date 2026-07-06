@@ -99,6 +99,10 @@ export function matchesType(release: Release, type: ReleaseTypeFilter): boolean 
 }
 
 function getPeriodDays(period: ReleasePeriod): number {
+  if (period === 'today') {
+    return 0;
+  }
+
   if (period === '7d') {
     return 7;
   }

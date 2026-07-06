@@ -56,7 +56,7 @@ const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 50;
 
-const allowedPeriods = ['7d', '14d', '1m'] as const;
+const allowedPeriods = ['today', '7d', '14d', '1m'] as const;
 const allowedTypes = ['all', 'single', 'album', 'compilation'] as const;
 const allowedSorts = ['newest', 'oldest', 'popular', 'less-popular'] as const;
 

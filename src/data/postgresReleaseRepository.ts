@@ -667,6 +667,10 @@ function getDatabaseReleaseDate(release: Release): string | null {
 }
 
 function getPeriodDays(period: ReleasePeriod): number {
+  if (period === 'today') {
+    return 0;
+  }
+
   if (period === '7d') {
     return 7;
   }

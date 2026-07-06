@@ -42,6 +42,43 @@ describe('getReleasesApiResponse', () => {
     });
   });
 
+  it('accepts today as a valid period', async () => {
+    const repository: ReleaseRepository = {
+      saveReleases: vi.fn(),
+      findExistingReleaseIds: vi.fn().mockResolvedValue(new Set()),
+      findCachedArtists: vi.fn().mockResolvedValue(new Map()),
+      saveReleaseMarkets: vi.fn(),
+      cleanupOldReleases: vi.fn(),
+      listActiveGenres: vi.fn().mockResolvedValue([]),
+      listActiveCountries: vi.fn().mockResolvedValue([]),
+      findReleases: vi.fn().mockResolvedValue({
+        items: [],
+        pagination: {
+          page: 1,
+          limit: 20,
+          total: 0,
+          hasNextPage: false,
+        },
+      }),
+    };
+
+    await getReleasesApiResponse(repository, { period: 'today' });
+
+    expect(repository.findReleases).toHaveBeenCalledWith({
+      period: 'today',
+      genre: undefined,
+      genres: undefined,
+      country: undefined,
+      countries: undefined,
+      type: 'all',
+      sort: 'newest',
+      page: 1,
+      limit: 20,
+      currentDate: undefined,
+      randomStartSeed: undefined,
+    });
+  });
+
   it('filters and paginates through ReleaseRepository', async () => {
     const repository = new InMemoryReleaseRepository();
 

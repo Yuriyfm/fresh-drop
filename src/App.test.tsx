@@ -191,6 +191,38 @@ describe('App', () => {
     });
   });
 
+  it('sends today period to the API and keeps the compact period control usable', async () => {
+    setViewportWidth(390);
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+      Promise.resolve(
+        makeResponse({
+          items: [makeRelease({ genres: ['techno'], country: 'DE', type: 'album', popularity: 80 })],
+          pagination: {
+            page: 1,
+            limit: 20,
+            total: 1,
+            hasNextPage: false,
+          },
+          error: null,
+        }),
+      ),
+    );
+
+    const { container } = render(<App />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Today' }));
+
+    await waitFor(() => {
+      expect(fetchSpy).toHaveBeenLastCalledWith(
+        expect.stringContaining('/api/releases?period=today&type=all&sort=newest&page=1&limit=20'),
+        expect.any(Object),
+      );
+    });
+    expect(window.location.search).toBe('?period=today&type=all&sort=newest');
+    expect(container.querySelector('.mobileFilterSectionPeriod .segmentedControl.isPeriodControl')).not.toBeNull();
+  });
+
   it('sends selected countries to the API', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.resolve(
       makeResponse({
@@ -1100,6 +1132,67 @@ describe('App', () => {
       behavior: 'auto',
     });
     expect(await screen.findByRole('button', { name: 'Open Release One' })).toBeInTheDocument();
+  });
+
+  it('returns from release details without dropping the loaded pages or scroll position', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        makeResponse({
+          items: makeReleases(1, 100),
+          pagination: {
+            page: 1,
+            limit: 20,
+            total: 200,
+            hasNextPage: true,
+          },
+          error: null,
+        }),
+      )
+      .mockResolvedValueOnce(
+        makeResponse({
+          items: makeReleases(101, 100),
+          pagination: {
+            page: 2,
+            limit: 20,
+            total: 200,
+            hasNextPage: false,
+          },
+          error: null,
+        }),
+      );
+
+    render(<App />);
+
+    expect(await screen.findByText('Release 1')).toBeInTheDocument();
+
+    act(() => {
+      intersectionCallback?.([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
+    });
+    await waitFor(() => {
+      expect(fetchSpy).toHaveBeenLastCalledWith(
+        expect.stringMatching(/^\/api\/releases\?period=7d&type=all&sort=newest&page=2&limit=20&randomStartSeed=.+/),
+        expect.any(Object),
+      );
+    });
+
+    scrollToVirtualRelease(120);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Open Release 120' }));
+
+    expect(window.location.pathname).toBe('/releases/release-120');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe('/');
+    });
+    expect(window.scrollTo).toHaveBeenLastCalledWith({
+      top: 10948,
+      behavior: 'auto',
+    });
+    expect(await screen.findByRole('button', { name: 'Open Release 120' })).toBeInTheDocument();
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 
   it('renders a mobile-first release detail layout with sticky actions and genre chips', async () => {

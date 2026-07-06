@@ -81,6 +81,41 @@ describe('fetchReleases', () => {
       ),
     ).rejects.toEqual(new ReleasesClientError('Invalid period query parameter.', 'invalid_query'));
   });
+
+  it('serializes today period in the request URL', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          items: [],
+          genres: [],
+          countries: [],
+          pagination: {
+            page: 1,
+            limit: 20,
+            total: 0,
+            hasNextPage: false,
+          },
+          error: null,
+        }),
+      ),
+    );
+
+    await fetchReleases(
+      {
+        period: 'today',
+        type: 'all',
+        sort: 'newest',
+        page: 1,
+        limit: 20,
+      },
+      { fetchFn },
+    );
+
+    expect(fetchFn).toHaveBeenCalledWith(
+      '/api/releases?period=today&type=all&sort=newest&page=1&limit=20',
+      expect.any(Object),
+    );
+  });
 });
 
 function makeRelease(overrides: Partial<Release> = {}): Release {
