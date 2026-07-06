@@ -20,9 +20,11 @@ const VIRTUAL_RELEASE_ROW_HEIGHT = 92;
 const VIRTUAL_RELEASE_OVERSCAN = 8;
 const RELEASE_ROUTE_PREFIX = '/releases/';
 const RELEASE_SEARCH_STORAGE_KEY = 'fresh-drop-release-search-state';
+const COUNTRY_FILTER_DEBOUNCE_MS = 250;
 const DEFAULT_SEARCH_STATE: ReleaseSearchState = {
   period: '7d',
   genres: [],
+  country: undefined,
   type: 'all',
   sort: 'newest',
 };
@@ -48,6 +50,7 @@ type AppRoute =
 type ReleaseSearchState = {
   period: ReleasePeriod;
   genres: string[];
+  country?: string;
   type: ReleaseTypeFilter;
   sort: ReleaseSort;
 };
@@ -71,6 +74,8 @@ function App() {
   const [language, setLanguage] = useState<Language>(initialLanguage);
   const [period, setPeriod] = useState<ReleasePeriod>(initialSearchState.period);
   const [genres, setGenres] = useState<string[]>(initialSearchState.genres);
+  const [country, setCountry] = useState<string | undefined>(initialSearchState.country);
+  const [countryInput, setCountryInput] = useState(initialSearchState.country ?? '');
   const [type, setType] = useState<ReleaseTypeFilter>(initialSearchState.type);
   const [sort, setSort] = useState<ReleaseSort>(initialSearchState.sort);
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
@@ -104,8 +109,8 @@ function App() {
   }, [language]);
 
   useEffect(() => {
-    window.localStorage.setItem(RELEASE_SEARCH_STORAGE_KEY, JSON.stringify({ period, genres, type, sort }));
-  }, [genres, period, sort, type]);
+    window.localStorage.setItem(RELEASE_SEARCH_STORAGE_KEY, JSON.stringify({ period, genres, country, type, sort }));
+  }, [country, genres, period, sort, type]);
 
   useEffect(() => {
     function handlePopState(event: PopStateEvent): void {
@@ -128,13 +133,13 @@ function App() {
       return;
     }
 
-    const nextUrl = buildSearchUrl({ period, genres, type, sort }, language);
+    const nextUrl = buildSearchUrl({ period, genres, country, type, sort }, language);
     const currentUrl = `${window.location.pathname}${window.location.search}`;
 
     if (currentUrl !== nextUrl) {
       window.history.replaceState(null, '', nextUrl);
     }
-  }, [genres, language, period, route.view, sort, type]);
+  }, [country, genres, language, period, route.view, sort, type]);
 
   useEffect(() => {
     function updateViewport(): void {
@@ -170,6 +175,23 @@ function App() {
   }, [isFiltersOpen, isSettingsOpen, isHowItWorksOpen]);
 
   useEffect(() => {
+    const normalizedCountry = normalizeCountryFilter(countryInput);
+
+    if (normalizedCountry === country) {
+      return undefined;
+    }
+
+    const timeout = window.setTimeout(() => {
+      setCountry(normalizedCountry);
+      setPage(1);
+    }, COUNTRY_FILTER_DEBOUNCE_MS);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [country, countryInput]);
+
+  useEffect(() => {
     const controller = new AbortController();
 
     setStatus(page === 1 ? 'loading' : 'loadingMore');
@@ -178,11 +200,12 @@ function App() {
       {
         period,
         genres,
+        country,
         type,
         sort,
         page,
         limit: PAGE_LIMIT,
-        randomStartSeed: isDefaultSearch(period, genres, type, sort) ? randomStartSeed : undefined,
+        randomStartSeed: isDefaultSearch(period, genres, country, type, sort) ? randomStartSeed : undefined,
       },
       { signal: controller.signal },
     )
@@ -203,7 +226,7 @@ function App() {
     return () => {
       controller.abort();
     };
-  }, [genres, page, period, randomStartSeed, retryCount, sort, type]);
+  }, [country, genres, page, period, randomStartSeed, retryCount, sort, type]);
 
   useEffect(() => {
     function updateScrollPosition(): void {
@@ -271,23 +294,25 @@ function App() {
       [
         ...genres.map((selectedGenre) => getGenreLabel(selectedGenre, t)),
         getPeriodLabel(period, t),
+        country,
         type === 'all' ? undefined : getReleaseTypeFilterLabel(type, t),
         sort === 'newest' ? undefined : getReleaseSortLabel(sort, t),
       ].filter(isPresent),
-    [genres, period, sort, t, type],
+    [country, genres, period, sort, t, type],
   );
   const summaryText = t.results.summary(pagination.total, summaryFilters);
   const isInitialLoading = status === 'loading' && releases.length === 0;
   const isRefreshing = status === 'loading' && releases.length > 0;
   const isSummaryUpdating = status === 'loading' || status === 'loadingMore';
   const desktopSummaryText = isInitialLoading ? t.results.loadingSummary(summaryFilters) : summaryText;
-  const mobileSummaryDetails = getMobileSummaryDetails(period, genres, type, sort, t);
+  const mobileSummaryDetails = getMobileSummaryDetails(period, genres, country, type, sort, t);
   const mobileSummaryText = isInitialLoading
     ? t.results.loadingSummary(mobileSummaryDetails)
     : getMobileSummaryText(pagination.total, mobileSummaryDetails, t);
-  const hasActiveSearchFilters = hasActiveFilters(period, genres, type, sort);
+  const hasActiveSearchFilters = hasActiveFilters(period, genres, country, type, sort);
   const virtualRange = getVirtualReleaseRange(releases.length, scrollPosition, releaseListRef.current);
   const visibleReleases = releases.slice(virtualRange.startIndex, virtualRange.endIndex);
+  const countryOptions = useMemo(() => getCountryOptions(releases, country), [country, releases]);
 
   if (route.view === 'release') {
     const release = releases.find((item) => item.id === route.releaseId);
@@ -380,6 +405,13 @@ function App() {
                     genreOptions={genreOptions}
                     t={t}
                     onChange={updateGenres}
+                  />
+                  <CountryFilter
+                    value={countryInput}
+                    options={countryOptions}
+                    t={t}
+                    onChange={setCountryInput}
+                    onClear={clearCountry}
                   />
                 </div>
               </>
@@ -513,10 +545,14 @@ function App() {
 
       <MobileFiltersSheet
         isOpen={isFiltersOpen}
+        country={countryInput}
+        countryOptions={countryOptions}
         type={type}
         sort={sort}
         t={t}
         onClose={() => setIsFiltersOpen(false)}
+        onCountryChange={setCountryInput}
+        onCountryClear={clearCountry}
         onTypeChange={updateType}
         onSortChange={updateSort}
         onReset={resetFilters}
@@ -560,6 +596,8 @@ function App() {
   function resetFilters(): void {
     setPeriod(DEFAULT_SEARCH_STATE.period);
     setGenres(DEFAULT_SEARCH_STATE.genres);
+    setCountry(DEFAULT_SEARCH_STATE.country);
+    setCountryInput(DEFAULT_SEARCH_STATE.country ?? '');
     setType(DEFAULT_SEARCH_STATE.type);
     setSort(DEFAULT_SEARCH_STATE.sort);
     window.localStorage.setItem(RELEASE_SEARCH_STORAGE_KEY, JSON.stringify(DEFAULT_SEARCH_STATE));
@@ -584,6 +622,12 @@ function App() {
     resetResults();
   }
 
+  function clearCountry(): void {
+    setCountry(undefined);
+    setCountryInput('');
+    resetResults();
+  }
+
   function useMonth(): void {
     if (period === '1m') {
       return;
@@ -599,10 +643,10 @@ function App() {
         searchScrollY: window.scrollY,
       },
       '',
-      buildSearchUrl({ period, genres, type, sort }, language),
+      buildSearchUrl({ period, genres, country, type, sort }, language),
     );
 
-    const nextPath = getReleasePath(release.id, { period, genres, type, sort }, language);
+    const nextPath = getReleasePath(release.id, { period, genres, country, type, sort }, language);
 
     window.history.pushState(null, '', nextPath);
     setRoute({ view: 'release', releaseId: release.id });
@@ -622,7 +666,7 @@ function App() {
       return;
     }
 
-    window.history.pushState(null, '', buildSearchUrl({ period, genres, type, sort }, language));
+    window.history.pushState(null, '', buildSearchUrl({ period, genres, country, type, sort }, language));
     setRoute({ view: 'search' });
   }
 
@@ -649,6 +693,8 @@ function App() {
 
     setPeriod(nextSearchState.period);
     setGenres(nextSearchState.genres);
+    setCountry(nextSearchState.country);
+    setCountryInput(nextSearchState.country ?? '');
     setType(nextSearchState.type);
     setSort(nextSearchState.sort);
     setLanguage(nextLanguage);
@@ -831,6 +877,39 @@ function TypeFilter({ type, t, layout = 'default', onChange }: TypeFilterProps) 
   );
 }
 
+type CountryFilterProps = {
+  value: string;
+  options: string[];
+  t: Translation;
+  onChange: (value: string) => void;
+  onClear: () => void;
+};
+
+function CountryFilter({ value, options, t, onChange, onClear }: CountryFilterProps) {
+  return (
+    <label className="filterField">
+      <span className="fieldLabel">{t.filters.country}</span>
+      <input
+        type="search"
+        list="country-filter-options"
+        value={value}
+        placeholder={t.filters.searchCountry}
+        onChange={(event) => onChange(event.target.value)}
+      />
+      <datalist id="country-filter-options">
+        {options.map((option) => (
+          <option key={option} value={option} />
+        ))}
+      </datalist>
+      {value.trim() && (
+        <button type="button" className="genreActionButton clearGenresButton" onClick={onClear}>
+          {t.filters.clearCountry}
+        </button>
+      )}
+    </label>
+  );
+}
+
 type SortFilterProps = {
   sort: ReleaseSort;
   t: Translation;
@@ -853,10 +932,14 @@ function SortFilter({ sort, t, onChange }: SortFilterProps) {
 
 type MobileFiltersSheetProps = {
   isOpen: boolean;
+  country: string;
+  countryOptions: string[];
   type: ReleaseTypeFilter;
   t: Translation;
   sort: ReleaseSort;
   onClose: () => void;
+  onCountryChange: (country: string) => void;
+  onCountryClear: () => void;
   onTypeChange: (type: ReleaseTypeFilter) => void;
   onSortChange: (sort: ReleaseSort) => void;
   onReset: () => void;
@@ -864,16 +947,24 @@ type MobileFiltersSheetProps = {
 
 function MobileFiltersSheet({
   isOpen,
+  country,
+  countryOptions,
   type,
   sort,
   t,
   onClose,
+  onCountryChange,
+  onCountryClear,
   onTypeChange,
   onSortChange,
   onReset,
 }: MobileFiltersSheetProps) {
+  if (!isOpen) {
+    return null;
+  }
+
   return (
-    <div className="sheetLayer" hidden={!isOpen}>
+    <div className="sheetLayer">
       <button type="button" className="sheetBackdrop" aria-label={t.filters.close} onClick={onClose} />
       <section className="bottomSheet" role="dialog" aria-modal="true" aria-label={t.filters.moreFilters}>
         <div className="sheetHeader">
@@ -881,6 +972,7 @@ function MobileFiltersSheet({
           <SheetCloseButton label={t.filters.close} onClick={onClose} />
         </div>
         <div className="sheetFilters">
+          <CountryFilter value={country} options={countryOptions} t={t} onChange={onCountryChange} onClear={onCountryClear} />
           <TypeFilter type={type} t={t} layout="sheet" onChange={onTypeChange} />
           <SortOptions sort={sort} t={t} onChange={onSortChange} />
         </div>
@@ -1367,19 +1459,21 @@ function getVirtualReleaseRange(
 function hasActiveFilters(
   period: ReleasePeriod,
   genres: string[],
+  country: string | undefined,
   type: ReleaseTypeFilter,
   sort: ReleaseSort,
 ): boolean {
-  return period !== '7d' || genres.length > 0 || type !== 'all' || sort !== 'newest';
+  return period !== '7d' || genres.length > 0 || Boolean(country) || type !== 'all' || sort !== 'newest';
 }
 
 function isDefaultSearch(
   period: ReleasePeriod,
   genres: string[],
+  country: string | undefined,
   type: ReleaseTypeFilter,
   sort: ReleaseSort,
 ): boolean {
-  return period === '7d' && genres.length === 0 && type === 'all' && sort === 'newest';
+  return period === '7d' && genres.length === 0 && !country && type === 'all' && sort === 'newest';
 }
 
 function getPeriodLabel(period: ReleasePeriod, t: Translation): string {
@@ -1407,6 +1501,7 @@ function getMobileSummaryText(count: number, details: string[], t: Translation):
 function getMobileSummaryDetails(
   period: ReleasePeriod,
   genres: string[],
+  country: string | undefined,
   type: ReleaseTypeFilter,
   sort: ReleaseSort,
   t: Translation,
@@ -1419,6 +1514,10 @@ function getMobileSummaryDetails(
 
   if (genres.length > 0) {
     details.push(...getCompactGenreSummary(genres, t));
+  }
+
+  if (country) {
+    details.push(country);
   }
 
   if (type !== 'all') {
@@ -1455,6 +1554,7 @@ function getStoredReleaseSearchState(storage: Storage = window.localStorage): Re
     return {
       period: isReleasePeriod(parsedValue.period) ? parsedValue.period : DEFAULT_SEARCH_STATE.period,
       genres: getStoredGenres(parsedValue),
+      country: getStoredCountry(parsedValue),
       type: isReleaseTypeFilter(parsedValue.type) ? parsedValue.type : DEFAULT_SEARCH_STATE.type,
       sort: isReleaseSort(parsedValue.sort) ? parsedValue.sort : DEFAULT_SEARCH_STATE.sort,
     };
@@ -1471,17 +1571,23 @@ function getStoredGenres(value: Partial<ReleaseSearchState> & { genre?: unknown 
   return typeof value.genre === 'string' && value.genre.trim().length > 0 ? [value.genre] : DEFAULT_SEARCH_STATE.genres;
 }
 
+function getStoredCountry(value: Partial<ReleaseSearchState>): string | undefined {
+  return typeof value.country === 'string' && value.country.trim().length > 0 ? value.country.trim() : undefined;
+}
+
 function getInitialReleaseSearchState(location: Location, storage: Storage = window.localStorage): ReleaseSearchState {
   const storedState = getStoredReleaseSearchState(storage);
   const searchParams = new URLSearchParams(location.search);
   const rawPeriod = searchParams.get('period');
   const rawType = searchParams.get('type');
   const rawSort = searchParams.get('sort');
+  const rawCountry = searchParams.get('country');
   const genres = getUrlGenres(searchParams);
 
   return {
     period: isReleasePeriod(rawPeriod) ? rawPeriod : storedState.period,
     genres: genres ?? storedState.genres,
+    country: normalizeCountryFilter(rawCountry) ?? storedState.country,
     type: isReleaseTypeFilter(rawType) ? rawType : storedState.type,
     sort: isReleaseSort(rawSort) ? rawSort : storedState.sort,
   };
@@ -1586,6 +1692,12 @@ function isPresent(value: string | undefined): value is string {
   return value !== undefined && value !== '';
 }
 
+function normalizeCountryFilter(value: string | null | undefined): string | undefined {
+  const normalized = value?.trim();
+
+  return normalized ? normalized : undefined;
+}
+
 function getGenreLabel(genre: string, t: Translation): string {
   return genre === NO_GENRE_FILTER ? t.filters.noGenre : genre;
 }
@@ -1617,6 +1729,10 @@ function buildSearchQuery(searchState: ReleaseSearchState, language: Language): 
     }
   });
 
+  if (searchState.country) {
+    params.set('country', searchState.country);
+  }
+
   if (language !== 'en') {
     params.set('lang', language);
   }
@@ -1624,6 +1740,26 @@ function buildSearchQuery(searchState: ReleaseSearchState, language: Language): 
   const query = params.toString();
 
   return query ? `?${query}` : '';
+}
+
+function getCountryOptions(releases: Release[], selectedCountry?: string): string[] {
+  const options = new Set<string>();
+
+  for (const release of releases) {
+    const normalized = normalizeCountryFilter(release.country);
+
+    if (!normalized || normalized.toLowerCase() === 'unknown') {
+      continue;
+    }
+
+    options.add(normalized);
+  }
+
+  if (selectedCountry) {
+    options.add(selectedCountry);
+  }
+
+  return Array.from(options).sort((left, right) => left.localeCompare(right));
 }
 
 function getRouteFromPath(pathname: string): AppRoute {

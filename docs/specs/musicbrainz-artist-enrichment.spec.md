@@ -2,7 +2,7 @@
 
 ## Goal
 
-Дополнить жанры артистов, которые пришли из Spotify, отдельным асинхронным enrichment через MusicBrainz.
+Дополнить жанры и страну артистов, которые пришли из Spotify, отдельным асинхронным enrichment через MusicBrainz.
 
 Цепочка первого этапа:
 
@@ -11,6 +11,7 @@ Spotify artist id
 -> Spotify artist URL
 -> MusicBrainz /url lookup
 -> MusicBrainz artist MBID
+-> MusicBrainz artist country
 -> MusicBrainz artist genres
 ```
 
@@ -20,7 +21,9 @@ Spotify artist id
 
 - очередь артистов на enrichment;
 - lookup MusicBrainz artist по Spotify artist URL;
+- lookup страны артиста по MusicBrainz artist MBID;
 - lookup MusicBrainz genres по artist MBID;
+- хранение MusicBrainz country в локальной БД;
 - хранение MusicBrainz genres в локальной БД;
 - объединение Spotify genres и MusicBrainz genres в release API.
 
@@ -28,7 +31,6 @@ Spotify artist id
 
 - fallback search по имени артиста;
 - MusicBrainz tags;
-- enrichment country / area;
 - enrichment release, release-group, label, rating, annotation;
 - Cover Art Archive.
 
@@ -77,6 +79,7 @@ spotify_artist_name
 spotify_artist_url
 musicbrainz_artist_mbid
 musicbrainz_artist_name
+musicbrainz_artist_country
 genres
 match_status
 match_method
@@ -147,7 +150,11 @@ GET /url?resource=<spotify_artist_url>&inc=artist-rels&fmt=json
 GET /artist/<mbid>?inc=genres&fmt=json
 ```
 
-Используется только поле `genres`.
+Используются поля:
+
+- `genres`;
+- `area.name` как полное название страны артиста;
+- `country` как fallback, если `area.name` отсутствует и его можно преобразовать в полное название страны.
 
 Нормализация:
 
@@ -157,6 +164,12 @@ GET /artist/<mbid>?inc=genres&fmt=json
 - при дублях сохранять жанр с наибольшим `count`;
 - сортировка: `count desc`, затем `name asc`;
 - `source` всегда `musicbrainz`.
+
+Для страны:
+
+- если `area.name` есть и не пустое, сохраняется оно;
+- иначе допускается использовать `country` code, преобразованный в полное название страны;
+- если надёжно определить страну нельзя, сохраняется `null`.
 
 ## Worker
 
@@ -212,6 +225,11 @@ release genres =
 - дедупликация идёт по lowercased genre name;
 - если MusicBrainz данных нет, приложение работает как раньше.
 
+Для артистов в release API:
+
+- `artist.country` использует MusicBrainz country при `match_status=matched`, если оно сохранено;
+- если MusicBrainz country нет, остаётся исходное значение артиста.
+
 ## Acceptance
 
 Готовность первого этапа:
@@ -221,5 +239,6 @@ release genres =
 - worker умеет обрабатывать `pending` артистов;
 - MusicBrainz запросы идут через один глобальный limiter `1 request / ~1100ms`;
 - `matched`, `not_found`, `ambiguous`, `failed` корректно сохраняются;
+- для matched артистов сохраняется полное название страны, если оно доступно в MusicBrainz;
 - release API отдаёт объединённые Spotify + MusicBrainz genres;
 - есть unit/integration tests на parser, normalization, limiter, worker flow и DB merge.

@@ -71,6 +71,7 @@ create table if not exists artist_enrichment (
   spotify_artist_url text not null check (length(trim(spotify_artist_url)) > 0),
   musicbrainz_artist_mbid text,
   musicbrainz_artist_name text,
+  musicbrainz_artist_country text,
   genres jsonb not null default '[]'::jsonb,
   match_status text not null check (match_status in ('pending', 'matched', 'not_found', 'ambiguous', 'failed', 'disabled')),
   match_method text check (match_method is null or match_method in ('spotify_url_lookup')),
@@ -81,6 +82,8 @@ create table if not exists artist_enrichment (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table artist_enrichment add column if not exists musicbrainz_artist_country text;
 
 create table if not exists sync_tasks (
   id bigserial primary key,

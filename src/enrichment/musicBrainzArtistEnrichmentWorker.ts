@@ -170,6 +170,7 @@ export async function runMusicBrainzArtistEnrichmentWorker(
           spotifyArtistId: artist.spotifyArtistId,
           musicBrainzArtistMbid: lookup.musicBrainzArtistMbid,
           musicBrainzArtistName: artistGenres.musicBrainzArtistName ?? lookup.musicBrainzArtistName,
+          musicBrainzArtistCountry: artistGenres.musicBrainzArtistCountry,
           genres: artistGenres.genres,
           fetchedAt: now,
         });

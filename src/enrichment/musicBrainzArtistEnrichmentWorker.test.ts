@@ -27,6 +27,49 @@ describe('runMusicBrainzArtistEnrichmentWorker', () => {
     expect(client.lookupSpotifyArtistUrls).not.toHaveBeenCalled();
   });
 
+  it('stores the MusicBrainz country for matched artists', async () => {
+    const repository = makeRepository([
+      {
+        spotifyArtistId: 'artist-1',
+        spotifyArtistName: 'Artist One',
+        spotifyArtistUrl: 'https://open.spotify.com/artist/artist-1',
+        matchStatus: 'pending',
+        retryCount: 0,
+      },
+    ]);
+    const client = makeClient({
+      lookupSpotifyArtistUrls: vi.fn().mockResolvedValue([{
+        spotifyArtistUrl: 'https://open.spotify.com/artist/artist-1',
+        status: 'matched',
+        musicBrainzArtistMbid: 'mbid-1',
+        musicBrainzArtistName: 'Artist One',
+      }]),
+      lookupArtistGenres: vi.fn().mockResolvedValue({
+        musicBrainzArtistMbid: 'mbid-1',
+        musicBrainzArtistName: 'Artist One',
+        musicBrainzArtistCountry: 'United States',
+        genres: [{ name: 'pop', count: 1, source: 'musicbrainz' }],
+      }),
+    });
+
+    const summary = await runMusicBrainzArtistEnrichmentWorker(client, repository, {
+      enabled: true,
+      limit: 10,
+      urlLookupBatchSize: 100,
+      now: new Date('2026-07-05T12:00:00.000Z'),
+    });
+
+    expect(summary.matched).toBe(1);
+    expect(repository.markMatched).toHaveBeenCalledWith({
+      spotifyArtistId: 'artist-1',
+      musicBrainzArtistMbid: 'mbid-1',
+      musicBrainzArtistName: 'Artist One',
+      musicBrainzArtistCountry: 'United States',
+      genres: [{ name: 'pop', count: 1, source: 'musicbrainz' }],
+      fetchedAt: new Date('2026-07-05T12:00:00.000Z'),
+    });
+  });
+
   it('marks temporary artist lookup errors as failed', async () => {
     const repository = makeRepository([
       {
@@ -129,6 +172,7 @@ function makeClient(overrides: Partial<MusicBrainzClient> = {}): MusicBrainzClie
     lookupArtistGenres: vi.fn().mockResolvedValue({
       musicBrainzArtistMbid: 'mbid-1',
       musicBrainzArtistName: 'Artist One',
+      musicBrainzArtistCountry: undefined,
       genres: [{ name: 'pop', count: 1, source: 'musicbrainz' }],
     }),
     getRequestCount: vi.fn().mockReturnValue(0),

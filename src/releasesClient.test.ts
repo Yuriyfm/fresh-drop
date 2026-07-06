@@ -25,6 +25,7 @@ describe('fetchReleases', () => {
       {
         period: '14d',
         genres: ['indie pop', 'pop'],
+        country: 'Sweden',
         type: 'single',
         sort: 'popular',
         page: 2,
@@ -34,7 +35,7 @@ describe('fetchReleases', () => {
     );
 
     expect(fetchFn).toHaveBeenCalledWith(
-      '/api/releases?period=14d&type=single&sort=popular&page=2&limit=20&genre=indie+pop&genre=pop',
+      '/api/releases?period=14d&type=single&sort=popular&page=2&limit=20&genre=indie+pop&genre=pop&country=Sweden',
       expect.objectContaining({
         headers: {
           Accept: 'application/json',

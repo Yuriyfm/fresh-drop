@@ -83,6 +83,21 @@ type SqlFilter = {
   params: unknown[];
 };
 
+const PRIMARY_ARTIST_COUNTRY_SQL = `
+  (
+    select nullif(trim(ae_primary.musicbrainz_artist_country), '')
+    from release_artists ra_primary
+    join artists a_primary on a_primary.id = ra_primary.artist_id
+    left join artist_enrichment ae_primary
+      on ae_primary.spotify_artist_id = a_primary.spotify_id
+     and ae_primary.match_status = 'matched'
+    where ra_primary.release_id = r.id
+      and ra_primary.is_primary = true
+    order by ra_primary.position asc
+    limit 1
+  )
+`;
+
 export class PostgresReleaseRepository implements ReleaseRepository {
   private readonly pool: Pool;
   private readonly artistEnrichmentEnabled: boolean;
@@ -209,7 +224,7 @@ export class PostgresReleaseRepository implements ReleaseRepository {
           r.spotify_url,
           r.cover_url,
           r.popularity,
-          r.country,
+          coalesce(${PRIMARY_ARTIST_COUNTRY_SQL}, r.country) as country,
           (
             select coalesce(array_agg(rg.genre order by rg.genre), '{}'::text[])
             from release_genres rg
@@ -231,7 +246,7 @@ export class PostgresReleaseRepository implements ReleaseRepository {
                   ) as merged_artist_genre
                   where length(trim(merged_artist_genre.genre)) > 0
                 ),
-                'country', a.country,
+                'country', coalesce(nullif(trim(ae.musicbrainz_artist_country), ''), a.country),
                 'popularity', a.popularity,
                 'is_primary', ra.is_primary
               )
@@ -510,7 +525,7 @@ function buildSqlFilter(query: ReleaseQuery): SqlFilter {
 
   if (country) {
     params.push(country);
-    where.push(`lower(trim(r.country)) = $${params.length}`);
+    where.push(`lower(trim(coalesce(${PRIMARY_ARTIST_COUNTRY_SQL}, r.country))) = $${params.length}`);
   }
 
   if (type !== 'all') {

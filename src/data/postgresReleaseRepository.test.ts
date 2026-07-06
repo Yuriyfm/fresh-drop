@@ -370,7 +370,7 @@ describeWithPostgres('PostgresReleaseRepository', () => {
     ]);
   });
 
-  it('merges matched MusicBrainz genres into release genres and filters', async () => {
+  it('merges matched MusicBrainz genres and primary artist country from MusicBrainz into release search', async () => {
     const artist = makeArtist({ id: 'artist-mb', genres: ['Pop'] });
 
     await repository.saveReleases([
@@ -385,6 +385,7 @@ describeWithPostgres('PostgresReleaseRepository', () => {
       spotifyArtistId: 'artist-mb',
       musicBrainzArtistMbid: 'mbid-artist-mb',
       musicBrainzArtistName: 'Artist MB',
+      musicBrainzArtistCountry: 'United States',
       genres: [
         { id: 'g-1', name: 'dance-pop', count: 5, source: 'musicbrainz' },
         { id: 'g-2', name: 'pop', count: 3, source: 'musicbrainz' },
@@ -395,6 +396,7 @@ describeWithPostgres('PostgresReleaseRepository', () => {
     const result = await repository.findReleases({
       period: '7d',
       genre: 'dance-pop',
+      country: 'United States',
       type: 'all',
       sort: 'newest',
       currentDate: new Date('2026-07-02T12:00:00.000Z'),
@@ -403,6 +405,8 @@ describeWithPostgres('PostgresReleaseRepository', () => {
     expect(result.items).toHaveLength(1);
     expect(result.items[0]?.genres).toEqual(['dance-pop', 'pop']);
     expect(result.items[0]?.artists[0]?.genres).toEqual(['dance-pop', 'pop']);
+    expect(result.items[0]?.artists[0]?.country).toBe('United States');
+    expect(result.items[0]?.country).toBe('United States');
     await expect(repository.listActiveGenres()).resolves.toEqual([
       { genre: 'pop', releaseCount: 1, kind: 'general' },
       { genre: 'dance-pop', releaseCount: 1, kind: 'exact' },

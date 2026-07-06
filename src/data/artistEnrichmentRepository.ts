@@ -24,6 +24,7 @@ export type ArtistEnrichmentRepository = {
     spotifyArtistId: string;
     musicBrainzArtistMbid: string;
     musicBrainzArtistName?: string;
+    musicBrainzArtistCountry?: string;
     genres: MusicBrainzGenre[];
     fetchedAt?: Date;
   }): Promise<void>;

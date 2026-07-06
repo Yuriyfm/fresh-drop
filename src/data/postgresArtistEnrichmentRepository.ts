@@ -96,6 +96,7 @@ export class PostgresArtistEnrichmentRepository implements ArtistEnrichmentRepos
     spotifyArtistId: string;
     musicBrainzArtistMbid: string;
     musicBrainzArtistName?: string;
+    musicBrainzArtistCountry?: string;
     genres: MusicBrainzGenre[];
     fetchedAt?: Date;
   }): Promise<void> {
@@ -108,11 +109,12 @@ export class PostgresArtistEnrichmentRepository implements ArtistEnrichmentRepos
           update artist_enrichment
           set musicbrainz_artist_mbid = $2,
               musicbrainz_artist_name = $3,
-              genres = $4::jsonb,
+              musicbrainz_artist_country = $4,
+              genres = $5::jsonb,
               match_status = 'matched',
               match_method = 'spotify_url_lookup',
               error_message = null,
-              fetched_at = $5,
+              fetched_at = $6,
               next_retry_at = null,
               retry_count = 0,
               updated_at = now()
@@ -122,6 +124,7 @@ export class PostgresArtistEnrichmentRepository implements ArtistEnrichmentRepos
           input.spotifyArtistId,
           input.musicBrainzArtistMbid,
           input.musicBrainzArtistName ?? null,
+          input.musicBrainzArtistCountry ?? null,
           JSON.stringify(input.genres),
           input.fetchedAt ?? new Date(),
         ],
@@ -198,6 +201,7 @@ export class PostgresArtistEnrichmentRepository implements ArtistEnrichmentRepos
           update artist_enrichment
           set musicbrainz_artist_mbid = null,
               musicbrainz_artist_name = null,
+              musicbrainz_artist_country = null,
               genres = '[]'::jsonb,
               match_status = $2,
               match_method = 'spotify_url_lookup',

@@ -22,6 +22,7 @@ export type MusicBrainzUrlLookupResult = {
 export type MusicBrainzArtistGenresResult = {
   musicBrainzArtistMbid: string;
   musicBrainzArtistName?: string;
+  musicBrainzArtistCountry?: string;
   genres: MusicBrainzGenre[];
 };
 
@@ -91,6 +92,7 @@ export class MusicBrainzClient {
     return {
       musicBrainzArtistMbid,
       musicBrainzArtistName: typeof response.name === 'string' ? response.name : undefined,
+      musicBrainzArtistCountry: parseMusicBrainzArtistCountry(response),
       genres: normalizeMusicBrainzGenres(response.genres),
     };
   }
@@ -250,4 +252,29 @@ function createMusicBrainzApiError(status: number): MusicBrainzApiError {
   }
 
   return new MusicBrainzApiError(`MusicBrainz request failed with status ${status}.`, status, false);
+}
+
+function parseMusicBrainzArtistCountry(payload: Record<string, unknown>): string | undefined {
+  const area = payload.area;
+
+  if (area && typeof area === 'object') {
+    const areaRecord = area as Record<string, unknown>;
+    const areaName = typeof areaRecord.name === 'string' ? areaRecord.name.trim() : '';
+
+    if (areaName) {
+      return areaName;
+    }
+  }
+
+  const countryCode = typeof payload.country === 'string' ? payload.country.trim().toUpperCase() : '';
+
+  if (!countryCode) {
+    return undefined;
+  }
+
+  try {
+    return new Intl.DisplayNames(['en'], { type: 'region' }).of(countryCode) ?? undefined;
+  } catch {
+    return undefined;
+  }
 }

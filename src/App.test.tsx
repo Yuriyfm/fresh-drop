@@ -66,7 +66,7 @@ describe('App', () => {
 
     expect(await screen.findByRole('checkbox', { name: /indie pop/i })).toBeInTheDocument();
     expect(screen.getByText('Counts reflect the last month of releases.')).toBeInTheDocument();
-    expect(screen.queryByLabelText('Country / market')).not.toBeInTheDocument();
+    expect(screen.getAllByLabelText('Country')[0]).toBeInTheDocument();
     expect(fetchSpy).toHaveBeenCalledWith(
       expect.stringMatching(
         /^\/api\/releases\?period=7d&type=all&sort=newest&page=1&limit=20&randomStartSeed=.+/,
@@ -191,6 +191,32 @@ describe('App', () => {
     });
   });
 
+  it('sends the country filter to the API after debounce', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.resolve(
+      makeResponse({
+        items: [makeRelease({ genres: ['techno'], country: 'United States' })],
+        pagination: {
+          page: 1,
+          limit: 20,
+          total: 1,
+          hasNextPage: false,
+        },
+        error: null,
+      }),
+    ));
+
+    render(<App />);
+
+    fireEvent.change((await screen.findAllByLabelText('Country'))[0], { target: { value: 'United States' } });
+
+    await waitFor(() => {
+      expect(fetchSpy).toHaveBeenLastCalledWith(
+        expect.stringContaining('&country=United+States'),
+        expect.any(Object),
+      );
+    });
+  });
+
   it('uses mobile-friendly controls for period, type, and sorting on small screens', async () => {
     setViewportWidth(360);
 
@@ -223,6 +249,7 @@ describe('App', () => {
     fireEvent.click(screen.getAllByRole('button', { name: 'Filters' })[0]);
     expect(screen.getByRole('dialog', { name: 'More filters' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Compilations' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Country')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Albums' }));
     fireEvent.click(screen.getByRole('button', { name: 'Most popular' }));
@@ -558,14 +585,14 @@ describe('App', () => {
     );
     window.localStorage.setItem(
       RELEASE_SEARCH_STORAGE_KEY,
-      JSON.stringify({ period: '14d', genre: 'techno', type: 'album', sort: 'popular' }),
+      JSON.stringify({ period: '14d', genre: 'techno', country: 'Germany', type: 'album', sort: 'popular' }),
     );
 
     render(<App />);
 
     expect(await screen.findByText('Release One')).toBeInTheDocument();
     expect(fetchSpy).toHaveBeenCalledWith(
-      '/api/releases?period=14d&type=album&sort=popular&page=1&limit=20&genre=techno',
+      '/api/releases?period=14d&type=album&sort=popular&page=1&limit=20&genre=techno&country=Germany',
       expect.any(Object),
     );
   });
@@ -685,11 +712,18 @@ describe('App', () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole('checkbox', { name: /techno/i }));
+    await act(async () => {
+      fireEvent.change(screen.getAllByLabelText('Country')[0], { target: { value: 'Germany' } });
+      await new Promise((resolve) => window.setTimeout(resolve, 300));
+    });
+
+    expect(window.location.search).toContain('country=Germany');
+
     fireEvent.click(screen.getByRole('button', { name: 'Albums' }));
     fireEvent.change(screen.getAllByLabelText('Sorting')[0], { target: { value: 'popular' } });
 
     await waitFor(() => {
-      expect(window.location.search).toBe('?period=7d&type=album&sort=popular&genre=techno');
+      expect(window.location.search).toBe('?period=7d&type=album&sort=popular&genre=techno&country=Germany');
     });
   });
 
@@ -965,7 +999,7 @@ describe('App', () => {
     expect(await screen.findByText('Release 1')).toBeInTheDocument();
   });
 
-  it('does not render the country filter', async () => {
+  it('renders the country filter even when the current results have unknown country', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       makeResponse({
         items: [
@@ -986,7 +1020,7 @@ describe('App', () => {
 
     expect(await screen.findByText('Release One')).toBeInTheDocument();
     expect(screen.getByText('Release Two')).toBeInTheDocument();
-    expect(screen.queryByLabelText('Country / market')).not.toBeInTheDocument();
+    expect(screen.getAllByLabelText('Country')[0]).toBeInTheDocument();
   });
 
   it('shows null popularity as Unknown instead of 0 in release details', async () => {
