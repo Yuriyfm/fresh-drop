@@ -43,6 +43,7 @@ export const en = {
     allTypes: 'All',
     filters: 'Filters',
     moreFilters: 'More filters',
+    done: 'Done',
     reset: 'Reset filters',
     resetAll: 'Reset all filters',
     resetShort: 'Reset',

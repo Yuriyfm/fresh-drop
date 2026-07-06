@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import './App.css';
 import type { CountryOption, GenreOption } from './api/releasesApi';
 import type { Release, ReleasePeriod, ReleaseSort, ReleaseTypeFilter } from './domain/release';
@@ -309,20 +309,21 @@ function App() {
         getPeriodLabel(period, t),
         ...getCompactCountrySummary(countries),
         type === 'all' ? undefined : getReleaseTypeFilterLabel(type, t),
-        sort === 'newest' ? undefined : getReleaseSortLabel(sort, t),
       ].filter(isPresent),
-    [countries, genres, period, sort, t, type],
+    [countries, genres, period, t, type],
   );
   const summaryText = t.results.summary(pagination.total, summaryFilters);
   const isInitialLoading = status === 'loading' && releases.length === 0;
   const isRefreshing = status === 'loading' && releases.length > 0;
   const isSummaryUpdating = status === 'loading' || status === 'loadingMore';
   const desktopSummaryText = isInitialLoading ? t.results.loadingSummary(summaryFilters) : summaryText;
-  const mobileSummaryDetails = getMobileSummaryDetails(period, genres, countries, type, sort, t);
-  const mobileSummaryText = isInitialLoading
-    ? t.results.loadingSummary(mobileSummaryDetails)
-    : getMobileSummaryText(pagination.total, mobileSummaryDetails, t);
-  const hasActiveSearchFilters = hasActiveFilters(period, genres, countries, type, sort);
+  const mobileSummaryChips = useMemo(
+    () => getMobileSummaryChips(period, genres, countries, type, t),
+    [countries, genres, period, t, type],
+  );
+  const mobileResultsCountText = isInitialLoading ? t.results.loading : getResultsCountText(pagination.total, t);
+  const hasActiveSearchFilters = hasActiveFilters(period, genres, countries, type);
+  const hasActiveSheetFilters = genres.length > 0 || countries.length > 0 || type !== 'all';
   const virtualRange = getVirtualReleaseRange(releases.length, scrollPosition, releaseListRef.current);
   const visibleReleases = releases.slice(virtualRange.startIndex, virtualRange.endIndex);
 
@@ -344,103 +345,123 @@ function App() {
 
   return (
     <main className="appShell">
-      <header className="appHeader">
+      <header className={isMobile ? 'appHeader isMobileHeader' : 'appHeader'}>
         <div className="headerBrand">
           {!isMobile && <p className="eyebrow">{t.app.eyebrow}</p>}
           <h1>{t.app.title}</h1>
-          <p>{isMobile ? t.app.shortDescription : t.app.description}</p>
+          {!isMobile && <p>{t.app.description}</p>}
         </div>
         <div className={isMobile ? 'headerActions mobileHeaderActions' : 'headerActions'}>
-          <button type="button" className="navLink headerLink" onClick={openAbout}>
-            {t.app.howItWorks}
-          </button>
           {isMobile ? (
-            <button
-              type="button"
-              className="iconButton headerIconButton"
-              aria-haspopup="dialog"
-              aria-expanded={isSettingsOpen}
-              aria-label={t.app.settings}
-              onClick={() => setIsSettingsOpen(true)}
-            >
-              &#9881;
-            </button>
+            <>
+              <button
+                type="button"
+                className="iconButton headerIconButton"
+                aria-haspopup="dialog"
+                aria-expanded={isHowItWorksOpen}
+                aria-label={t.app.howItWorks}
+                onClick={openAbout}
+              >
+                ?
+              </button>
+              <button
+                type="button"
+                className="iconButton headerIconButton"
+                aria-haspopup="dialog"
+                aria-expanded={isSettingsOpen}
+                aria-label={t.app.settings}
+                onClick={() => setIsSettingsOpen(true)}
+              >
+                &#9881;
+              </button>
+            </>
           ) : (
-            <LanguageSwitcher language={language} t={t} onChange={setLanguage} />
+            <>
+              <button type="button" className="navLink headerLink" onClick={openAbout}>
+                {t.app.howItWorks}
+              </button>
+              <LanguageSwitcher language={language} t={t} onChange={setLanguage} />
+            </>
           )}
         </div>
       </header>
 
       <div className={isDesktopSidebar ? 'searchLayout isDesktopSidebar' : 'searchLayout'}>
         <aside className="searchSidebar">
-          <section className="filterPanel" aria-label={t.filters.aria} ref={filterPanelRef}>
-            {isMobile ? (
-              <div className="mobileFilterStack">
-                <div className="mobileFilterSection mobileFilterSectionPeriod">
+          {isMobile ? (
+            <section className="mobileDiscoveryHeader" aria-label={t.filters.aria} ref={filterPanelRef}>
+              <div className="mobileDiscoveryControls">
+                <div className="mobileDiscoveryPeriod">
                   <PeriodFilter period={period} t={t} onChange={updatePeriod} />
                 </div>
-                <div className="mobileFilterSection mobileFilterSectionTrigger">
-                  <div className="filterPanelHeader">
-                    <p className="filterGroupTitle">{t.filters.filters}</p>
-                    <button
-                      type="button"
-                      className="secondaryButton filterPanelHeaderButton"
-                      aria-haspopup="dialog"
-                      aria-expanded={isFiltersOpen}
-                      onClick={openFiltersSheet}
-                    >
-                      {t.filters.filters}
-                    </button>
-                  </div>
-                </div>
-                <div className="mobileFilterSection mobileFilterSectionGenre">
-                  <GenreFilter
-                    isMobile={isMobile}
-                    selectedGenres={genres}
-                    genreOptions={genreOptions}
-                    t={t}
-                    onChange={updateGenres}
-                  />
+                <div className="mobileDiscoveryActions">
+                  <button
+                    type="button"
+                    className="secondaryButton mobileFiltersButton"
+                    aria-haspopup="dialog"
+                    aria-expanded={isFiltersOpen}
+                    onClick={openFiltersSheet}
+                  >
+                    {t.filters.filters}
+                  </button>
                 </div>
               </div>
-            ) : (
-              <>
-                <div className="filterPanelHeader">
-                  <p className="filterGroupTitle">{t.filters.filters}</p>
+              <section className="mobileResultsSummary" aria-live="polite">
+                <div className="mobileResultsSummaryTop">
+                  <p className="mobileResultsCount">
+                    {mobileResultsCountText}
+                    {!isInitialLoading && isSummaryUpdating && <span className="summaryLoadingIndicator">{t.results.updating}</span>}
+                  </p>
+                  {hasActiveSearchFilters && (
+                    <button type="button" className="stickyResetLink mobileSummaryResetLink" aria-label={t.filters.reset} onClick={resetFilters}>
+                      {t.filters.resetShort}
+                    </button>
+                  )}
                 </div>
-
-                <div className="primaryFilters">
-                  <PeriodFilter period={period} t={t} onChange={updatePeriod} />
-                  <GenreFilter
-                    isMobile={isMobile}
-                    selectedGenres={genres}
-                    genreOptions={genreOptions}
-                    t={t}
-                    onChange={updateGenres}
-                  />
-                  <CountryFilter
-                    selectedCountries={countries}
-                    options={countryOptions}
-                    t={t}
-                    onChange={updateCountries}
-                  />
+                <div className="mobileActiveFilters" aria-label={t.filters.activeFilters(mobileSummaryChips.length)}>
+                  {mobileSummaryChips.map((chip) => (
+                    <span className="genreChip mobileSummaryChip" key={chip}>
+                      {chip}
+                    </span>
+                  ))}
                 </div>
-              </>
-            )}
+              </section>
+              <SortToolbar sort={sort} t={t} isMobile onChange={updateSort} />
+            </section>
+          ) : (
+            <section className="filterPanel" aria-label={t.filters.aria} ref={filterPanelRef}>
+              <div className="filterPanelHeader">
+                <p className="filterGroupTitle">{t.filters.filters}</p>
+              </div>
 
-            {!isMobile && (
+              <div className="primaryFilters">
+                <PeriodFilter period={period} t={t} onChange={updatePeriod} />
+                <GenreFilter
+                  isMobile={false}
+                  selectedGenres={genres}
+                  genreOptions={genreOptions}
+                  t={t}
+                  onChange={updateGenres}
+                />
+                <CountryFilter
+                  selectedCountries={countries}
+                  options={countryOptions}
+                  t={t}
+                  onChange={updateCountries}
+                />
+              </div>
+
               <div className="desktopSecondaryFilters">
                 <TypeFilter type={type} t={t} onChange={updateType} />
-                {!isDesktopSidebar && <SortFilter sort={sort} t={t} onChange={updateSort} />}
               </div>
-            )}
 
-            {!isMobile && hasActiveSearchFilters && (
-              <button type="button" className="ghostButton sidebarResetButton" onClick={resetFilters}>
-                {t.filters.reset}
-              </button>
-            )}
-          </section>
+              {hasActiveSearchFilters && (
+                <button type="button" className="ghostButton sidebarResetButton" onClick={resetFilters}>
+                  {t.filters.reset}
+                </button>
+              )}
+            </section>
+          )}
         </aside>
 
         <div className="searchContent">
@@ -453,32 +474,7 @@ function App() {
                 </p>
               </div>
               <div className="resultsToolbar">
-                {isDesktopSidebar && <SortFilter sort={sort} t={t} onChange={updateSort} />}
-              </div>
-            </section>
-          )}
-
-          {isMobile && (
-            <section className="stickySummaryBar" aria-live="polite">
-              <div className="stickySummaryContent">
-                <p className="stickySummaryText">{mobileSummaryText}</p>
-                {isSummaryUpdating && <span className="summaryLoadingIndicator">{t.results.updating}</span>}
-              </div>
-              <div className="stickySummaryActions">
-                <button
-                  type="button"
-                  className="secondaryButton stickySummaryButton"
-                  aria-haspopup="dialog"
-                  aria-expanded={isFiltersOpen}
-                  onClick={openFiltersSheet}
-                >
-                  {t.filters.filters}
-                </button>
-                {hasActiveSearchFilters && (
-                  <button type="button" className="stickyResetLink" aria-label={t.filters.reset} onClick={resetFilters}>
-                    {t.filters.resetShort}
-                  </button>
-                )}
+                <SortToolbar sort={sort} t={t} onChange={updateSort} />
               </div>
             </section>
           )}
@@ -556,16 +552,18 @@ function App() {
 
       <MobileFiltersSheet
         isOpen={isFiltersOpen}
+        genres={genres}
+        genreOptions={genreOptions}
         countries={countries}
         countryOptions={countryOptions}
         type={type}
-        sort={sort}
+        hasActiveFilters={hasActiveSheetFilters}
         t={t}
         onClose={() => setIsFiltersOpen(false)}
+        onGenresChange={updateGenres}
         onCountriesChange={updateCountries}
         onTypeChange={updateType}
-        onSortChange={updateSort}
-        onReset={resetFilters}
+        onReset={resetFiltersInSheet}
       />
       <MobileSettingsSheet
         isOpen={isSettingsOpen}
@@ -616,6 +614,23 @@ function App() {
     setSort(DEFAULT_SEARCH_STATE.sort);
     window.localStorage.setItem(RELEASE_SEARCH_STORAGE_KEY, JSON.stringify(DEFAULT_SEARCH_STATE));
     setIsFiltersOpen(false);
+    resetResults();
+  }
+
+  function resetFiltersInSheet(): void {
+    setGenres(DEFAULT_SEARCH_STATE.genres);
+    setCountries(DEFAULT_SEARCH_STATE.countries);
+    setType(DEFAULT_SEARCH_STATE.type);
+    window.localStorage.setItem(
+      RELEASE_SEARCH_STORAGE_KEY,
+      JSON.stringify({
+        period,
+        genres: DEFAULT_SEARCH_STATE.genres,
+        countries: DEFAULT_SEARCH_STATE.countries,
+        type: DEFAULT_SEARCH_STATE.type,
+        sort,
+      }),
+    );
     resetResults();
   }
 
@@ -970,51 +985,77 @@ function CountryFilter({ selectedCountries, options, t, onChange }: CountryFilte
   }
 }
 
-type SortFilterProps = {
+type SortToolbarProps = {
   sort: ReleaseSort;
+  isMobile?: boolean;
   t: Translation;
   onChange: (sort: ReleaseSort) => void;
 };
 
-function SortFilter({ sort, t, onChange }: SortFilterProps) {
+function SortToolbar({ sort, isMobile = false, t, onChange }: SortToolbarProps) {
+  const activeSortLabel = getReleaseSortLabel(sort, t);
+  const options: { value: ReleaseSort; label: string }[] = [
+    { value: 'newest', label: t.sorts.newest },
+    { value: 'oldest', label: t.sorts.oldest },
+    { value: 'popular', label: t.sorts.popular },
+    { value: 'less-popular', label: t.sorts.lessPopular },
+  ];
+
   return (
-    <label className="filterField">
-      <span className="fieldLabel">{t.filters.sorting}</span>
-      <select value={sort} onChange={(event) => onChange(event.target.value as ReleaseSort)}>
-        <option value="newest">{t.sorts.newest}</option>
-        <option value="oldest">{t.sorts.oldest}</option>
-        <option value="popular">{t.sorts.popular}</option>
-        <option value="less-popular">{t.sorts.lessPopular}</option>
-      </select>
-    </label>
+    <section className={isMobile ? 'sortToolbar sortToolbarMobile' : 'sortToolbar'} aria-label={t.filters.sorting}>
+      <div className="sortToolbarHeader">
+        <span className="sortToolbarLabel">{t.filters.sorting}</span>
+        <span className="sortToolbarValue">{activeSortLabel}</span>
+      </div>
+      <div className="sortIconRail" role="group" aria-label={t.filters.sorting}>
+        {options.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            className={sort === option.value ? 'sortIconButton isActive' : 'sortIconButton'}
+            aria-label={option.label}
+            aria-pressed={sort === option.value}
+            title={option.label}
+            onClick={() => onChange(option.value)}
+          >
+            <SortGlyph sort={option.value} />
+            <span className="srOnly">{option.label}</span>
+          </button>
+        ))}
+      </div>
+    </section>
   );
 }
 
 type MobileFiltersSheetProps = {
   isOpen: boolean;
+  genres: string[];
+  genreOptions: GenreOption[];
   countries: string[];
   countryOptions: CountryOption[];
   type: ReleaseTypeFilter;
   t: Translation;
-  sort: ReleaseSort;
+  hasActiveFilters: boolean;
   onClose: () => void;
+  onGenresChange: (genres: string[]) => void;
   onCountriesChange: (countries: string[]) => void;
   onTypeChange: (type: ReleaseTypeFilter) => void;
-  onSortChange: (sort: ReleaseSort) => void;
   onReset: () => void;
 };
 
 function MobileFiltersSheet({
   isOpen,
+  genres,
+  genreOptions,
   countries,
   countryOptions,
   type,
-  sort,
+  hasActiveFilters,
   t,
   onClose,
+  onGenresChange,
   onCountriesChange,
   onTypeChange,
-  onSortChange,
   onReset,
 }: MobileFiltersSheetProps) {
   if (!isOpen) {
@@ -1024,19 +1065,26 @@ function MobileFiltersSheet({
   return (
     <div className="sheetLayer">
       <button type="button" className="sheetBackdrop" aria-label={t.filters.close} onClick={onClose} />
-      <section className="bottomSheet" role="dialog" aria-modal="true" aria-label={t.filters.moreFilters}>
+      <section className="bottomSheet filtersSheet" role="dialog" aria-modal="true" aria-label={t.filters.filters}>
         <div className="sheetHeader">
-          <h2>{t.filters.moreFilters}</h2>
+          <h2>{t.filters.filters}</h2>
           <SheetCloseButton label={t.filters.close} onClick={onClose} />
         </div>
-        <div className="sheetFilters">
-          <CountryFilter selectedCountries={countries} options={countryOptions} t={t} onChange={onCountriesChange} />
-          <TypeFilter type={type} t={t} layout="sheet" onChange={onTypeChange} />
-          <SortOptions sort={sort} t={t} onChange={onSortChange} />
+        <div className="sheetBody">
+          <div className="sheetFilters">
+            <GenreFilter isMobile={false} selectedGenres={genres} genreOptions={genreOptions} t={t} onChange={onGenresChange} />
+            <CountryFilter selectedCountries={countries} options={countryOptions} t={t} onChange={onCountriesChange} />
+            <TypeFilter type={type} t={t} layout="sheet" onChange={onTypeChange} />
+          </div>
         </div>
-        <button type="button" className="ghostButton fullWidthButton" onClick={onReset}>
-          {t.filters.reset}
-        </button>
+        <div className="sheetFooter">
+          <button type="button" className="ghostButton sheetFooterButton" disabled={!hasActiveFilters} onClick={onReset}>
+            {t.filters.resetShort}
+          </button>
+          <button type="button" className="sheetFooterButton" onClick={onClose}>
+            {t.filters.done}
+          </button>
+        </div>
       </section>
     </div>
   );
@@ -1111,30 +1159,36 @@ function SegmentedControl<TValue extends string>({
   );
 }
 
-function SortOptions({ sort, t, onChange }: SortFilterProps) {
+function SortGlyph({ sort }: { sort: ReleaseSort }) {
   return (
-    <div className="filterField">
-      <span className="fieldLabel">{t.filters.sorting}</span>
-      <div className="sheetOptionList" role="group" aria-label={t.filters.sorting}>
-        {[
-          { value: 'newest', label: t.sorts.newest },
-          { value: 'oldest', label: t.sorts.oldest },
-          { value: 'popular', label: t.sorts.popular },
-          { value: 'less-popular', label: t.sorts.lessPopular },
-        ].map((option) => (
-          <button
-            key={option.value}
-            type="button"
-            className={sort === option.value ? 'sheetOption isActive' : 'sheetOption'}
-            aria-pressed={sort === option.value}
-            onClick={() => onChange(option.value as ReleaseSort)}
-          >
-            <span>{option.label}</span>
-            {sort === option.value && <span aria-hidden="true">✓</span>}
-          </button>
-        ))}
-      </div>
-    </div>
+    <svg viewBox="0 0 16 16" focusable="false" aria-hidden="true">
+      {sort === 'newest' && (
+        <>
+          <path d="M8 3v10" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" />
+          <path d="M5.5 10.5 8 13l2.5-2.5" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" />
+          <path d="M4 4h8" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.6" />
+        </>
+      )}
+      {sort === 'oldest' && (
+        <>
+          <path d="M8 13V3" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" />
+          <path d="M5.5 5.5 8 3l2.5 2.5" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" />
+          <path d="M4 12h8" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.6" />
+        </>
+      )}
+      {sort === 'popular' && (
+        <>
+          <path d="M3 10.5 6.2 7.3l2.1 2.1L13 4.7" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" />
+          <path d="M10.5 4.7H13v2.5" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" />
+        </>
+      )}
+      {sort === 'less-popular' && (
+        <>
+          <path d="M3 5.5 6.2 8.7l2.1-2.1L13 11.3" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" />
+          <path d="M10.5 11.3H13V8.8" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" />
+        </>
+      )}
+    </svg>
   );
 }
 
@@ -1236,6 +1290,11 @@ type ReleaseDetailProps = {
   onLanguageChange: (language: Language) => void;
 };
 
+type DetailMetaItem = {
+  label: string;
+  value: ReactNode;
+};
+
 function ReleaseDetail({ isLoading, release, language, isMobile, t, onBack, onLanguageChange }: ReleaseDetailProps) {
   if (!release) {
     return (
@@ -1250,6 +1309,32 @@ function ReleaseDetail({ isLoading, release, language, isMobile, t, onBack, onLa
       </main>
     );
   }
+
+  const detailMetaItems: DetailMetaItem[] = [];
+
+  if (hasMeaningfulText(release.releaseDate)) {
+    detailMetaItems.push({ label: t.release.releaseDate, value: <dd>{release.releaseDate}</dd> });
+  }
+
+  if (hasMeaningfulText(release.country)) {
+    detailMetaItems.push({ label: t.release.country, value: <dd>{release.country}</dd> });
+  }
+
+  if (release.popularity !== null) {
+    detailMetaItems.push({ label: t.release.popularity, value: <dd>{String(release.popularity)}</dd> });
+  }
+
+  if (release.type !== 'unknown') {
+    detailMetaItems.push({
+      label: t.release.type,
+      value: (
+        <dd>
+          <span className="releaseTypeBadge detailMetaBadge">{getReleaseTypeLabel(release.type, t)}</span>
+        </dd>
+      ),
+    });
+  }
+  const knownGenres = getKnownReleaseGenres(release);
 
   return (
     <main className="detailPage">
@@ -1269,48 +1354,51 @@ function ReleaseDetail({ isLoading, release, language, isMobile, t, onBack, onLa
                 <LanguageSwitcher language={language} t={t} onChange={onLanguageChange} />
               </div>
             )}
-            <h1>{release.title}</h1>
+            <h1 className="detailTitle">{release.title}</h1>
             <p className="detailArtist">{formatArtists(release, t)}</p>
-            <div className="detailActions">
-              {release.spotifyUrl && (
-                <a className="spotifyLink detailPrimaryAction" href={release.spotifyUrl} target="_blank" rel="noreferrer">
-                  {t.release.openSpotify}
-                </a>
-              )}
-            </div>
-            <dl className="detailMetaCard">
-              <div className="detailMetaItem">
-                <dt>{t.release.releaseDate}</dt>
-                <dd>{formatUnknown(release.releaseDate, t)}</dd>
+            {!isMobile && (
+              <div className="detailActions">
+                {release.spotifyUrl && (
+                  <a className="spotifyLink detailPrimaryAction" href={release.spotifyUrl} target="_blank" rel="noreferrer">
+                    {t.release.openSpotify}
+                  </a>
+                )}
               </div>
-              <div className="detailMetaItem">
-                <dt>{t.release.country}</dt>
-                <dd>{formatUnknown(release.country, t)}</dd>
-              </div>
-              <div className="detailMetaItem">
-                <dt>{t.release.popularity}</dt>
-                <dd>{formatNullableNumber(release.popularity, t)}</dd>
-              </div>
-              <div className="detailMetaItem">
-                <dt>{t.release.type}</dt>
-                <dd>
-                  <span className="releaseTypeBadge detailMetaBadge">{getReleaseTypeLabel(release.type, t)}</span>
-                </dd>
-              </div>
-            </dl>
-            <div className="detailGenresSection">
-              <p className="detailSectionLabel">{t.release.genres}</p>
-              <div className="selectedGenreChips detailGenreChips">
-                {getReleaseGenres(release, t).map((genre) => (
-                  <span className="genreChip detailGenreChip" key={genre}>
-                    {genre}
-                  </span>
+            )}
+            {detailMetaItems.length > 0 && (
+              <dl className="detailMetaCard">
+                {detailMetaItems.map((item) => (
+                  <div className="detailMetaItem" key={item.label}>
+                    <dt>{item.label}</dt>
+                    {item.value}
+                  </div>
                 ))}
+              </dl>
+            )}
+            {knownGenres.length > 0 && (
+              <div className="detailGenresSection">
+                <p className="detailSectionLabel">{t.release.genres}</p>
+                <div className="selectedGenreChips detailGenreChips">
+                  {knownGenres.map((genre) => (
+                    <span className="genreChip detailGenreChip" key={genre}>
+                      {genre}
+                    </span>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </section>
       </div>
+      {isMobile && release.spotifyUrl && (
+        <div className="detailBottomBar">
+          <div className="appShell detailBottomBarInner">
+            <a className="spotifyLink detailPrimaryAction detailBottomAction" href={release.spotifyUrl} target="_blank" rel="noreferrer">
+              {t.release.openSpotify}
+            </a>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
@@ -1519,9 +1607,8 @@ function hasActiveFilters(
   genres: string[],
   countries: string[],
   type: ReleaseTypeFilter,
-  sort: ReleaseSort,
 ): boolean {
-  return period !== '7d' || genres.length > 0 || countries.length > 0 || type !== 'all' || sort !== 'newest';
+  return period !== '7d' || genres.length > 0 || countries.length > 0 || type !== 'all';
 }
 
 function isDefaultSearch(
@@ -1564,53 +1651,25 @@ function getReleaseSortLabel(sort: ReleaseSort, t: Translation): string {
   return t.sorts[sort === 'less-popular' ? 'lessPopular' : sort];
 }
 
-function getMobileSummaryText(count: number, details: string[], t: Translation): string {
+function getResultsCountText(count: number, t: Translation): string {
   const formattedCount = new Intl.NumberFormat().format(count);
 
-  return [`${formattedCount} ${t.results.releasesShort(count)}`, ...details].join(' · ');
+  return `${formattedCount} ${t.results.releasesShort(count)}`;
 }
 
-function getMobileSummaryDetails(
+function getMobileSummaryChips(
   period: ReleasePeriod,
   genres: string[],
   countries: string[],
   type: ReleaseTypeFilter,
-  sort: ReleaseSort,
   t: Translation,
 ): string[] {
-  const details: string[] = [];
-
-  if (period !== '7d' || genres.length === 0) {
-    details.push(getPeriodLabel(period, t));
-  }
-
-  if (genres.length > 0) {
-    details.push(...getCompactGenreSummary(genres, t));
-  }
-
-  if (countries.length > 0) {
-    details.push(...getCompactCountrySummary(countries));
-  }
-
-  if (type !== 'all') {
-    details.push(getReleaseTypeFilterLabel(type, t));
-  }
-
-  if (sort !== 'newest') {
-    details.push(getReleaseSortLabel(sort, t));
-  }
-
-  return details;
-}
-
-function getCompactGenreSummary(genres: string[], t: Translation): string[] {
-  const labels = genres.map((genre) => getGenreLabel(genre, t));
-
-  if (labels.length <= 2) {
-    return labels;
-  }
-
-  return [...labels.slice(0, 2), `+${labels.length - 2}`];
+  return [
+    getPeriodLabel(period, t),
+    ...genres.map((genre) => getGenreLabel(genre, t)),
+    ...countries,
+    type === 'all' ? undefined : getReleaseTypeFilterLabel(type, t),
+  ].filter(isPresent);
 }
 
 function getStoredReleaseSearchState(storage: Storage = window.localStorage): ReleaseSearchState {
@@ -1756,6 +1815,10 @@ function getReleaseGenres(release: Release, t: Translation): string[] {
   return normalized.length > 0 ? normalized : [t.release.unknown];
 }
 
+function getKnownReleaseGenres(release: Release): string[] {
+  return release.genres.map((genre) => genre.trim()).filter(Boolean);
+}
+
 function getCompactReleaseGenreSummary(release: Release, t: Translation): string {
   const genres = getReleaseGenres(release, t);
 
@@ -1766,14 +1829,16 @@ function getCompactReleaseGenreSummary(release: Release, t: Translation): string
   return `${genres.slice(0, 2).join(', ')} +${genres.length - 2}`;
 }
 
-function formatNullableNumber(value: number | null, t: Translation): string {
-  return value === null ? t.release.unknown : String(value);
-}
-
 function formatUnknown(value: string, t: Translation): string {
   const normalized = value.trim();
 
   return normalized === '' || normalized === 'unknown' ? t.release.unknown : normalized;
+}
+
+function hasMeaningfulText(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+
+  return normalized !== '' && normalized !== 'unknown';
 }
 
 function isPresent(value: string | undefined): value is string {

@@ -181,7 +181,7 @@ describe('App', () => {
 
     fireEvent.click(await screen.findByRole('checkbox', { name: /techno/i }));
     fireEvent.click(screen.getByRole('button', { name: 'Albums' }));
-    fireEvent.change(screen.getAllByLabelText('Sorting')[0], { target: { value: 'popular' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Most popular' }));
 
     await waitFor(() => {
       expect(fetchSpy).toHaveBeenLastCalledWith(
@@ -220,7 +220,7 @@ describe('App', () => {
       );
     });
     expect(window.location.search).toBe('?period=today&type=all&sort=newest');
-    expect(container.querySelector('.mobileFilterSectionPeriod .segmentedControl.isPeriodControl')).not.toBeNull();
+    expect(container.querySelector('.mobileDiscoveryPeriod .segmentedControl.isPeriodControl')).not.toBeNull();
   });
 
   it('sends selected countries to the API', async () => {
@@ -250,7 +250,7 @@ describe('App', () => {
     });
   });
 
-  it('uses mobile-friendly controls for period, type, and sorting on small screens', async () => {
+  it('uses compact mobile discovery controls and a single filters entry on small screens', async () => {
     setViewportWidth(360);
 
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.resolve(
@@ -268,21 +268,21 @@ describe('App', () => {
 
     const { container } = render(<App />);
 
-    expect(await screen.findByRole('button', { name: 'Show genres' })).toBeInTheDocument();
+    expect(await screen.findByText('Release One')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '7 days' })).toBeInTheDocument();
     expect(screen.queryByRole('combobox', { name: 'Sorting' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /More filters/i })).toBeNull();
-    expect(container.querySelectorAll('.mobileFilterSection')).toHaveLength(3);
+    expect(screen.queryByPlaceholderText('Search genres')).toBeNull();
+    expect(screen.getAllByRole('button', { name: 'Filters' })).toHaveLength(1);
+    expect(container.querySelector('.mobileDiscoveryHeader')).not.toBeNull();
+    expect(container.querySelector('.mobileResultsSummary')).not.toBeNull();
 
-    const mobileSections = Array.from(container.querySelectorAll('.mobileFilterSection'));
-    expect(mobileSections[0]?.querySelector('[aria-label="Period"]')).not.toBeNull();
-    expect(mobileSections[1]?.querySelector('.filterPanelHeaderButton')).not.toBeNull();
-    expect(mobileSections[2]?.querySelector('.genreSelector')).not.toBeNull();
-
-    fireEvent.click(screen.getAllByRole('button', { name: 'Filters' })[0]);
-    expect(screen.getByRole('dialog', { name: 'More filters' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    expect(screen.getByRole('dialog', { name: 'Filters' })).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Search genres')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Compilations' })).toBeInTheDocument();
     expect(screen.getByLabelText('Country')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Done' })).toBeInTheDocument();
+    expect(within(screen.getByRole('dialog', { name: 'Filters' })).queryByText('Sorting')).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Albums' }));
     fireEvent.click(screen.getByRole('button', { name: 'Most popular' }));
@@ -347,7 +347,7 @@ describe('App', () => {
     expect(container.querySelector('.searchLayout.isDesktopSidebar')).not.toBeNull();
     expect(container.querySelector('.searchSidebar .filterPanel')).not.toBeNull();
     expect(container.querySelector('.searchSidebar select')).toBeNull();
-    expect(container.querySelector('.resultsToolbar select')).not.toBeNull();
+    expect(container.querySelector('.resultsToolbar .sortToolbar')).not.toBeNull();
     expect(container.querySelector('.searchSidebar .sidebarResetButton')).toBeNull();
   });
 
@@ -386,7 +386,7 @@ describe('App', () => {
     });
   });
 
-  it('shows a mobile summary bar with filter actions', async () => {
+  it('shows a mobile results summary with count, chips, and reset', async () => {
     setViewportWidth(390);
 
     vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.resolve(
@@ -403,37 +403,34 @@ describe('App', () => {
     ));
 
     const { container } = render(<App />);
+    const getMobileSummary = () => within(container.querySelector('.mobileResultsSummary') as HTMLElement);
 
     expect(await screen.findByText('Release One')).toBeInTheDocument();
-    expect(screen.getByText('1 release · Last 7 days')).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Filters' })).toHaveLength(2);
+    expect(getMobileSummary().getByText('1 release')).toBeInTheDocument();
+    expect(getMobileSummary().getByText('Last 7 days')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Filters' })).toHaveLength(1);
     expect(screen.queryByRole('button', { name: 'Reset' })).not.toBeInTheDocument();
-    expect(container.querySelector('.stickySummaryButton')).not.toBeNull();
+    expect(container.querySelector('.mobileResultsSummary')).not.toBeNull();
 
-    const genreToggle = screen.getByRole('button', { name: 'Show genres' });
-    expect(genreToggle).not.toHaveClass('isActive');
-
-    fireEvent.click(genreToggle);
-    expect(screen.getByRole('button', { name: 'Hide genres' })).toHaveClass('isActive');
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
     const technoOption = screen.getByRole('checkbox', { name: /techno/i });
-    expect(technoOption.tagName).toBe('BUTTON');
     fireEvent.click(technoOption);
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
 
     await waitFor(() => {
-      expect(screen.getByText('1 release · techno')).toBeInTheDocument();
+      expect(getMobileSummary().getByText('techno')).toBeInTheDocument();
     });
-    expect(screen.getByRole('button', { name: 'Reset filters' })).toBeInTheDocument();
+    expect(getMobileSummary().getByRole('button', { name: 'Reset filters' })).toBeInTheDocument();
 
-    fireEvent.click(screen.getAllByRole('button', { name: 'Filters' })[0]);
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
     fireEvent.click(screen.getByRole('button', { name: 'Albums' }));
     fireEvent.click(screen.getByRole('button', { name: 'Most popular' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
 
     await waitFor(() => {
-      expect(screen.getByText('1 release · techno · Albums · Most popular')).toBeInTheDocument();
+      expect(getMobileSummary().getByText('Albums')).toBeInTheDocument();
     });
-
-    fireEvent.click(container.querySelector('.stickySummaryButton') as HTMLButtonElement);
-    expect(screen.getByRole('dialog', { name: 'More filters' })).toBeInTheDocument();
+    expect((container.querySelector('.sortToolbarValue') as HTMLElement).textContent).toBe('Most popular');
   });
 
   it('shows an empty state when genre search has no matches', async () => {
@@ -460,7 +457,7 @@ describe('App', () => {
     });
   });
 
-  it('keeps the mobile genre toggle working with a search query and selected genres', async () => {
+  it('keeps selected mobile genres visible after closing and reopening the filters sheet', async () => {
     setViewportWidth(390);
 
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
@@ -480,10 +477,11 @@ describe('App', () => {
     );
 
     render(<App />);
+    const getMobileSummary = () => within(document.querySelector('.mobileResultsSummary') as HTMLElement);
 
-    expect(await screen.findByRole('button', { name: 'Show genres' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Filters' })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Show genres' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
     fireEvent.change(screen.getByPlaceholderText('Search genres'), { target: { value: 'tech' } });
 
     await waitFor(() => {
@@ -491,20 +489,21 @@ describe('App', () => {
     });
 
     fireEvent.click(screen.getByRole('checkbox', { name: /^techno 1$/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Hide genres' })).toBeInTheDocument();
-      expect(screen.getByText('techno x')).toBeInTheDocument();
+      expect(getMobileSummary().getByText('techno')).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Hide genres' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
 
-    expect(screen.getByRole('button', { name: 'Show genres' })).toBeInTheDocument();
-    expect(screen.queryByRole('checkbox', { name: /^techno$/i })).toBeNull();
+    expect(screen.getByRole('checkbox', { name: /^techno 1$/i })).toHaveAttribute('aria-checked', 'true');
     expect(screen.getByText('techno x')).toBeInTheDocument();
   });
 
-  it('allows selecting more than five genres and collapses extra chips into a counter', async () => {
+  it('shows multiple selected mobile genres as summary chips without collapsing them into one ellipsis', async () => {
+    setViewportWidth(390);
+
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       makeResponse({
         items: [
@@ -526,34 +525,27 @@ describe('App', () => {
     );
 
     render(<App />);
+    const getMobileSummary = () => within(document.querySelector('.mobileResultsSummary') as HTMLElement);
 
-    expect(await screen.findByRole('checkbox', { name: /techno/i })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Filters' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
 
     const genreNames = ['techno', 'house', 'ambient', 'jazz', 'darkwave', 'shoegaze'] as const;
 
     for (const genre of genreNames) {
       fireEvent.click(screen.getByRole('checkbox', { name: new RegExp(genre, 'i') }));
     }
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
 
     await waitFor(() => {
-      expect(screen.getByText('techno x')).toBeInTheDocument();
-      expect(screen.getByText('house x')).toBeInTheDocument();
-      expect(screen.getByText('ambient x')).toBeInTheDocument();
-      expect(screen.getByText('jazz x')).toBeInTheDocument();
-      expect(screen.getByText('darkwave x')).toBeInTheDocument();
-      expect(screen.getByText('+1')).toBeInTheDocument();
+      expect(getMobileSummary().getByText('techno')).toBeInTheDocument();
+      expect(getMobileSummary().getByText('house')).toBeInTheDocument();
+      expect(getMobileSummary().getByText('ambient')).toBeInTheDocument();
+      expect(getMobileSummary().getByText('jazz')).toBeInTheDocument();
+      expect(getMobileSummary().getByText('darkwave')).toBeInTheDocument();
+      expect(getMobileSummary().getByText('shoegaze')).toBeInTheDocument();
     });
-
-    expect(screen.queryByText('shoegaze x')).toBeNull();
-
-    fireEvent.click(screen.getByRole('button', { name: 'house x' }));
-
-    await waitFor(() => {
-      expect(screen.queryByText('house x')).toBeNull();
-      expect(screen.getByText('shoegaze x')).toBeInTheDocument();
-    });
-
-    expect(screen.queryByText('+1')).toBeNull();
+    expect(getMobileSummary().queryByText('+1')).toBeNull();
   });
 
   it('shows a select matches action only for a non-empty genre search and adds all matched genres', async () => {
@@ -752,7 +744,7 @@ describe('App', () => {
     expect(window.location.search).toContain('country=Germany');
 
     fireEvent.click(screen.getByRole('button', { name: 'Albums' }));
-    fireEvent.change(screen.getAllByLabelText('Sorting')[0], { target: { value: 'popular' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Most popular' }));
 
     await waitFor(() => {
       expect(window.location.search).toBe('?period=7d&type=album&sort=popular&genre=techno&country=Germany');
@@ -1055,7 +1047,7 @@ describe('App', () => {
     expect(screen.getAllByLabelText('Country')[0]).toBeInTheDocument();
   });
 
-  it('shows null popularity as Unknown instead of 0 in release details', async () => {
+  it('hides null popularity in release details instead of showing 0 or Unknown', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       makeResponse({
         items: [makeRelease({ popularity: null })],
@@ -1073,7 +1065,8 @@ describe('App', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Open Release One' }));
 
-    expect(screen.getByText('Popularity').nextElementSibling).toHaveTextContent('Unknown');
+    expect(screen.queryByText('Popularity')).toBeNull();
+    expect(screen.queryByText('Unknown')).toBeNull();
     expect(screen.queryByText('0')).not.toBeInTheDocument();
   });
 
@@ -1114,7 +1107,10 @@ describe('App', () => {
       'href',
       'https://open.spotify.com/album/release-1',
     );
-    expect(screen.getAllByText('Unknown').length).toBeGreaterThanOrEqual(3);
+    expect(screen.queryByText('Unknown')).toBeNull();
+    expect(screen.queryByText('Artist country')).toBeNull();
+    expect(screen.queryByText('Popularity')).toBeNull();
+    expect(screen.queryByText('Type')).toBeNull();
     expect(container.querySelector('.detailCoverPlaceholder')).not.toBeNull();
     expect(container.querySelector('.releaseTopBarTitle')).toBeNull();
     expect(window.scrollTo).toHaveBeenCalledWith({
@@ -1195,7 +1191,7 @@ describe('App', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 
-  it('renders a mobile-first release detail layout with sticky actions and genre chips', async () => {
+  it('renders a compact mobile release detail with a sticky spotify action and genre chips', async () => {
     setViewportWidth(390);
 
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
@@ -1222,6 +1218,7 @@ describe('App', () => {
 
     expect(container.querySelector('.releaseTopBar')).not.toBeNull();
     expect(container.querySelector('.releaseTopBarTitle')).toBeNull();
+    expect(container.querySelector('.detailBottomBar')).not.toBeNull();
     expect(screen.getByRole('heading', { name: 'Release One' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Open' })).toBeNull();
     expect(screen.getByRole('link', { name: 'Open in Spotify' })).toBeInTheDocument();

@@ -43,6 +43,7 @@ export const ru = {
     allTypes: 'Все',
     filters: 'Фильтры',
     moreFilters: 'Ещё фильтры',
+    done: 'Готово',
     reset: 'Сбросить фильтры',
     resetAll: 'Сбросить все фильтры',
     resetShort: 'Сброс',

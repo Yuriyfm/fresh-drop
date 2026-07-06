@@ -73,15 +73,19 @@ Last 7 days
 
 На мобильном:
 
-* period и genre видны сверху;
-* period использует segmented control `7 days / 14 days / Month`;
-* mobile search controls визуально разделены на отдельные блоки `Period`, `Filters`, `Genre`, при этом compact trigger `Filters` находится под period и над genre;
-* genre занимает всю ширину и в свернутом состоянии не вытесняет список релизов за первый экран;
-* genre search занимает всю ширину, выбранные жанры показываются chips прямо внутри search field;
-* если выбраны жанры, рядом с search field доступно явное действие `Clear genres`;
-* mobile toggle `Show genres / Hide genres` работает независимо от текста в поиске и количества выбранных жанров;
+* первый экран должен как можно быстрее показывать список релизов, а не крупные filter-panels;
+* сверху остаётся compact discovery-header: `Fresh Drop`, period segmented control, один trigger `Filters`, count результатов и chips активных фильтров;
+* `How it works` остаётся доступным через компактный secondary action и не занимает постоянное место в ленте;
+* period использует segmented control `Today / 7 days / 14 days / Month`;
+* inline-раскрытие большого genre list на search page не используется;
+* выбранные жанры на search page показываются только как compact chips в summary active filters;
+* если выбраны жанры, рядом с filters summary доступно компактное действие `Reset`;
+* большой список релизов должен начинаться на первом экране без длинного скролла через панели управления;
+* основной вход в фильтры на мобильном ровно один;
+* период остаётся доступен прямо на search page, остальные фильтры открываются через bottom sheet;
+* genre search, selected genres, search country и type живут внутри общего filters bottom sheet;
 * количество одновременно выбранных жанров не ограничено;
-* если выбрано больше пяти жанров, в поле показываются первые пять chips и агрегатор вида `+N`; после удаления жанров скрытые chips поднимаются в видимую пятёрку по текущему порядку выбора;
+* если выбрано больше пяти жанров, в mobile summary можно показывать перенос chips на две строки или горизонтальный scroll, но не общий ellipsis вместо смысла;
 * если в genre search введён текст и есть найденные жанры, доступно компактное действие `Select matches`, которое добавляет все жанры из текущей поисковой выдачи;
 * mobile filters и summary не должны раздуваться по вертикали: paddings и helper text остаются компактными, чтобы первый экран отдавал приоритет списку релизов;
 * genre rows используют кастомный themed checkbox вместо системного blue checkbox;
@@ -92,16 +96,20 @@ Last 7 days
 * helper text под списком один раз сообщает, что genre count рассчитаны по окну `Month`, а не по текущему периоду;
 * остальные фильтры в bottom sheet;
 * type в bottom sheet не должен сжимать текст на узких экранах; допустим двухрядный segmented control;
-* sorting открывается через compact trigger и bottom sheet, а не системный select;
-* в bottom sheet также есть `Reset filters`;
+* sorting не живёт внутри filters sheet и не выглядит как системный select;
+* sorting вынесен над списком в отдельный compact toolbar с icon-buttons;
+* sorting визуально воспринимается как способ перестроить список, а не как часть длинной формы фильтров;
+* bottom sheet имеет sticky header с title и close button;
+* bottom sheet имеет sticky footer с `Reset` и основным действием `Done`;
+* footer учитывает `safe-area-inset-bottom`;
 * language находится в header/settings area и не конкурирует с фильтрами за главное внимание;
 * desktop language switcher использует compact dropdown с полными self-name названиями языков, а не segmented toggle `EN/RU`.
-* над списком релизов есть compact sticky summary bar с количеством результатов и human-readable контекстом активных фильтров;
-* если mobile filter panel ещё виден на экране, summary не дублирует кнопку `Filters`;
-* reset filters на мобильном доступен из summary как компактный text-link action, а не как вторая крупная CTA-кнопка.
+* над списком релизов есть compact summary block: count результатов отдельной строкой и chips активных фильтров ниже;
+* summary не должен схлопывать активные фильтры в одну строку с ellipsis;
+* reset filters на мобильном доступен из summary как компактный text-link action, а не как вторая крупная CTA-кнопка;
 * sticky top header на search page не нужен; после долгого скролла появляется компактная floating-кнопка возврата наверх.
 * mobile settings показывают секцию `Language` с полными названиями языков, а не двухбуквенный переключатель.
-* при закрытом genre list первый экран по возможности показывает не меньше трёх release cards без длинного скролла.
+* первый экран по возможности показывает не меньше одной-двух release cards без длинного скролла.
 
 На десктопе (`>= 1024px`):
 
@@ -188,6 +196,7 @@ MVP route:
 * название релиза;
 * артист / артисты;
 * заметная primary CTA `Open in Spotify`;
+* на мобильном допустим sticky bottom CTA для `Open in Spotify`, если он не конфликтует с safe area;
 * secondary back-action не должен дублировать already-visible back control в верхней панели;
 * metadata card c `release date / artist country / popularity / type`;
 * на мобильном metadata card читается одной колонкой, построчно;
@@ -204,6 +213,7 @@ MVP route:
 * copyright;
 * технические Spotify ID;
 * raw API data.
+* metadata rows со значениями `Unknown`, `null`, `undefined` или пустой строкой.
 
 При возврате назад желательно сохранять фильтры, позицию скролла и загруженный список.
 
