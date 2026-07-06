@@ -91,6 +91,18 @@ Search shard хранится в persistent storage и представляет 
 * `tag:new album:a` ... `tag:new album:z`
 * `tag:new artist:a` ... `tag:new artist:z`
 
+Для MVP допускаются market-specific extra seed query как добавка к базовому ASCII-набору.
+
+Правила:
+
+* extra seeds добавляются только для `plain`;
+* extra seeds не заменяют `a-z` и `0-9`;
+* extra seeds используются только для заранее заданного allowlist markets;
+* allowlist может покрывать как Latin diacritics, так и полноценные non-Latin alphabet sets;
+* extra seed применяется только к своему market, а не ко всем markets crawler-а;
+* extra seeds получают приоритет ниже обычных `plain` seed, чтобы не вытеснять базовое покрытие;
+* extra seeds создаются автоматически из списка `SPOTIFY_MARKETS`, а не через отдельную новую family.
+
 Для MVP используется текущий список markets приложения.
 
 Для multi-market crawling:
@@ -144,6 +156,11 @@ Worker берёт shard с максимальным `priority`, где `status =
 * для `artist` дробление идёт как `tag:new artist:aa`, `tag:new artist:ab`, ...;
 * child query создаётся только если его ещё нет.
 
+Безопасное ограничение MVP:
+
+* market-specific extra seeds с non-ASCII токенами не дробятся дальше в child query;
+* recursive split остаётся только для ASCII/digit token-ов текущей стратегии.
+
 После успешного создания child shard-ов родитель помечается как `completed` с флагом `was_split = true`.
 
 ## Правило exhausted query
@@ -174,6 +191,7 @@ Worker берёт shard с максимальным `priority`, где `status =
 Стартовый приоритет:
 
 * `plain` seed: `100`
+* `plain` market-specific extra seed: `85`
 * `album` seed: `90`
 * `artist` seed: `90`
 * child shard: `80 - depth`

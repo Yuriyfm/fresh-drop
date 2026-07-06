@@ -29,8 +29,10 @@ const DEFAULT_SPLIT_TOTAL_THRESHOLD = 800;
 const DEFAULT_ARTIST_CACHE_TTL_DAYS = 30;
 
 export function getReleaseCrawlerConfigFromEnv(env: CrawlerEnv, currentDate = new Date()): ReleaseCrawlerConfig {
+  const markets = normalizeMarkets(env.SPOTIFY_MARKETS, env.SPOTIFY_MARKET);
+
   return {
-    markets: normalizeMarkets(env.SPOTIFY_MARKETS, env.SPOTIFY_MARKET),
+    markets,
     batchSize: normalizePositiveInteger(env.SPOTIFY_CRAWLER_BATCH_SIZE, DEFAULT_BATCH_SIZE, 100),
     searchLimit: normalizePositiveInteger(
       env.SPOTIFY_SEARCH_LIMIT ?? env.SPOTIFY_CRAWLER_SEARCH_LIMIT ?? env.SPOTIFY_SYNC_LIMIT,
@@ -39,7 +41,7 @@ export function getReleaseCrawlerConfigFromEnv(env: CrawlerEnv, currentDate = ne
     ),
     artistAlbumsLimit: normalizePositiveInteger(env.SPOTIFY_CRAWLER_ARTIST_ALBUMS_LIMIT, DEFAULT_ARTIST_ALBUMS_LIMIT, 10),
     retentionDays: normalizePositiveInteger(env.RELEASE_RETENTION_DAYS, DEFAULT_RETENTION_DAYS, 365),
-    searchSeeds: normalizeSearchSeeds(env.SPOTIFY_CRAWLER_SEARCH_QUERIES, currentDate),
+    searchSeeds: normalizeSearchSeeds(env.SPOTIFY_CRAWLER_SEARCH_QUERIES, markets, currentDate),
     enableArtistExpansion: normalizeBoolean(env.SPOTIFY_CRAWLER_ENABLE_ARTIST_EXPANSION, false),
     searchTaskCooldownMinutes: normalizePositiveInteger(env.SPOTIFY_CRAWLER_SEARCH_TASK_COOLDOWN_MINUTES, 360, 10080),
     maxShardDepth: normalizePositiveInteger(env.SPOTIFY_CRAWLER_MAX_SHARD_DEPTH, DEFAULT_MAX_SHARD_DEPTH, 8),
@@ -80,12 +82,12 @@ function normalizePositiveInteger(value: string | undefined, defaultValue: numbe
   return Math.min(parsed, max);
 }
 
-function normalizeSearchSeeds(value: string | undefined, _currentDate: Date): SearchShardSeed[] {
+function normalizeSearchSeeds(value: string | undefined, markets: string[], _currentDate: Date): SearchShardSeed[] {
   if (value?.trim()) {
     return parseSearchShardSeeds(value);
   }
 
-  return createDefaultSearchShardSeeds();
+  return createDefaultSearchShardSeeds(markets);
 }
 
 function normalizeBoolean(value: string | undefined, defaultValue: boolean): boolean {

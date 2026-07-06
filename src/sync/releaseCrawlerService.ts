@@ -10,7 +10,7 @@ import type {
 } from '../spotify/spotifyApiAdapter';
 import type { SpotifyAlbumDto, SpotifyArtistDto } from '../spotify/spotifyTypes';
 import type { ReleaseCrawlerConfig } from './crawlerConfig';
-import { buildSearchShardQuery, createChildSearchShardSeeds, getSearchShardPriority } from './searchShard';
+import { buildSearchShardQuery, canSplitSearchShard, createChildSearchShardSeeds, getSearchShardPriority } from './searchShard';
 
 export type ReleaseCrawlerSource = {
   fetchReleaseSearchAlbumsPage(options: { query: string; market: string; limit: number; offset: number }): Promise<SpotifyReleaseSearchAlbumsPage>;
@@ -88,18 +88,20 @@ export async function runReleaseCrawler(
 ): Promise<ReleaseCrawlerResult> {
   await tasks.deactivateLegacySearchTasks(currentDate);
 
-  const seedTasks = config.markets.flatMap((market) => config.searchSeeds.map<SyncTaskInput>((seed) => ({
-    source: 'search',
-    query: buildSearchShardQuery(seed.family, seed.token),
-    market,
-    offset: 0,
-    limit: config.searchLimit,
-    priority: seed.priority,
-    nextRunAt: currentDate,
-    family: seed.family,
-    token: seed.token,
-    depth: seed.depth,
-  })));
+  const seedTasks = config.markets.flatMap((market) => config.searchSeeds
+    .filter((seed) => seed.markets === undefined || seed.markets.includes(market))
+    .map<SyncTaskInput>((seed) => ({
+      source: 'search',
+      query: buildSearchShardQuery(seed.family, seed.token),
+      market,
+      offset: 0,
+      limit: config.searchLimit,
+      priority: seed.priority,
+      nextRunAt: currentDate,
+      family: seed.family,
+      token: seed.token,
+      depth: seed.depth,
+    })));
   const seedResult = await tasks.enqueueTasks(seedTasks);
   const claimed = await tasks.claimPendingTasks(config.batchSize, currentDate);
   const result: ReleaseCrawlerResult = {
@@ -330,7 +332,10 @@ async function runSearchTask(
   const priority = getSearchShardPriority(task.depth, uniqueAdded, duplicateRate, spotifyTotal);
   const cooldownAt = getCompletedNextRunAt(config, currentDate, duplicateRate >= 0.95 && itemsSeen >= 300);
   const saturated = spotifyTotal !== null && spotifyTotal >= config.splitTotalThreshold;
-  const canSplit = saturated && task.family !== null && task.depth < config.maxShardDepth;
+  const canSplit = saturated
+    && task.family !== null
+    && task.depth < config.maxShardDepth
+    && canSplitSearchShard(task.family, task.token ?? '');
   let insertedTasks = 0;
   let wasSplit = false;
 

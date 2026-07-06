@@ -75,6 +75,48 @@ describe('runReleaseCrawler', () => {
     ]));
   });
 
+  it('applies market-specific extra seeds only to their own markets', async () => {
+    const source = {
+      fetchReleaseSearchAlbumsPage: vi.fn().mockResolvedValue({
+        albums: [makeAlbum()],
+        total: 1,
+        nextOffset: null,
+        requestCount: 1,
+      }),
+      fetchArtistsByIds: vi.fn().mockResolvedValue({
+        artistsById: new Map([
+          ['artist-1', { id: 'artist-1', name: 'Artist One', genres: ['pop'], popularity: 50 }],
+        ]),
+        retryAfterSeconds: null,
+        requestCount: 1,
+      }),
+      fetchArtistAlbumsPage: vi.fn(),
+    };
+    const releases = new InMemoryReleaseRepository();
+    const tasks = new InMemorySyncTaskRepository();
+
+    const result = await runReleaseCrawler(source, releases, tasks, makeConfig({
+      markets: ['US', 'TR'],
+      batchSize: 1,
+      searchSeeds: [
+        { family: 'plain', token: '', priority: 100, depth: 0 },
+        { family: 'plain', token: 'ç', priority: 85, depth: 1, markets: ['TR'] },
+      ],
+    }), new Date('2026-07-02T12:00:00.000Z'));
+
+    expect(result.tasksInserted).toBe(3);
+
+    const pending = await tasks.claimPendingTasks(10, new Date('2026-07-03T00:00:00.000Z'));
+    expect(pending).toEqual(expect.arrayContaining([
+      expect.objectContaining({ query: 'tag:new', market: 'US' }),
+      expect.objectContaining({ query: 'tag:new', market: 'TR' }),
+      expect.objectContaining({ query: 'tag:new ç', market: 'TR' }),
+    ]));
+    expect(pending).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ query: 'tag:new ç', market: 'US' }),
+    ]));
+  });
+
   it('skips artist enrichment for duplicate releases already present in the database', async () => {
     const source = {
       fetchReleaseSearchAlbumsPage: vi.fn().mockResolvedValue({
@@ -310,6 +352,49 @@ describe('runReleaseCrawler', () => {
       attempts: 2,
     }));
     expect(rerun.priority).toBeLessThan(100);
+  });
+
+  it('does not recursively split market-specific non-ascii shards', async () => {
+    const source = {
+      fetchReleaseSearchAlbumsPage: vi
+        .fn()
+        .mockResolvedValueOnce({
+          albums: Array.from({ length: 50 }, (_, index) => makeAlbum({ id: `tr-${index}` })),
+          total: 900,
+          nextOffset: null,
+          requestCount: 1,
+        }),
+      fetchArtistsByIds: vi.fn().mockResolvedValue({
+        artistsById: new Map([
+          ['artist-1', { id: 'artist-1', name: 'Artist One', genres: ['pop'], popularity: 50 }],
+        ]),
+        retryAfterSeconds: null,
+        requestCount: 1,
+      }),
+      fetchArtistAlbumsPage: vi.fn(),
+    };
+    const releases = new InMemoryReleaseRepository();
+    const tasks = new InMemorySyncTaskRepository();
+
+    const result = await runReleaseCrawler(source, releases, tasks, makeConfig({
+      markets: ['TR'],
+      searchSeeds: [{ family: 'plain', token: 'ç', priority: 85, depth: 1 }],
+    }), new Date('2026-07-02T12:00:00.000Z'));
+
+    expect(result).toMatchObject({
+      tasksClaimed: 1,
+      tasksSucceeded: 1,
+      tasksInserted: 1,
+    });
+    expect(result.taskSummaries).toEqual([
+      expect.objectContaining({
+        query: 'tag:new ç',
+        status: 'completed',
+        wasSplit: false,
+        childTasksInserted: 0,
+        spotifyTotal: 900,
+      }),
+    ]);
   });
 
   it('requeues rate-limited search shards after retry-after and stops the batch', async () => {

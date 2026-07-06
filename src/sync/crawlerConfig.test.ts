@@ -23,6 +23,18 @@ describe('getReleaseCrawlerConfigFromEnv', () => {
     );
   });
 
+  it('adds market-specific extra plain seeds for supported markets', () => {
+    const config = getReleaseCrawlerConfigFromEnv({
+      SPOTIFY_MARKETS: 'TR,US,FR',
+    }, new Date('2026-07-03T12:00:00.000Z'));
+
+    expect(config.searchSeeds).toEqual(expect.arrayContaining([
+      expect.objectContaining({ family: 'plain', token: 'ç', priority: 85, depth: 1, markets: ['TR', 'FR'] }),
+      expect.objectContaining({ family: 'plain', token: 'ğ', priority: 85, depth: 1, markets: ['TR'] }),
+      expect.objectContaining({ family: 'plain', token: 'é', priority: 85, depth: 1, markets: ['FR'] }),
+    ]));
+  });
+
   it('reads and clamps crawler batch size from env', () => {
     expect(
       getReleaseCrawlerConfigFromEnv({
