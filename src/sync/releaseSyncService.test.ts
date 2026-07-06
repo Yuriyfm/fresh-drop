@@ -126,6 +126,7 @@ describe('createReleaseSyncService', () => {
       saveReleaseMarkets: vi.fn(),
       findReleases: vi.fn(),
       listActiveGenres: vi.fn().mockResolvedValue([]),
+      listActiveCountries: vi.fn().mockResolvedValue([]),
       cleanupOldReleases: vi.fn().mockResolvedValue({ deleted: 3 }),
     };
     const service = createReleaseSyncService(source, repository, makeSyncRunRepository());
@@ -159,6 +160,7 @@ describe('createReleaseSyncService', () => {
       saveReleaseMarkets: vi.fn(),
       findReleases: vi.fn(),
       listActiveGenres: vi.fn().mockResolvedValue([]),
+      listActiveCountries: vi.fn().mockResolvedValue([]),
       cleanupOldReleases: vi.fn().mockRejectedValue(new Error('Cleanup failed.')),
     };
     const syncRuns = makeSyncRunRepository();
@@ -199,6 +201,7 @@ describe('createReleaseSyncService', () => {
       saveReleaseMarkets: vi.fn(),
       findReleases: vi.fn(),
       listActiveGenres: vi.fn().mockResolvedValue([]),
+      listActiveCountries: vi.fn().mockResolvedValue([]),
       cleanupOldReleases: vi.fn(),
     };
     const syncRuns = makeSyncRunRepository();

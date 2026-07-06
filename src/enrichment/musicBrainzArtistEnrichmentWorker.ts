@@ -201,6 +201,18 @@ export async function runMusicBrainzArtistEnrichmentWorker(
   summary.requestsTotal = client.getRequestCount();
   summary.durationMs = Date.now() - startedAt;
 
+  if (!options.dryRun) {
+    logger.info(
+      `MusicBrainz data saved:` +
+        ` matchedArtists=${summary.matched}` +
+        ` notFoundArtists=${summary.notFound}` +
+        ` ambiguousArtists=${summary.ambiguous}` +
+        ` failedArtists=${summary.failed}` +
+        ` genresFetched=${summary.artistGenresFetched}` +
+        ` emptyGenrePayloads=${summary.artistGenresEmpty}`,
+    );
+  }
+
   logger.info(
     `MusicBrainz enrichment finished:` +
       ` processedArtists=${summary.processedArtists}` +

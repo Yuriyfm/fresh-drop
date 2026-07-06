@@ -61,7 +61,7 @@ describe('filterReleases', () => {
     expect(result).toEqual([]);
   });
 
-  it('filters by any selected genre, country, and type', () => {
+  it('filters by any selected genre, countries, and type', () => {
     const releases = [
       makeRelease({
         id: 'match',
@@ -77,18 +77,25 @@ describe('filterReleases', () => {
         type: 'album',
         popularity: 80,
       }),
+      makeRelease({
+        id: 'other-country-match',
+        genres: ['house'],
+        country: 'SE',
+        type: 'album',
+        popularity: 80,
+      }),
     ];
 
     const result = filterReleases(releases, {
       period: '14d',
       genres: ['Techno', 'house'],
-      country: 'de',
+      countries: ['de', 'SE'],
       type: 'album',
       sort: 'newest',
       currentDate,
     });
 
-    expect(result.map((release) => release.id)).toEqual(['match']);
+    expect(result.map((release) => release.id)).toEqual(['match', 'other-country-match']);
   });
 
   it('supports the no genre filter option', () => {

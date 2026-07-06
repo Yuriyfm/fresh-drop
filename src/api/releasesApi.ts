@@ -7,11 +7,17 @@ export type GenreOption = {
   kind: 'general' | 'exact' | 'missing';
 };
 
+export type CountryOption = {
+  name: string;
+  releaseCount: number;
+};
+
 export type ReleasesApiQuery = Record<string, string | string[] | number | undefined>;
 
 export type ReleasesApiResponse = {
   items: Release[];
   genres: GenreOption[];
+  countries: CountryOption[];
   pagination: {
     page: number;
     limit: number;
@@ -24,6 +30,7 @@ export type ReleasesApiResponse = {
 export type ReleasesApiErrorResponse = {
   items: [];
   genres: [];
+  countries: [];
   pagination: {
     page: number;
     limit: number;
@@ -65,9 +72,10 @@ export async function getReleasesApiResponse(
   }
 
   try {
-    const [result, genres] = await Promise.all([
+    const [result, genres, countries] = await Promise.all([
       repository.findReleases(normalized.query),
       repository.listActiveGenres(),
+      repository.listActiveCountries(),
     ]);
 
     return {
@@ -76,6 +84,10 @@ export async function getReleasesApiResponse(
         name: genre.genre,
         releaseCount: genre.releaseCount,
         kind: genre.kind,
+      })),
+      countries: countries.map((country) => ({
+        name: country.country,
+        releaseCount: country.releaseCount,
       })),
       pagination: result.pagination,
       error: null,
@@ -136,6 +148,7 @@ function normalizeReleasesQuery(query: ReleasesApiQuery, currentDate?: Date): No
       genre: normalizeOptionalText(query.genre),
       genres: normalizeOptionalTextList(query.genres ?? query.genre),
       country: normalizeOptionalText(query.country),
+      countries: normalizeOptionalTextList(query.countries ?? query.country),
       type,
       sort,
       page: page.value,
@@ -164,6 +177,7 @@ function createErrorResponse(
   return {
     items: [],
     genres: [],
+    countries: [],
     pagination: {
       page,
       limit,

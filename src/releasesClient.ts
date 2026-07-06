@@ -6,6 +6,7 @@ export type FetchReleasesQuery = {
   genre?: string;
   genres?: string[];
   country?: string;
+  countries?: string[];
   type: ReleaseTypeFilter;
   sort: ReleaseSort;
   page: number;
@@ -62,7 +63,7 @@ function toSearchParams(query: FetchReleasesQuery): URLSearchParams {
   });
 
   appendOptionalParams(params, 'genre', query.genres ?? (query.genre ? [query.genre] : []));
-  appendOptionalParam(params, 'country', query.country);
+  appendOptionalParams(params, 'country', query.countries ?? (query.country ? [query.country] : []));
   appendOptionalParam(params, 'randomStartSeed', query.randomStartSeed);
 
   return params;

@@ -16,6 +16,7 @@ import {
 } from '../domain/topLevelGenres';
 import {
   getReleaseOffset,
+  type CountryCount,
   normalizeReleaseLimit,
   normalizeReleasePage,
   type GenreCount,
@@ -27,6 +28,7 @@ import {
 import { extractUniqueSpotifyArtistsFromReleases } from '../enrichment/artistEnrichment';
 import { upsertArtistEnrichmentQueue } from './postgresArtistEnrichmentRepository';
 import { decrementGenreCountsForReleaseIds, rebuildReleaseGenresForReleaseIds } from './releaseGenreMaterializer';
+import { getCountryFilterVariants, normalizeCountryName } from '../domain/countryNames';
 
 type PostgresReleaseRepositoryOptions = {
   pool: Pool;
@@ -76,6 +78,12 @@ type GenreCountRow = {
   genre: string;
   release_count: number;
   kind?: GenreOptionKind;
+};
+
+type CountryCountRow = {
+  musicbrainz_country: string | null;
+  release_country: string | null;
+  release_count: number;
 };
 
 type SqlFilter = {
@@ -333,6 +341,50 @@ export class PostgresReleaseRepository implements ReleaseRepository {
     ];
   }
 
+  async listActiveCountries(): Promise<CountryCount[]> {
+    const result = await this.pool.query<CountryCountRow>(
+      `
+        select
+          country_source.musicbrainz_country,
+          country_source.release_country,
+          count(*)::integer as release_count
+        from (
+          select
+            ${PRIMARY_ARTIST_COUNTRY_SQL} as musicbrainz_country,
+            r.country as release_country
+          from releases r
+        ) country_source
+        where (
+          country_source.musicbrainz_country is not null
+          and trim(country_source.musicbrainz_country) <> ''
+          and lower(trim(country_source.musicbrainz_country)) <> 'unknown'
+        ) or (
+          country_source.release_country is not null
+          and trim(country_source.release_country) <> ''
+          and lower(trim(country_source.release_country)) <> 'unknown'
+        )
+        group by country_source.musicbrainz_country, country_source.release_country
+        order by country_source.musicbrainz_country asc nulls last, country_source.release_country asc nulls last
+      `,
+    );
+
+    const counts = new Map<string, number>();
+
+    for (const row of result.rows) {
+      const country = normalizeCountryName(row.musicbrainz_country) ?? normalizeCountryName(row.release_country);
+
+      if (!country) {
+        continue;
+      }
+
+      counts.set(country, (counts.get(country) ?? 0) + row.release_count);
+    }
+
+    return Array.from(counts.entries())
+      .map(([country, releaseCount]) => ({ country, releaseCount }))
+      .sort((left, right) => left.country.localeCompare(right.country));
+  }
+
   async cleanupOldReleases(currentDate: Date, retentionDays: number): Promise<{ deleted: number }> {
     const client = await this.pool.connect();
 
@@ -481,7 +533,7 @@ function buildSqlFilter(query: ReleaseQuery): SqlFilter {
     'r.release_date <= $1::date',
   ];
   const genres = normalizeGenreFilters(query.genres ?? (query.genre ? [query.genre] : []));
-  const country = normalizeTextFilter(query.country);
+  const countries = normalizeTextFilters(query.countries ?? (query.country ? [query.country] : []));
   const type = query.type ?? 'all';
 
   if (genres.length > 0) {
@@ -523,9 +575,13 @@ function buildSqlFilter(query: ReleaseQuery): SqlFilter {
     where.push(`(${genreClauses.join(' or ')})`);
   }
 
-  if (country) {
-    params.push(country);
-    where.push(`lower(trim(coalesce(${PRIMARY_ARTIST_COUNTRY_SQL}, r.country))) = $${params.length}`);
+  if (countries.length > 0) {
+    const countryFilterValues = Array.from(new Set(countries.flatMap(getCountryFilterVariants)));
+
+    if (countryFilterValues.length > 0) {
+      params.push(countryFilterValues);
+      where.push(`lower(trim(coalesce(${PRIMARY_ARTIST_COUNTRY_SQL}, r.country))) = any($${params.length}::text[])`);
+    }
   }
 
   if (type !== 'all') {
@@ -569,7 +625,7 @@ function mapReleaseRow(row: ReleaseRow): Release {
     releaseDate: formatReleaseDate(row.release_date),
     releaseDatePrecision: row.release_date_precision,
     genres: normalizeGenres(row.genres),
-    country: row.country,
+    country: normalizeCountryName(row.country) ?? row.country,
     popularity: row.popularity,
   };
 }
@@ -579,7 +635,7 @@ function mapArtist(artist: DbArtist): ArtistSummary {
     id: artist.spotify_id,
     name: artist.name,
     genres: artist.genres,
-    country: artist.country,
+    country: normalizeCountryName(artist.country) ?? artist.country,
     popularity: artist.popularity,
   };
 }
@@ -640,6 +696,10 @@ function normalizeGenres(genres: string[]): string[] {
 
 function normalizeTextFilter(value?: string): string {
   return value?.trim().toLowerCase() ?? '';
+}
+
+function normalizeTextFilters(values?: string[]): string[] {
+  return Array.from(new Set((values ?? []).map(normalizeTextFilter).filter(Boolean)));
 }
 
 function normalizeGenreFilters(genres: string[]): string[] {

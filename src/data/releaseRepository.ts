@@ -31,6 +31,11 @@ export type GenreCount = {
   kind: GenreOptionKind;
 };
 
+export type CountryCount = {
+  country: string;
+  releaseCount: number;
+};
+
 export type SaveReleasesOptions = {
   discoveredMarket?: string;
   discoveredAt?: Date;
@@ -43,6 +48,7 @@ export type ReleaseRepository = {
   saveReleaseMarkets(ids: string[], market: string, seenAt?: Date): Promise<void>;
   findReleases(query: ReleaseQuery): Promise<ReleasePage>;
   listActiveGenres(): Promise<GenreCount[]>;
+  listActiveCountries(): Promise<CountryCount[]>;
   cleanupOldReleases(currentDate: Date, retentionDays: number): Promise<{ deleted: number }>;
 };
 
@@ -121,6 +127,7 @@ export class InMemoryReleaseRepository implements ReleaseRepository {
       genre: query.genre,
       genres: query.genres,
       country: query.country,
+      countries: query.countries,
       type: query.type ?? 'all',
       sort: query.sort ?? 'newest',
       currentDate,
@@ -170,6 +177,24 @@ export class InMemoryReleaseRepository implements ReleaseRepository {
       : [];
 
     return [...generalGenres, ...missingGenre, ...exactGenres];
+  }
+
+  async listActiveCountries(): Promise<CountryCount[]> {
+    const counts = new Map<string, number>();
+
+    for (const release of this.releasesBySpotifyId.values()) {
+      const country = normalizeCountryOption(release.country);
+
+      if (!country) {
+        continue;
+      }
+
+      counts.set(country, (counts.get(country) ?? 0) + 1);
+    }
+
+    return Array.from(counts.entries())
+      .map(([country, releaseCount]) => ({ country, releaseCount }))
+      .sort((left, right) => left.country.localeCompare(right.country));
   }
 
   async cleanupOldReleases(currentDate: Date, retentionDays: number): Promise<{ deleted: number }> {
@@ -256,6 +281,12 @@ function cloneArtist(artist: ArtistSummary): ArtistSummary {
 
 function normalizeGenres(genres: string[]): string[] {
   return Array.from(new Set(genres.map(normalizeGenreText).filter(Boolean)));
+}
+
+function normalizeCountryOption(country: string): string | undefined {
+  const normalized = country.trim();
+
+  return normalized === '' || normalized.toLowerCase() === 'unknown' ? undefined : normalized;
 }
 
 function upsertReleaseMarket(

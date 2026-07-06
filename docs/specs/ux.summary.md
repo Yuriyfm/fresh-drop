@@ -189,7 +189,7 @@ MVP route:
 * артист / артисты;
 * заметная primary CTA `Open in Spotify`;
 * secondary back-action не должен дублировать already-visible back control в верхней панели;
-* metadata card c `release date / country / popularity / type`;
+* metadata card c `release date / artist country / popularity / type`;
 * на мобильном metadata card читается одной колонкой, построчно;
 * type показывается только в metadata card, без дублирования рядом с hero;
 * жанры главного артиста показываются chips, а не строкой;

@@ -3,9 +3,17 @@ set -eu
 
 CRAWLER_CRON_SCHEDULE="${CRAWLER_CRON_SCHEDULE:-*/5 * * * *}"
 CLEANUP_CRON_SCHEDULE="${CLEANUP_CRON_SCHEDULE:-30 3 * * *}"
+ENRICH_MUSICBRAINZ_CRON_SCHEDULE="${ENRICH_MUSICBRAINZ_CRON_SCHEDULE:-*/5 * * * *}"
+ENRICH_MUSICBRAINZ_LIMIT="${ENRICH_MUSICBRAINZ_LIMIT:-20}"
+MUSICBRAINZ_ENABLED="${MUSICBRAINZ_ENABLED:-false}"
 
 if [ -z "${SPOTIFY_CLIENT_ID:-}" ] || [ -z "${SPOTIFY_CLIENT_SECRET:-}" ]; then
   echo "SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET are required for the scheduler." >&2
+  exit 1
+fi
+
+if [ "${MUSICBRAINZ_ENABLED}" = "true" ] && [ -z "${MUSICBRAINZ_USER_AGENT:-}" ]; then
+  echo "MUSICBRAINZ_USER_AGENT is required when MUSICBRAINZ_ENABLED=true." >&2
   exit 1
 fi
 
@@ -16,7 +24,13 @@ ${CRAWLER_CRON_SCHEDULE} cd /app && TMPDIR=/tmp yarn crawl:scheduled >> /proc/1/
 ${CLEANUP_CRON_SCHEDULE} cd /app && TMPDIR=/tmp yarn cleanup:releases >> /proc/1/fd/1 2>> /proc/1/fd/2
 EOF
 
+if [ "${MUSICBRAINZ_ENABLED}" = "true" ]; then
+  cat >> /tmp/fresh-drop-crontab <<EOF
+${ENRICH_MUSICBRAINZ_CRON_SCHEDULE} cd /app && TMPDIR=/tmp yarn enrich:musicbrainz:artists --skip-if-locked --limit=${ENRICH_MUSICBRAINZ_LIMIT} >> /proc/1/fd/1 2>> /proc/1/fd/2
+EOF
+fi
+
 crontab /tmp/fresh-drop-crontab
 
-echo "Fresh Drop scheduler installed: crawler=${CRAWLER_CRON_SCHEDULE} cleanup=${CLEANUP_CRON_SCHEDULE}"
+echo "Fresh Drop scheduler installed: crawler=${CRAWLER_CRON_SCHEDULE} cleanup=${CLEANUP_CRON_SCHEDULE} musicbrainz_enabled=${MUSICBRAINZ_ENABLED} musicbrainz_enrich=${ENRICH_MUSICBRAINZ_CRON_SCHEDULE} musicbrainz_limit=${ENRICH_MUSICBRAINZ_LIMIT}"
 exec crond -f -l 8

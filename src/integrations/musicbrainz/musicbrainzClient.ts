@@ -1,5 +1,6 @@
 import { MusicBrainzRateLimiter } from './musicbrainzRateLimiter';
 import { normalizeMusicBrainzGenres, type MusicBrainzGenre } from './musicbrainzGenres';
+import { getCountryNameFromCode, normalizeCountryName } from '../../domain/countryNames';
 
 type FetchLike = typeof fetch;
 
@@ -255,6 +256,12 @@ function createMusicBrainzApiError(status: number): MusicBrainzApiError {
 }
 
 function parseMusicBrainzArtistCountry(payload: Record<string, unknown>): string | undefined {
+  const countryCode = typeof payload.country === 'string' ? payload.country.trim().toUpperCase() : '';
+
+  if (countryCode) {
+    return getCountryNameFromCode(countryCode);
+  }
+
   const area = payload.area;
 
   if (area && typeof area === 'object') {
@@ -262,19 +269,9 @@ function parseMusicBrainzArtistCountry(payload: Record<string, unknown>): string
     const areaName = typeof areaRecord.name === 'string' ? areaRecord.name.trim() : '';
 
     if (areaName) {
-      return areaName;
+      return normalizeCountryName(areaName);
     }
   }
 
-  const countryCode = typeof payload.country === 'string' ? payload.country.trim().toUpperCase() : '';
-
-  if (!countryCode) {
-    return undefined;
-  }
-
-  try {
-    return new Intl.DisplayNames(['en'], { type: 'region' }).of(countryCode) ?? undefined;
-  } catch {
-    return undefined;
-  }
+  return undefined;
 }

@@ -12,6 +12,7 @@ describe('getReleasesApiResponse', () => {
       saveReleaseMarkets: vi.fn(),
       cleanupOldReleases: vi.fn(),
       listActiveGenres: vi.fn().mockResolvedValue([]),
+      listActiveCountries: vi.fn().mockResolvedValue([]),
       findReleases: vi.fn().mockResolvedValue({
         items: [],
         pagination: {
@@ -31,6 +32,7 @@ describe('getReleasesApiResponse', () => {
       genre: undefined,
       genres: undefined,
       country: undefined,
+      countries: undefined,
       type: 'all',
       sort: 'newest',
       page: 1,
@@ -54,7 +56,7 @@ describe('getReleasesApiResponse', () => {
       {
         period: '7d',
         genres: ['techno'],
-        country: 'DE',
+        countries: ['DE'],
         type: 'single',
         sort: 'oldest',
         page: '2',
@@ -66,6 +68,10 @@ describe('getReleasesApiResponse', () => {
     expect(response).toEqual({
       items: [makeRelease({ id: 'newer', releaseDate: '2026-06-30', genres: ['techno'], country: 'DE', type: 'single', popularity: 72 })],
       genres: [{ name: 'techno', releaseCount: 3, kind: 'general' }],
+      countries: [
+        { name: 'DE', releaseCount: 2 },
+        { name: 'US', releaseCount: 1 },
+      ],
       pagination: {
         page: 2,
         limit: 1,
@@ -91,6 +97,7 @@ describe('getReleasesApiResponse', () => {
       saveReleaseMarkets: vi.fn(),
       cleanupOldReleases: vi.fn(),
       listActiveGenres: vi.fn().mockResolvedValue([]),
+      listActiveCountries: vi.fn().mockResolvedValue([]),
       findReleases: vi.fn(),
     };
 
@@ -112,6 +119,7 @@ describe('getReleasesApiResponse', () => {
       saveReleaseMarkets: vi.fn(),
       cleanupOldReleases: vi.fn(),
       listActiveGenres: vi.fn().mockResolvedValue([{ genre: 'pop', releaseCount: 1, kind: 'exact' }]),
+      listActiveCountries: vi.fn().mockResolvedValue([{ country: 'Germany', releaseCount: 1 }]),
       findReleases: vi.fn().mockResolvedValue({
         items: [release],
         pagination: {
@@ -126,6 +134,7 @@ describe('getReleasesApiResponse', () => {
     await expect(getReleasesApiResponse(repository, { period: '7d' })).resolves.toEqual({
       items: [release],
       genres: [{ name: 'pop', releaseCount: 1, kind: 'exact' }],
+      countries: [{ name: 'Germany', releaseCount: 1 }],
       pagination: {
         page: 1,
         limit: 20,
@@ -144,12 +153,14 @@ describe('getReleasesApiResponse', () => {
       saveReleaseMarkets: vi.fn(),
       cleanupOldReleases: vi.fn(),
       listActiveGenres: vi.fn(),
+      listActiveCountries: vi.fn(),
       findReleases: vi.fn(),
     };
 
     await expect(getReleasesApiResponse(repository, { period: 'bad', page: '3', limit: '10' })).resolves.toEqual({
       items: [],
       genres: [],
+      countries: [],
       pagination: {
         page: 3,
         limit: 10,
@@ -171,12 +182,14 @@ describe('getReleasesApiResponse', () => {
       saveReleaseMarkets: vi.fn(),
       cleanupOldReleases: vi.fn(),
       listActiveGenres: vi.fn().mockResolvedValue([]),
+      listActiveCountries: vi.fn().mockResolvedValue([]),
       findReleases: vi.fn().mockRejectedValue(new Error('Database is unavailable.')),
     };
 
     await expect(getReleasesApiResponse(repository, { period: '7d', page: '2', limit: '10' })).resolves.toEqual({
       items: [],
       genres: [],
+      countries: [],
       pagination: {
         page: 2,
         limit: 10,

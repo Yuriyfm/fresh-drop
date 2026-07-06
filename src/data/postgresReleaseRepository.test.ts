@@ -169,6 +169,43 @@ describeWithPostgres('PostgresReleaseRepository', () => {
     });
   });
 
+  it('backfills missing artists into artist_enrichment without duplicating existing queue rows', async () => {
+    const firstArtist = makeArtist({ id: 'artist-backfill-1', name: 'First Backfill Artist' });
+    const secondArtist = makeArtist({ id: 'artist-backfill-2', name: 'Second Backfill Artist' });
+
+    await repository.saveReleases([
+      makeRelease({
+        id: 'release-backfill-1',
+        artists: [firstArtist],
+        primaryArtist: firstArtist,
+      }),
+      makeRelease({
+        id: 'release-backfill-2',
+        artists: [secondArtist],
+        primaryArtist: secondArtist,
+      }),
+    ]);
+
+    await pool.query("delete from artist_enrichment where spotify_artist_id = 'artist-backfill-2'");
+
+    const queued = await enrichments.backfillMissingArtists({ enabled: true });
+    const result = await pool.query<{
+      spotify_artist_id: string;
+      match_status: string;
+    }>(`
+      select spotify_artist_id, match_status
+      from artist_enrichment
+      where spotify_artist_id like 'artist-backfill-%'
+      order by spotify_artist_id asc
+    `);
+
+    expect(queued).toBe(1);
+    expect(result.rows).toEqual([
+      { spotify_artist_id: 'artist-backfill-1', match_status: 'pending' },
+      { spotify_artist_id: 'artist-backfill-2', match_status: 'pending' },
+    ]);
+  });
+
   it('reuses fresh artists from the cache and tracks discovery markets', async () => {
     const artist = makeArtist({ id: 'artist-cache', genres: ['Ambient'] });
 
@@ -266,7 +303,7 @@ describeWithPostgres('PostgresReleaseRepository', () => {
     const popularResult = await repository.findReleases({
       period: '7d',
       genre: 'death metal',
-      country: 'se',
+      countries: ['se'],
       type: 'album',
       sort: 'popular',
       page: 1,
@@ -276,7 +313,7 @@ describeWithPostgres('PostgresReleaseRepository', () => {
     const lessKnownResult = await repository.findReleases({
       period: '7d',
       genre: 'Death Metal',
-      country: 'SE',
+      countries: ['SE'],
       type: 'album',
       sort: 'less-popular',
       currentDate: new Date('2026-07-01T12:00:00.000Z'),
@@ -370,6 +407,47 @@ describeWithPostgres('PostgresReleaseRepository', () => {
     ]);
   });
 
+  it('lists active countries with release counts', async () => {
+    const germanyArtist = makeArtist({ id: 'artist-de', country: 'Germany' });
+    const swedenArtist = makeArtist({ id: 'artist-se', country: 'Sweden' });
+
+    await repository.saveReleases([
+      makeRelease({ id: 'country-1', country: 'Germany', artists: [germanyArtist], primaryArtist: germanyArtist }),
+      makeRelease({ id: 'country-2', country: 'Germany', artists: [germanyArtist], primaryArtist: germanyArtist }),
+      makeRelease({ id: 'country-3', country: 'Sweden', artists: [swedenArtist], primaryArtist: swedenArtist }),
+      makeRelease({ id: 'country-4', country: 'unknown' }),
+    ]);
+
+    await expect(repository.listActiveCountries()).resolves.toEqual([
+      { country: 'Germany', releaseCount: 2 },
+      { country: 'Sweden', releaseCount: 1 },
+    ]);
+  });
+
+  it('normalizes active countries and excludes city-level MusicBrainz areas', async () => {
+    const cityArtist = makeArtist({ id: 'artist-city', country: 'DE' });
+    const codeArtist = makeArtist({ id: 'artist-code', country: 'SE' });
+
+    await repository.saveReleases([
+      makeRelease({ id: 'country-city', country: 'DE', artists: [cityArtist], primaryArtist: cityArtist }),
+      makeRelease({ id: 'country-code', country: 'SE', artists: [codeArtist], primaryArtist: codeArtist }),
+    ]);
+
+    await enrichments.markMatched({
+      spotifyArtistId: 'artist-city',
+      musicBrainzArtistMbid: 'mbid-city',
+      musicBrainzArtistName: 'Artist City',
+      musicBrainzArtistCountry: 'Berlin',
+      genres: [],
+      fetchedAt: new Date('2026-07-01T12:00:00.000Z'),
+    });
+
+    await expect(repository.listActiveCountries()).resolves.toEqual([
+      { country: 'Germany', releaseCount: 1 },
+      { country: 'Sweden', releaseCount: 1 },
+    ]);
+  });
+
   it('merges matched MusicBrainz genres and primary artist country from MusicBrainz into release search', async () => {
     const artist = makeArtist({ id: 'artist-mb', genres: ['Pop'] });
 
@@ -396,7 +474,7 @@ describeWithPostgres('PostgresReleaseRepository', () => {
     const result = await repository.findReleases({
       period: '7d',
       genre: 'dance-pop',
-      country: 'United States',
+      countries: ['United States'],
       type: 'all',
       sort: 'newest',
       currentDate: new Date('2026-07-02T12:00:00.000Z'),

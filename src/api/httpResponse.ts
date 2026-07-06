@@ -25,6 +25,7 @@ export function createInternalErrorResponse(): ReleasesApiErrorResponse {
   return {
     items: [],
     genres: [],
+    countries: [],
     pagination: {
       page: 1,
       limit: 20,

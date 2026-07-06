@@ -8,7 +8,7 @@ export function filterReleases(releases: Release[], filters: ReleaseFilters): Re
     return (
       matchesPeriod(release, filters.period, filters.currentDate) &&
       matchesGenres(release, filters.genres ?? toGenreArray(filters.genre)) &&
-      matchesCountry(release, filters.country) &&
+      matchesCountries(release, filters.countries ?? toCountryArray(filters.country)) &&
       matchesType(release, filters.type)
     );
   });
@@ -81,13 +81,17 @@ export function matchesGenres(release: Release, genres?: string[]): boolean {
 }
 
 export function matchesCountry(release: Release, country?: string): boolean {
-  const normalizedCountry = normalizeTextFilter(country);
+  return matchesCountries(release, toCountryArray(country));
+}
 
-  if (!normalizedCountry) {
+export function matchesCountries(release: Release, countries?: string[]): boolean {
+  const normalizedCountries = normalizeTextFilters(countries);
+
+  if (normalizedCountries.length === 0) {
     return true;
   }
 
-  return normalizeTextFilter(release.country) === normalizedCountry;
+  return normalizedCountries.includes(normalizeTextFilter(release.country));
 }
 
 export function matchesType(release: Release, type: ReleaseTypeFilter): boolean {
@@ -165,6 +169,14 @@ function normalizeTextFilter(value?: string): string {
 
 function toGenreArray(genre?: string): string[] {
   return genre ? [genre] : [];
+}
+
+function toCountryArray(country?: string): string[] {
+  return country ? [country] : [];
+}
+
+function normalizeTextFilters(values?: string[]): string[] {
+  return Array.from(new Set((values ?? []).map(normalizeTextFilter).filter(Boolean)));
 }
 
 function normalizeGenreFilters(genres?: string[]): string[] {

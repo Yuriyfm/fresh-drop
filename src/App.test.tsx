@@ -65,7 +65,7 @@ describe('App', () => {
     render(<App />);
 
     expect(await screen.findByRole('checkbox', { name: /indie pop/i })).toBeInTheDocument();
-    expect(screen.getByText('Counts reflect the last month of releases.')).toBeInTheDocument();
+    expect(screen.getAllByText('Counts reflect the last month of releases.')).toHaveLength(2);
     expect(screen.getAllByLabelText('Country')[0]).toBeInTheDocument();
     expect(fetchSpy).toHaveBeenCalledWith(
       expect.stringMatching(
@@ -191,10 +191,11 @@ describe('App', () => {
     });
   });
 
-  it('sends the country filter to the API after debounce', async () => {
+  it('sends selected countries to the API', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.resolve(
       makeResponse({
         items: [makeRelease({ genres: ['techno'], country: 'United States' })],
+        countries: [{ name: 'United States', releaseCount: 1 }],
         pagination: {
           page: 1,
           limit: 20,
@@ -207,7 +208,7 @@ describe('App', () => {
 
     render(<App />);
 
-    fireEvent.change((await screen.findAllByLabelText('Country'))[0], { target: { value: 'United States' } });
+    fireEvent.click(await screen.findByRole('checkbox', { name: /United States/i }));
 
     await waitFor(() => {
       expect(fetchSpy).toHaveBeenLastCalledWith(
@@ -585,7 +586,7 @@ describe('App', () => {
     );
     window.localStorage.setItem(
       RELEASE_SEARCH_STORAGE_KEY,
-      JSON.stringify({ period: '14d', genre: 'techno', country: 'Germany', type: 'album', sort: 'popular' }),
+      JSON.stringify({ period: '14d', genre: 'techno', countries: ['Germany'], type: 'album', sort: 'popular' }),
     );
 
     render(<App />);
@@ -652,6 +653,7 @@ describe('App', () => {
       expect(JSON.parse(window.localStorage.getItem(RELEASE_SEARCH_STORAGE_KEY) ?? '{}')).toEqual({
         period: '7d',
         genres: [],
+        countries: [],
         type: 'all',
         sort: 'newest',
       });
@@ -699,6 +701,7 @@ describe('App', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       makeResponse({
         items: [makeRelease({ genres: ['techno'], type: 'album' })],
+        countries: [{ name: 'Germany', releaseCount: 1 }],
         pagination: {
           page: 1,
           limit: 20,
@@ -712,10 +715,7 @@ describe('App', () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole('checkbox', { name: /techno/i }));
-    await act(async () => {
-      fireEvent.change(screen.getAllByLabelText('Country')[0], { target: { value: 'Germany' } });
-      await new Promise((resolve) => window.setTimeout(resolve, 300));
-    });
+    fireEvent.click(screen.getByRole('checkbox', { name: /Germany/i }));
 
     expect(window.location.search).toContain('country=Germany');
 
@@ -1262,25 +1262,31 @@ function makeResponse(body: unknown): Response {
 }
 
 function withDefaultGenres(body: unknown): unknown {
-  if (!isReleaseApiBody(body) || body.genres) {
+  if (!isReleaseApiBody(body)) {
     return body;
   }
 
   const counts = new Map<string, number>();
+  const countryCounts = new Map<string, number>();
 
   for (const release of body.items) {
     for (const genre of release.genres) {
       counts.set(genre, (counts.get(genre) ?? 0) + 1);
     }
+
+    if (release.country !== 'unknown') {
+      countryCounts.set(release.country, (countryCounts.get(release.country) ?? 0) + 1);
+    }
   }
 
   return {
     ...body,
-    genres: Array.from(counts.entries()).map(([name, releaseCount]) => ({ name, releaseCount, kind: 'exact' })),
+    genres: body.genres ?? Array.from(counts.entries()).map(([name, releaseCount]) => ({ name, releaseCount, kind: 'exact' })),
+    countries: body.countries ?? Array.from(countryCounts.entries()).map(([name, releaseCount]) => ({ name, releaseCount })),
   };
 }
 
-function isReleaseApiBody(body: unknown): body is { items: Release[]; genres?: unknown } {
+function isReleaseApiBody(body: unknown): body is { items: Release[]; genres?: unknown; countries?: unknown } {
   return typeof body === 'object' && body !== null && 'items' in body && Array.isArray((body as { items?: unknown }).items);
 }
 

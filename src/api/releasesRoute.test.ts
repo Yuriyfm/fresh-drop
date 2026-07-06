@@ -10,7 +10,7 @@ describe('handleGetReleasesRoute', () => {
 
     await handleGetReleasesRoute(
       repository,
-      '/api/releases?period=14d&genre=techno&country=DE&type=single&sort=popular&page=2&limit=10&randomStartSeed=seed-1',
+      '/api/releases?period=14d&genre=techno&country=DE&country=SE&type=single&sort=popular&page=2&limit=10&randomStartSeed=seed-1',
       { currentDate },
     );
 
@@ -18,7 +18,8 @@ describe('handleGetReleasesRoute', () => {
       period: '14d',
       genre: 'techno',
       genres: ['techno'],
-      country: 'DE',
+      country: undefined,
+      countries: ['DE', 'SE'],
       type: 'single',
       sort: 'popular',
       page: 2,
@@ -38,6 +39,7 @@ describe('handleGetReleasesRoute', () => {
       genre: undefined,
       genres: undefined,
       country: undefined,
+      countries: undefined,
       type: 'all',
       sort: 'newest',
       page: 1,
@@ -55,6 +57,7 @@ describe('handleGetReleasesRoute', () => {
     expect(response).toEqual({
       items: [],
       genres: [],
+      countries: [],
       pagination: {
         page: 3,
         limit: 10,
@@ -93,6 +96,7 @@ describe('handleGetReleasesRoute', () => {
     await expect(handleGetReleasesRoute(repository, new URLSearchParams({ period: '7d' }))).resolves.toEqual({
       items: [release],
       genres: [{ name: 'techno', releaseCount: 1, kind: 'exact' }],
+      countries: [{ name: 'Germany', releaseCount: 1 }],
       pagination: {
         page: 1,
         limit: 20,
@@ -111,6 +115,7 @@ describe('handleGetReleasesRoute', () => {
     expect(response).toEqual({
       items: [],
       genres: [],
+      countries: [],
       pagination: {
         page: 1,
         limit: 20,
@@ -135,6 +140,7 @@ function makeRepository(
     saveReleaseMarkets: vi.fn(),
     cleanupOldReleases: vi.fn(),
     listActiveGenres: vi.fn().mockResolvedValue([{ genre: 'techno', releaseCount: 1, kind: 'exact' }]),
+    listActiveCountries: vi.fn().mockResolvedValue([{ country: 'Germany', releaseCount: 1 }]),
     findReleases: vi.fn().mockResolvedValue(findResult),
   };
 }

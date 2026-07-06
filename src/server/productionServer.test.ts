@@ -129,6 +129,7 @@ function makeRepository(
     saveReleaseMarkets: vi.fn(),
     cleanupOldReleases: vi.fn(),
     listActiveGenres: vi.fn().mockResolvedValue([]),
+    listActiveCountries: vi.fn().mockResolvedValue([]),
     findReleases: vi.fn().mockResolvedValue(findResult),
   };
 }

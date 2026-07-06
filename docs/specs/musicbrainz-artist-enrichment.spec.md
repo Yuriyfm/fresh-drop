@@ -153,8 +153,8 @@ GET /artist/<mbid>?inc=genres&fmt=json
 Используются поля:
 
 - `genres`;
-- `area.name` как полное название страны артиста;
-- `country` как fallback, если `area.name` отсутствует и его можно преобразовать в полное название страны.
+- `country` как основной источник страны артиста, если код можно преобразовать в полное название страны;
+- `area.name` только как fallback, если оно само нормализуется к валидной стране.
 
 Нормализация:
 
@@ -167,8 +167,9 @@ GET /artist/<mbid>?inc=genres&fmt=json
 
 Для страны:
 
-- если `area.name` есть и не пустое, сохраняется оно;
-- иначе допускается использовать `country` code, преобразованный в полное название страны;
+- если `country` code есть и его можно преобразовать в полное название страны, сохраняется именно оно;
+- если `area.name` есть, но это город или регион, он не должен сохраняться как `country`;
+- `area.name` допускается использовать только если оно совпадает с валидным названием страны;
 - если надёжно определить страну нельзя, сохраняется `null`.
 
 ## Worker
@@ -178,7 +179,7 @@ CLI-воркер обрабатывает артистов из `artist_enrichme
 Команда:
 
 ```text
-yarn enrich:musicbrainz:artists -- --limit=100 [--dry-run] [--force]
+yarn enrich:musicbrainz:artists -- --limit=100 [--dry-run] [--force] [--skip-if-locked]
 ```
 
 Правила:
@@ -187,7 +188,47 @@ yarn enrich:musicbrainz:artists -- --limit=100 [--dry-run] [--force]
 - без `--force` берутся только `pending` и `failed` c `next_retry_at <= now()`;
 - c `--force` можно заново обработать `matched`, `not_found` и `ambiguous`;
 - `--dry-run` не пишет изменения в БД;
+- для защиты от параллельных прогонов используется PostgreSQL advisory lock;
+- `--skip-if-locked` завершает запуск без ошибки, если другой enrichment уже выполняется;
 - один failing artist не должен валить весь воркер.
+
+## Backfill Existing Artists
+
+Для уже существующей БД допускается отдельная maintenance-команда, которая ставит в очередь артистов, загруженных до внедрения `artist_enrichment`.
+
+Команда:
+
+```text
+yarn backfill:musicbrainz -- [--batch-size=100] [--max-artists=1000] [--dry-run] [--force]
+```
+
+Правила:
+
+- backfill берёт артистов из таблицы `artists`, у которых ещё нет строки в `artist_enrichment`;
+- для таких артистов создаётся запись со статусом `pending`, если enrichment включён, и `disabled`, если enrichment выключен;
+- затем команда запускает существующий MusicBrainz worker батчами;
+- без `--force` повторно обрабатываются только `pending` и `failed`, как и у обычного worker;
+- с `--force` разрешено заново обработать уже существующие `matched`, `not_found` и `ambiguous`;
+- `--batch-size` ограничивает размер одного запуска worker;
+- `--max-artists` ограничивает общее число артистов, которое команда попытается обработать за один запуск;
+- если `--max-artists` не указан, команда может обработать весь доступный backlog за один запуск;
+- `--dry-run` не создаёт записи в `artist_enrichment` и не пишет результаты enrichment в БД.
+
+## Reset Existing Country Data
+
+Для полного перевода на новую схему country допускается отдельная maintenance-команда:
+
+```text
+yarn reset:country-data [--dry-run]
+```
+
+Правила:
+
+- у всех `releases.country` и `artists.country` значение сбрасывается в `unknown`;
+- у всех `artist_enrichment.musicbrainz_artist_country` значение сбрасывается в `null`;
+- все записи `artist_enrichment`, кроме `disabled`, возвращаются в статус `pending`;
+- `error_message`, `next_retry_at` и `retry_count` очищаются, чтобы enrichment стартовал заново с нуля;
+- `--dry-run` только показывает объём изменений, не модифицируя БД.
 
 ## Retry
 

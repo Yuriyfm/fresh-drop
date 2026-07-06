@@ -112,6 +112,8 @@ type SyncTaskRow = {
   was_split: boolean;
 };
 
+const FALLBACK_COMPLETED_NEXT_RUN_DELAY_MS = 365 * 24 * 60 * 60 * 1000;
+
 export class InMemorySyncTaskRepository implements SyncTaskRepository {
   private readonly tasks = new Map<string, SyncTask>();
   private nextId = 1;
@@ -187,7 +189,7 @@ export class InMemorySyncTaskRepository implements SyncTaskRepository {
     }
 
     task.status = input.status;
-    task.nextRunAt = getNextRunAt(input);
+    task.nextRunAt = getNextRunAt(input, input.completedAt ?? new Date());
     task.priority = input.priority ?? task.priority;
     task.spotifyTotal = input.spotifyTotal ?? task.spotifyTotal;
     task.pagesFetched = input.pagesFetched ?? task.pagesFetched;
@@ -399,7 +401,7 @@ export class PostgresSyncTaskRepository implements SyncTaskRepository {
         input.itemsFound,
         input.itemsSaved,
         input.errorMessage ?? null,
-        getNextRunAt(input),
+        getNextRunAt(input, input.completedAt ?? new Date()),
         input.spotifyTotal ?? null,
         input.pagesFetched ?? 0,
         input.itemsSeen ?? 0,
@@ -510,16 +512,20 @@ function getTaskKey(task: SyncTaskInput): string {
   return `${task.source}:${task.query}:${task.market}:${task.offset ?? 0}`;
 }
 
-function getNextRunAt(input: CompleteSyncTaskInput): Date | undefined {
+function getNextRunAt(input: CompleteSyncTaskInput, baseDate: Date): Date {
   if (input.nextRunAt) {
     return input.nextRunAt;
   }
 
   if (input.status === 'rate_limited' && input.retryAfterSeconds !== null && input.retryAfterSeconds !== undefined) {
-    return new Date(Date.now() + Math.max(input.retryAfterSeconds, 1) * 1000);
+    return new Date(baseDate.getTime() + Math.max(input.retryAfterSeconds, 1) * 1000);
   }
 
-  return undefined;
+  if (input.status === 'completed' || input.status === 'exhausted') {
+    return new Date(baseDate.getTime() + FALLBACK_COMPLETED_NEXT_RUN_DELAY_MS);
+  }
+
+  return baseDate;
 }
 
 function reactivateDueTasks(tasks: SyncTask[], now: Date): void {

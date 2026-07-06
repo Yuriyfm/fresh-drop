@@ -46,6 +46,23 @@ export class PostgresArtistEnrichmentRepository implements ArtistEnrichmentRepos
     }
   }
 
+  async backfillMissingArtists(options: { enabled: boolean; limit?: number; dryRun?: boolean }): Promise<number> {
+    const client = await this.pool.connect();
+
+    try {
+      await client.query('begin');
+      const queued = await backfillArtistEnrichmentQueueFromArtists(client, options);
+      await client.query('commit');
+
+      return queued;
+    } catch (error) {
+      await client.query('rollback');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async countArtistsForProcessing(options: { force?: boolean; now?: Date }): Promise<number> {
     const now = options.now ?? new Date();
     const result = await this.pool.query<{ total: number }>(
@@ -256,6 +273,72 @@ export async function upsertArtistEnrichmentQueue(
       ],
     );
   }
+}
+
+export async function backfillArtistEnrichmentQueueFromArtists(
+  client: PoolClient,
+  options: { enabled: boolean; limit?: number; dryRun?: boolean },
+): Promise<number> {
+  const limit = options.limit ?? null;
+
+  const missingArtistsResult = await client.query<{ total: number }>(
+    `
+      select count(*)::integer as total
+      from artists a
+      where not exists (
+        select 1
+        from artist_enrichment ae
+        where ae.spotify_artist_id = a.spotify_id
+      )
+    `,
+  );
+  const missingArtists = missingArtistsResult.rows[0]?.total ?? 0;
+
+  if (options.dryRun) {
+    return limit === null ? missingArtists : Math.min(missingArtists, limit);
+  }
+
+  const result = await client.query<{ inserted_count: number }>(
+    `
+      with selected_artists as (
+        select
+          a.spotify_id,
+          a.name,
+          'https://open.spotify.com/artist/' || a.spotify_id as spotify_artist_url
+        from artists a
+        where not exists (
+          select 1
+          from artist_enrichment ae
+          where ae.spotify_artist_id = a.spotify_id
+        )
+        order by a.id asc
+        limit coalesce($2::integer, 2147483647)
+      ),
+      inserted as (
+        insert into artist_enrichment (
+          spotify_artist_id,
+          spotify_artist_name,
+          spotify_artist_url,
+          match_status,
+          updated_at
+        )
+        select
+          spotify_id,
+          name,
+          spotify_artist_url,
+          $1,
+          now()
+        from selected_artists
+        on conflict (spotify_artist_id) do nothing
+        returning 1
+      )
+      select count(*)::integer as inserted_count
+      from inserted
+    `,
+    [options.enabled ? 'pending' : 'disabled', limit],
+  );
+
+  return result.rows[0]?.inserted_count ?? 0;
 }
 
 export function getNextRetryAt(now: Date, retryCount: number): Date {

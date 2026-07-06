@@ -36,6 +36,7 @@ export type ReleaseFilters = {
   genre?: string;
   genres?: string[];
   country?: string;
+  countries?: string[];
   type: ReleaseTypeFilter;
   sort: ReleaseSort;
   currentDate: Date;

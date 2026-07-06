@@ -37,7 +37,7 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
           SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
-          SPOTIFY_MARKETS: ${{ vars.SPOTIFY_MARKETS || 'US,GB,DE,FR,ES,IT,BR,MX,JP,KR,TR,IN,CA,AU,NL,SE,PL,AR,CO,ID,PH,ZA' }}
+          SPOTIFY_MARKETS: ${{ vars.SPOTIFY_MARKETS || 'US,GB,DE,FR,ES,IT,BR,MX,JP,KR,TR,IN,CA,AU,NL,SE,PL,AR,CO,ID,PH,ZA,KZ,BY,UA' }}
           SPOTIFY_INITIAL_RPS: ${{ vars.SPOTIFY_INITIAL_RPS || '1' }}
           SPOTIFY_MAX_RPS: ${{ vars.SPOTIFY_MAX_RPS || '2' }}
           SPOTIFY_MIN_RPS: ${{ vars.SPOTIFY_MIN_RPS || '0.1' }}

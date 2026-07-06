@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { InMemorySyncTaskRepository } from './syncTaskRepository';
+import { InMemorySyncTaskRepository, PostgresSyncTaskRepository } from './syncTaskRepository';
 
 describe('InMemorySyncTaskRepository', () => {
   afterEach(() => {
@@ -132,5 +132,29 @@ describe('InMemorySyncTaskRepository', () => {
         priority: 42,
       }),
     ]);
+  });
+});
+
+describe('PostgresSyncTaskRepository', () => {
+  it('stores a non-null next_run_at fallback for completed tasks without explicit retry time', async () => {
+    const query = vi.fn().mockResolvedValue({ rowCount: 1 });
+    const tasks = new PostgresSyncTaskRepository({
+      pool: { query } as never,
+    });
+    const completedAt = new Date('2026-07-04T16:00:00.000Z');
+
+    await tasks.completeTask({
+      id: '42',
+      status: 'completed',
+      itemsFound: 10,
+      itemsSaved: 3,
+      completedAt,
+      priority: 100,
+      wasSplit: false,
+    });
+
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(query.mock.calls[0]?.[1]?.[5]).toBeInstanceOf(Date);
+    expect((query.mock.calls[0]?.[1]?.[5] as Date).toISOString()).toBe('2027-07-04T16:00:00.000Z');
   });
 });

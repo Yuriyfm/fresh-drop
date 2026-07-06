@@ -1,6 +1,7 @@
 import process from 'node:process';
 import { Pool } from 'pg';
 import { PostgresArtistEnrichmentRepository } from '../src/data/postgresArtistEnrichmentRepository';
+import { acquireMusicBrainzEnrichmentLock, releaseMusicBrainzEnrichmentLock, tryAcquireMusicBrainzEnrichmentLock } from '../src/data/musicBrainzEnrichmentLock';
 import { runMusicBrainzArtistEnrichmentWorker } from '../src/enrichment/musicBrainzArtistEnrichmentWorker';
 import { MusicBrainzClient } from '../src/integrations/musicbrainz/musicbrainzClient';
 import { getMusicBrainzConfigFromEnv } from '../src/integrations/musicbrainz/musicbrainzConfig';
@@ -9,8 +10,18 @@ async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const config = getMusicBrainzConfigFromEnv(process.env);
   const pool = new Pool(getDatabasePoolConfig());
+  let lockAcquired = false;
 
   try {
+    lockAcquired = args.skipIfLocked
+      ? await tryAcquireMusicBrainzEnrichmentLock(pool)
+      : (await acquireMusicBrainzEnrichmentLock(pool), true);
+
+    if (!lockAcquired) {
+      console.info('MusicBrainz enrichment skipped because another run already holds the advisory lock.');
+      return;
+    }
+
     const repository = new PostgresArtistEnrichmentRepository({ pool });
     const client = new MusicBrainzClient({
       baseUrl: config.baseUrl,
@@ -27,14 +38,19 @@ async function main(): Promise<void> {
       urlLookupBatchSize: config.urlLookupBatchSize,
     });
   } finally {
+    if (lockAcquired) {
+      await releaseMusicBrainzEnrichmentLock(pool);
+    }
+
     await pool.end();
   }
 }
 
-function parseArgs(args: string[]): { limit: number; dryRun: boolean; force: boolean } {
+function parseArgs(args: string[]): { limit: number; dryRun: boolean; force: boolean; skipIfLocked: boolean } {
   let limit = 100;
   let dryRun = false;
   let force = false;
+  let skipIfLocked = false;
 
   for (const arg of args) {
     if (arg === '--dry-run') {
@@ -44,6 +60,11 @@ function parseArgs(args: string[]): { limit: number; dryRun: boolean; force: boo
 
     if (arg === '--force') {
       force = true;
+      continue;
+    }
+
+    if (arg === '--skip-if-locked') {
+      skipIfLocked = true;
       continue;
     }
 
@@ -61,7 +82,7 @@ function parseArgs(args: string[]): { limit: number; dryRun: boolean; force: boo
     throw new Error(`Unknown argument: ${arg}`);
   }
 
-  return { limit, dryRun, force };
+  return { limit, dryRun, force, skipIfLocked };
 }
 
 function getDatabasePoolConfig(): { connectionString: string } | undefined {

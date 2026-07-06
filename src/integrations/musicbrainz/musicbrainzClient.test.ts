@@ -100,6 +100,49 @@ describe('MusicBrainzClient', () => {
     });
   });
 
+  it('prefers the ISO country code over a city-level area name', async () => {
+    const client = new MusicBrainzClient({
+      baseUrl: 'https://musicbrainz.org/ws/2',
+      userAgent: 'FreshDrop/0.1.0 (test@example.com)',
+      rateLimitMs: 1100,
+      fetchFn: async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          name: 'Artist One',
+          area: { name: 'Berlin' },
+          country: 'DE',
+          genres: [],
+        }),
+      }) as Response,
+    });
+
+    await expect(client.lookupArtistGenres('mbid-1')).resolves.toMatchObject({
+      musicBrainzArtistCountry: 'Germany',
+    });
+  });
+
+  it('ignores a city-level area name when no country code is present', async () => {
+    const client = new MusicBrainzClient({
+      baseUrl: 'https://musicbrainz.org/ws/2',
+      userAgent: 'FreshDrop/0.1.0 (test@example.com)',
+      rateLimitMs: 1100,
+      fetchFn: async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          name: 'Artist One',
+          area: { name: 'Berlin' },
+          genres: [],
+        }),
+      }) as Response,
+    });
+
+    await expect(client.lookupArtistGenres('mbid-1')).resolves.toMatchObject({
+      musicBrainzArtistCountry: undefined,
+    });
+  });
+
   it('treats 503 as a retryable API error', async () => {
     const client = new MusicBrainzClient({
       baseUrl: 'https://musicbrainz.org/ws/2',
