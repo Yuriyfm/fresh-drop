@@ -1522,7 +1522,7 @@ describe('App', () => {
     expect(fetchSpy.mock.calls.filter(([input]) => String(input).startsWith('/api/releases'))).toHaveLength(0);
   });
 
-  it('opens deep underground insight items as filtered search results instead of unloaded release details', async () => {
+  it('opens deep underground insight items on the release detail page', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
       const url = String(input);
 
@@ -1531,11 +1531,11 @@ describe('App', () => {
       }
 
       return Promise.resolve(makeResponse({
-        items: [makeRelease({ id: 'release-underground', title: 'Basement Signal', popularity: 12 })],
+        items: [],
         pagination: {
           page: 1,
           limit: 20,
-          total: 1,
+          total: 0,
           hasNextPage: false,
         },
         error: null,
@@ -1547,17 +1547,11 @@ describe('App', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: /Basement Signal/i }));
 
-    expect(window.location.pathname).toBe('/');
-    expect(window.location.search).toBe('?period=1m&type=all&sort=newest&popularityMax=20&from=insights&insightId=deep-underground-drops');
-
-    await waitFor(() => {
-      expect(fetchSpy).toHaveBeenLastCalledWith(
-        '/api/releases?period=1m&type=all&sort=newest&page=1&limit=20&popularityMax=20',
-        expect.any(Object),
-      );
-    });
-    expect(await screen.findByText('Basement Signal')).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/releases/release-underground');
+    expect(window.location.search).toBe('?period=1m&type=all&sort=newest&popularityMax=20');
+    expect(await screen.findByRole('heading', { name: 'Basement Signal' })).toBeInTheDocument();
     expect(screen.queryByText('Release not loaded')).toBeNull();
+    expect(fetchSpy.mock.calls.filter(([input]) => String(input).startsWith('/api/releases'))).toHaveLength(0);
   });
 });
 
@@ -1645,6 +1639,14 @@ function makeInsightsData(): InsightsData & { error: null } {
     releaseDate: '2026-07-06',
     artistName: 'Scene Star',
   });
+  const undergroundRelease = makeRelease({
+    id: 'release-underground',
+    title: 'Basement Signal',
+    spotifyUrl: 'https://open.spotify.com/album/release-underground',
+    country: 'unknown',
+    genres: ['lo-fi'],
+    popularity: 12,
+  });
 
   return {
     period: 30,
@@ -1693,6 +1695,7 @@ function makeInsightsData(): InsightsData & { error: null } {
               releaseId: 'release-underground',
               popularityMax: 20,
             },
+            release: undergroundRelease,
           },
         ],
       },

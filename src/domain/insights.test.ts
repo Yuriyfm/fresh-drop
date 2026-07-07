@@ -31,6 +31,10 @@ describe('createInsightsData', () => {
       query: { genre: 'techno' },
     });
     expect(data.sections.discovery.deepUndergroundDrops.map((item) => item.title)).toContain('Release pl-metal');
+    expect(data.sections.discovery.deepUndergroundDrops.find((item) => item.title === 'Release pl-metal')).toMatchObject({
+      query: { releaseId: 'pl-metal', popularityMax: 20 },
+      release: { id: 'pl-metal' },
+    });
     expect(data.sections.countries.mostActiveCountries.byReleases.some((item) => item.title === 'unknown')).toBe(false);
   });
 

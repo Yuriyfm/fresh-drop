@@ -118,7 +118,7 @@ Rules:
 * `type` defaults to `all`.
 * calculations use the same normalized release data as `GET /api/releases`;
 * public country / genre / scene cards exclude unknown, empty, and null country or genre values;
-* `bigArtistsFromSmallScenes` items include the artist's latest matching `release` snapshot and `query.releaseId` so the frontend can open that release detail directly;
+* `bigArtistsFromSmallScenes` and `deepUndergroundDrops` items include a matching `release` snapshot and `query.releaseId` so the frontend can open release details directly;
 * response returns all MVP cards in one request.
 
 ### Success response

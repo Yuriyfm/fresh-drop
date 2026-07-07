@@ -277,12 +277,15 @@ function getDeepUndergroundDrops(releases: Release[]): InsightListItem[] {
       return knownComparison || right.releaseDate.localeCompare(left.releaseDate) || (left.popularity ?? 101) - (right.popularity ?? 101);
     })
     .slice(0, ITEM_LIMIT)
-    .map((release) => makeItem(
-      release.title,
-      `${release.primaryArtist?.name ?? release.artists[0]?.name ?? 'Unknown artist'} · popularity ${release.popularity ?? 'unknown'}`,
-      [getKnownCountry(release), getKnownGenres(release)[0]].filter(isPresent).join(' · '),
-      { releaseId: release.id, popularityMax: 20 },
-    ));
+    .map((release) => ({
+      ...makeItem(
+        release.title,
+        `${release.primaryArtist?.name ?? release.artists[0]?.name ?? 'Unknown artist'} · popularity ${release.popularity ?? 'unknown'}`,
+        [getKnownCountry(release), getKnownGenres(release)[0]].filter(isPresent).join(' · '),
+        { releaseId: release.id, popularityMax: 20 },
+      ),
+      release,
+    }));
 }
 
 function getCountryStats(releases: Release[]): CountStat[] {
