@@ -14,6 +14,8 @@ export const ru = {
     howItWorks: 'Как это работает',
     settings: 'Настройки',
     backToTop: 'Наверх',
+    navReleases: 'Релизы',
+    navInsights: 'Инсайты',
   },
   filters: {
     aria: 'Фильтры релизов',
@@ -120,6 +122,93 @@ export const ru = {
     unknown: 'Неизвестно',
     shownBecause: 'Показано, потому что релиз подходит под выбранный период свежести и активные фильтры.',
   },
+  insights: {
+    title: 'Инсайты',
+    description: 'Исследуйте свежую музыку через страны, жанры и сцены.',
+    filtersAria: 'Фильтры инсайтов',
+    period: 'Период',
+    type: 'Тип',
+    periods: {
+      7: 'Последние 7 дней',
+      14: 'Последние 14 дней',
+      30: 'Последние 30 дней',
+    },
+    types: {
+      all: 'Все',
+      single: 'Синглы',
+      album: 'Альбомы',
+    },
+    loadingErrorTitle: 'Не удалось загрузить инсайты',
+    loadingErrorDescription: 'Попробуйте ещё раз, не меняя фильтры релизов.',
+    retry: 'Попробовать снова',
+    emptyTitle: 'Пока недостаточно данных для инсайтов',
+    emptyDescription: 'Попробуйте увеличить период или запустить свежую синхронизацию релизов.',
+    noCardData: 'Недостаточно подходящих данных.',
+    backToInsights: 'Назад к инсайтам',
+    sections: {
+      countries: 'Страны',
+      genres: 'Жанры',
+      scenes: 'Сцены',
+      discovery: 'Открытия',
+    },
+    cards: {
+      mostActiveCountries: {
+        title: 'Самые активные страны',
+        description: 'Страны с наибольшим числом свежих релизов за выбранный период.',
+        byReleases: 'По релизам',
+        byArtists: 'По артистам',
+      },
+      rareCountries: {
+        title: 'Редкие страны в новых релизах',
+        description: 'Свежие релизы из стран, которые редко встречаются в каталоге.',
+      },
+      bigArtistsSmallScenes: {
+        title: 'Крупные артисты из небольших сцен',
+        description: 'Популярные артисты, выпускающие релизы из стран с меньшим числом свежих релизов.',
+      },
+      mostDiverseCountries: {
+        title: 'Самые разнообразные страны',
+        description: 'Страны с самым широким жанровым разнообразием за выбранный период.',
+      },
+      mostActiveGenres: {
+        title: 'Самые активные жанры',
+        description: 'Жанры с наибольшим числом свежих релизов за выбранный период.',
+      },
+      rareGenreDrops: {
+        title: 'Редкие жанровые релизы',
+        description: 'Свежие релизы в жанрах, которые редко встречаются в каталоге.',
+      },
+      mainstreamGenres: {
+        title: 'Самые мейнстримные жанры',
+        description: 'Жанры, где свежие релизы чаще выходят у артистов с высокой популярностью.',
+      },
+      undergroundGenres: {
+        title: 'Глубокие underground-жанры',
+        description: 'Жанры, где свежие релизы чаще выходят у артистов с низкой популярностью.',
+      },
+      topScenes: {
+        title: 'Главные сцены месяца',
+        description: 'Самые активные сочетания страны и жанра.',
+      },
+      popularArtistsNicheGenres: {
+        title: 'Популярные артисты в нишевых жанрах',
+        description: 'Артисты с высокой популярностью, выпускающие релизы в менее массовых жанрах.',
+      },
+      undergroundDrops: {
+        title: 'Deep underground-релизы',
+        description: 'Свежие релизы от артистов с очень низкой популярностью в Spotify.',
+        cta: 'Исследовать underground-релизы',
+      },
+    },
+    metrics: {
+      releases: (count: number) => formatRuReleasesMetric(count),
+      artists: (count: number) => formatRuArtistsMetric(count),
+      genres: (count: number) => formatRuGenresMetric(count),
+      popularity: (value: string | number) => `популярность ${value}`,
+      medianPopularity: (value: string | number) => `медианная популярность ${value}`,
+      latestRelease: (title: string) => `последний релиз: ${title}`,
+    },
+  },
   about: {
     aria: 'Как это работает',
     eyebrow: 'Как это работает',
@@ -140,6 +229,51 @@ export const ru = {
     ],
   },
 } as const;
+
+function formatRuReleasesMetric(count: number): string {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+
+  if (mod10 === 1 && mod100 !== 11) {
+    return `${count} релиз`;
+  }
+
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) {
+    return `${count} релиза`;
+  }
+
+  return `${count} релизов`;
+}
+
+function formatRuArtistsMetric(count: number): string {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+
+  if (mod10 === 1 && mod100 !== 11) {
+    return `${count} артист`;
+  }
+
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) {
+    return `${count} артиста`;
+  }
+
+  return `${count} артистов`;
+}
+
+function formatRuGenresMetric(count: number): string {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+
+  if (mod10 === 1 && mod100 !== 11) {
+    return `${count} жанр`;
+  }
+
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) {
+    return `${count} жанра`;
+  }
+
+  return `${count} жанров`;
+}
 
 function summaryCount(count: number): string {
   const mod10 = count % 10;

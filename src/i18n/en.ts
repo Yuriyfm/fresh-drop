@@ -14,6 +14,8 @@ export const en = {
     howItWorks: 'How it works',
     settings: 'Settings',
     backToTop: 'Back to top',
+    navReleases: 'Releases',
+    navInsights: 'Insights',
   },
   filters: {
     aria: 'Release filters',
@@ -119,6 +121,93 @@ export const en = {
     popularity: 'Popularity',
     unknown: 'Unknown',
     shownBecause: 'Shown because it matches the selected freshness period and active filters.',
+  },
+  insights: {
+    title: 'Insights',
+    description: 'Explore fresh music through countries, genres and scenes.',
+    filtersAria: 'Insights filters',
+    period: 'Period',
+    type: 'Type',
+    periods: {
+      7: 'Last 7 days',
+      14: 'Last 14 days',
+      30: 'Last 30 days',
+    },
+    types: {
+      all: 'All',
+      single: 'Singles',
+      album: 'Albums',
+    },
+    loadingErrorTitle: 'Could not load insights',
+    loadingErrorDescription: 'Try again without changing your release filters.',
+    retry: 'Try again',
+    emptyTitle: 'Not enough data for insights yet',
+    emptyDescription: 'Try a longer period or run a fresh release sync.',
+    noCardData: 'Not enough matching data.',
+    backToInsights: 'Back to Insights',
+    sections: {
+      countries: 'Countries',
+      genres: 'Genres',
+      scenes: 'Scenes',
+      discovery: 'Discovery',
+    },
+    cards: {
+      mostActiveCountries: {
+        title: 'Most active countries',
+        description: 'Countries with the most fresh releases in the selected period.',
+        byReleases: 'By releases',
+        byArtists: 'By artists',
+      },
+      rareCountries: {
+        title: 'Rare countries in new releases',
+        description: 'Fresh releases from countries that rarely appear in the catalog.',
+      },
+      bigArtistsSmallScenes: {
+        title: 'Big artists from small scenes',
+        description: 'Popular artists releasing from countries with a smaller number of fresh releases.',
+      },
+      mostDiverseCountries: {
+        title: 'Most diverse countries',
+        description: 'Countries with the widest genre variety in the selected period.',
+      },
+      mostActiveGenres: {
+        title: 'Most active genres',
+        description: 'Genres with the most fresh releases in the selected period.',
+      },
+      rareGenreDrops: {
+        title: 'Rare genre drops',
+        description: 'Fresh releases in genres that rarely appear in the catalog.',
+      },
+      mainstreamGenres: {
+        title: 'Most mainstream genres',
+        description: 'Genres where fresh releases mostly come from higher-popularity artists.',
+      },
+      undergroundGenres: {
+        title: 'Deep underground genres',
+        description: 'Genres where fresh releases mostly come from low-popularity artists.',
+      },
+      topScenes: {
+        title: 'Top scenes this month',
+        description: 'The most active country + genre combinations.',
+      },
+      popularArtistsNicheGenres: {
+        title: 'Popular artists in niche genres',
+        description: 'Higher-popularity artists releasing in less common genres.',
+      },
+      undergroundDrops: {
+        title: 'Deep underground drops',
+        description: 'Fresh releases from artists with very low Spotify popularity.',
+        cta: 'Explore underground drops',
+      },
+    },
+    metrics: {
+      releases: (count: number) => `${count} ${count === 1 ? 'release' : 'releases'}`,
+      artists: (count: number) => `${count} ${count === 1 ? 'artist' : 'artists'}`,
+      genres: (count: number) => `${count} ${count === 1 ? 'genre' : 'genres'}`,
+      popularity: (value: string | number) => `popularity ${value}`,
+      medianPopularity: (value: string | number) => `median popularity ${value}`,
+      latestRelease: (title: string) => `latest release: ${title}`,
+    },
   },
   about: {
     aria: 'How it works',

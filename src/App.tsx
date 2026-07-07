@@ -512,7 +512,7 @@ function App() {
           {!isMobile && <p className="eyebrow">{t.app.eyebrow}</p>}
           <h1>{t.app.title}</h1>
           {!isMobile && <p>{t.app.description}</p>}
-          {!isMobile && <HeaderNav active="releases" onOpenReleases={openSearch} onOpenInsights={openInsights} />}
+          {!isMobile && <HeaderNav active="releases" t={t} onOpenReleases={openSearch} onOpenInsights={openInsights} />}
         </div>
         <div className={isMobile ? 'headerActions mobileHeaderActions' : 'headerActions'}>
           {isMobile ? (
@@ -522,7 +522,7 @@ function App() {
                 className="secondaryButton mobileNavButton"
                 onClick={openInsights}
               >
-                Insights
+                {t.app.navInsights}
               </button>
               <button
                 type="button"
@@ -559,7 +559,7 @@ function App() {
       {insightsReturn && (
         <section className="insightsReturnPanel">
           <button type="button" className="ghostButton insightsReturnButton" onClick={backToInsights}>
-            &larr; Back to Insights
+            &larr; {t.insights.backToInsights}
           </button>
         </section>
       )}
@@ -978,19 +978,20 @@ function App() {
 
 type HeaderNavProps = {
   active: 'releases' | 'insights';
+  t: Translation;
   onOpenReleases: () => void;
   onOpenInsights: () => void;
 };
 
-function HeaderNav({ active, onOpenReleases, onOpenInsights }: HeaderNavProps) {
+function HeaderNav({ active, t, onOpenReleases, onOpenInsights }: HeaderNavProps) {
   return (
     <nav className="headerNav" aria-label="Primary navigation">
       <button type="button" className={active === 'releases' ? 'headerNavLink isActive' : 'headerNavLink'} onClick={onOpenReleases}>
-        Releases
+        {t.app.navReleases}
       </button>
       <span aria-hidden="true">|</span>
       <button type="button" className={active === 'insights' ? 'headerNavLink isActive' : 'headerNavLink'} onClick={onOpenInsights}>
-        Insights
+        {t.app.navInsights}
       </button>
     </nav>
   );
@@ -1031,14 +1032,14 @@ function InsightsPage({
     <main className="appShell insightsShell">
       <header className={isMobile ? 'appHeader isMobileHeader' : 'appHeader'}>
         <div className="headerBrand">
-          <h1>Insights</h1>
-          <p>Explore fresh music through countries, genres and scenes.</p>
-          {!isMobile && <HeaderNav active="insights" onOpenReleases={onOpenReleases} onOpenInsights={() => undefined} />}
+          <h1>{t.insights.title}</h1>
+          <p>{t.insights.description}</p>
+          {!isMobile && <HeaderNav active="insights" t={t} onOpenReleases={onOpenReleases} onOpenInsights={() => undefined} />}
         </div>
         <div className={isMobile ? 'headerActions mobileHeaderActions' : 'headerActions'}>
           {isMobile ? (
             <button type="button" className="secondaryButton mobileNavButton" onClick={onOpenReleases}>
-              Releases
+              {t.app.navReleases}
             </button>
           ) : (
             <LanguageSwitcher language={language} t={t} onChange={onLanguageChange} />
@@ -1046,24 +1047,24 @@ function InsightsPage({
         </div>
       </header>
 
-      <section className="insightsFilterBar" aria-label="Insights filters">
+      <section className="insightsFilterBar" aria-label={t.insights.filtersAria}>
         <SegmentedControl
-          label="Period"
+          label={t.insights.period}
           value={String(filters.period)}
           options={[
-            { value: '7', label: 'Last 7 days' },
-            { value: '14', label: 'Last 14 days' },
-            { value: '30', label: 'Last 30 days' },
+            { value: '7', label: t.insights.periods[7] },
+            { value: '14', label: t.insights.periods[14] },
+            { value: '30', label: t.insights.periods[30] },
           ]}
           onChange={(value) => onFiltersChange({ ...filters, period: Number(value) as InsightsPeriod })}
         />
         <SegmentedControl
-          label="Type"
+          label={t.insights.type}
           value={filters.type}
           options={[
-            { value: 'all', label: 'All' },
-            { value: 'single', label: 'Singles' },
-            { value: 'album', label: 'Albums' },
+            { value: 'all', label: t.insights.types.all },
+            { value: 'single', label: t.insights.types.single },
+            { value: 'album', label: t.insights.types.album },
           ]}
           onChange={(value) => onFiltersChange({ ...filters, type: value })}
         />
@@ -1073,53 +1074,54 @@ function InsightsPage({
 
       {isError && (
         <div className="statePanel" role="alert">
-          <h2>Could not load insights</h2>
-          <p>Try again without changing your release filters.</p>
+          <h2>{t.insights.loadingErrorTitle}</h2>
+          <p>{t.insights.loadingErrorDescription}</p>
           <button type="button" onClick={onRetry}>
-            Try again
+            {t.insights.retry}
           </button>
         </div>
       )}
 
       {!isLoading && !isError && data && !hasItems && (
         <div className="statePanel">
-          <h2>Not enough data for insights yet</h2>
-          <p>Try a longer period or run a fresh release sync.</p>
+          <h2>{t.insights.emptyTitle}</h2>
+          <p>{t.insights.emptyDescription}</p>
         </div>
       )}
 
       {!isLoading && !isError && data && hasItems && (
         <div className="insightsSections">
-          <InsightsSection title="Countries">
+          <InsightsSection title={t.insights.sections.countries}>
             <InsightCard
               id="most-active-countries"
-              title="Most active countries"
-              description="Countries with the most fresh releases in the selected period."
+              title={t.insights.cards.mostActiveCountries.title}
+              description={t.insights.cards.mostActiveCountries.description}
               items={data.sections.countries.mostActiveCountries.byReleases}
               alternateItems={data.sections.countries.mostActiveCountries.byArtists}
-              alternateLabel="By artists"
-              defaultLabel="By releases"
+              alternateLabel={t.insights.cards.mostActiveCountries.byArtists}
+              defaultLabel={t.insights.cards.mostActiveCountries.byReleases}
+              t={t}
               onOpenInsight={onOpenInsight}
             />
-            <InsightCard id="rare-countries" title="Rare countries in new releases" description="Fresh releases from countries that rarely appear in the catalog." items={data.sections.countries.rareCountries} onOpenInsight={onOpenInsight} />
-            <InsightCard id="big-artists-small-scenes" title="Big artists from small scenes" description="Popular artists releasing from countries with a smaller number of fresh releases." items={data.sections.countries.bigArtistsFromSmallScenes} onOpenInsight={onOpenInsight} />
-            <InsightCard id="most-diverse-countries" title="Most diverse countries" description="Countries with the widest genre variety in the selected period." items={data.sections.countries.mostDiverseCountries} onOpenInsight={onOpenInsight} />
+            <InsightCard id="rare-countries" title={t.insights.cards.rareCountries.title} description={t.insights.cards.rareCountries.description} items={data.sections.countries.rareCountries} t={t} onOpenInsight={onOpenInsight} />
+            <InsightCard id="big-artists-small-scenes" title={t.insights.cards.bigArtistsSmallScenes.title} description={t.insights.cards.bigArtistsSmallScenes.description} items={data.sections.countries.bigArtistsFromSmallScenes} t={t} onOpenInsight={onOpenInsight} />
+            <InsightCard id="most-diverse-countries" title={t.insights.cards.mostDiverseCountries.title} description={t.insights.cards.mostDiverseCountries.description} items={data.sections.countries.mostDiverseCountries} t={t} onOpenInsight={onOpenInsight} />
           </InsightsSection>
 
-          <InsightsSection title="Genres">
-            <InsightCard id="most-active-genres" title="Most active genres" description="Genres with the most fresh releases in the selected period." items={data.sections.genres.mostActiveGenres} onOpenInsight={onOpenInsight} />
-            <InsightCard id="rare-genre-drops" title="Rare genre drops" description="Fresh releases in genres that rarely appear in the catalog." items={data.sections.genres.rareGenreDrops} onOpenInsight={onOpenInsight} />
-            <InsightCard id="mainstream-genres" title="Most mainstream genres" description="Genres where fresh releases mostly come from higher-popularity artists." items={data.sections.genres.mostMainstreamGenres} onOpenInsight={onOpenInsight} />
-            <InsightCard id="deep-underground-genres" title="Deep underground genres" description="Genres where fresh releases mostly come from low-popularity artists." items={data.sections.genres.deepUndergroundGenres} onOpenInsight={onOpenInsight} />
+          <InsightsSection title={t.insights.sections.genres}>
+            <InsightCard id="most-active-genres" title={t.insights.cards.mostActiveGenres.title} description={t.insights.cards.mostActiveGenres.description} items={data.sections.genres.mostActiveGenres} t={t} onOpenInsight={onOpenInsight} />
+            <InsightCard id="rare-genre-drops" title={t.insights.cards.rareGenreDrops.title} description={t.insights.cards.rareGenreDrops.description} items={data.sections.genres.rareGenreDrops} t={t} onOpenInsight={onOpenInsight} />
+            <InsightCard id="mainstream-genres" title={t.insights.cards.mainstreamGenres.title} description={t.insights.cards.mainstreamGenres.description} items={data.sections.genres.mostMainstreamGenres} t={t} onOpenInsight={onOpenInsight} />
+            <InsightCard id="deep-underground-genres" title={t.insights.cards.undergroundGenres.title} description={t.insights.cards.undergroundGenres.description} items={data.sections.genres.deepUndergroundGenres} t={t} onOpenInsight={onOpenInsight} />
           </InsightsSection>
 
-          <InsightsSection title="Scenes">
-            <InsightCard id="top-scenes" title="Top scenes this month" description="The most active country + genre combinations." items={data.sections.scenes.topScenes} onOpenInsight={onOpenInsight} />
+          <InsightsSection title={t.insights.sections.scenes}>
+            <InsightCard id="top-scenes" title={t.insights.cards.topScenes.title} description={t.insights.cards.topScenes.description} items={data.sections.scenes.topScenes} t={t} onOpenInsight={onOpenInsight} />
           </InsightsSection>
 
-          <InsightsSection title="Discovery">
-            <InsightCard id="popular-artists-niche-genres" title="Popular artists in niche genres" description="Higher-popularity artists releasing in less common genres." items={data.sections.discovery.popularArtistsInNicheGenres} onOpenInsight={onOpenInsight} />
-            <InsightCard id="deep-underground-drops" title="Deep underground drops" description="Fresh releases from artists with very low Spotify popularity." items={data.sections.discovery.deepUndergroundDrops} cta="Explore underground drops" onOpenInsight={onOpenInsight} />
+          <InsightsSection title={t.insights.sections.discovery}>
+            <InsightCard id="popular-artists-niche-genres" title={t.insights.cards.popularArtistsNicheGenres.title} description={t.insights.cards.popularArtistsNicheGenres.description} items={data.sections.discovery.popularArtistsInNicheGenres} t={t} onOpenInsight={onOpenInsight} />
+            <InsightCard id="deep-underground-drops" title={t.insights.cards.undergroundDrops.title} description={t.insights.cards.undergroundDrops.description} items={data.sections.discovery.deepUndergroundDrops} cta={t.insights.cards.undergroundDrops.cta} t={t} onOpenInsight={onOpenInsight} />
           </InsightsSection>
         </div>
       )}
@@ -1145,6 +1147,7 @@ type InsightCardProps = {
   defaultLabel?: string;
   alternateLabel?: string;
   cta?: string;
+  t: Translation;
   onOpenInsight: (item: InsightListItem, insightId?: string) => void;
 };
 
@@ -1157,6 +1160,7 @@ function InsightCard({
   defaultLabel = 'Primary',
   alternateLabel = 'Alternate',
   cta,
+  t,
   onOpenInsight,
 }: InsightCardProps) {
   const [mode, setMode] = useState<'default' | 'alternate'>('default');
@@ -1187,14 +1191,14 @@ function InsightCard({
             <button type="button" className="insightItem" key={item.id} onClick={() => onOpenInsight(item, id)}>
               <span>
                 <strong>{item.title}</strong>
-                {item.description && <small>{item.description}</small>}
+                {item.description && <small>{localizeInsightText(item.description, t)}</small>}
               </span>
-              <span className="insightMetric">{item.metric}</span>
+              <span className="insightMetric">{localizeInsightText(item.metric, t)}</span>
             </button>
           ))}
         </div>
       ) : (
-        <p className="insightEmpty">Not enough matching data.</p>
+        <p className="insightEmpty">{t.insights.noCardData}</p>
       )}
       {cta && ctaItem && (
         <button type="button" className="ghostButton insightCta" onClick={() => onOpenInsight({ ...ctaItem, query: { popularityMax: 20 } }, id)}>
@@ -2190,6 +2194,16 @@ function getPopularitySummary(popularityMin?: number, popularityMax?: number): s
   }
 
   return undefined;
+}
+
+function localizeInsightText(value: string, t: Translation): string {
+  return value
+    .replace(/\b(\d+) releases\b/g, (_match, count: string) => t.insights.metrics.releases(Number(count)))
+    .replace(/\b(\d+) artists\b/g, (_match, count: string) => t.insights.metrics.artists(Number(count)))
+    .replace(/\b(\d+) genres\b/g, (_match, count: string) => t.insights.metrics.genres(Number(count)))
+    .replace(/\bmedian popularity (\d+)\b/g, (_match, popularity: string) => t.insights.metrics.medianPopularity(popularity))
+    .replace(/\bpopularity (unknown|\d+)\b/g, (_match, popularity: string) => t.insights.metrics.popularity(popularity))
+    .replace(/\blatest release: ([^·]+)$/g, (_match, title: string) => t.insights.metrics.latestRelease(title.trim()));
 }
 
 function getResultsCountText(count: number, t: Translation): string {
