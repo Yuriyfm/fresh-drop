@@ -19,6 +19,7 @@ export type InsightListItem = {
   description: string;
   metric: string;
   query: InsightLinkQuery;
+  release?: Release;
 };
 
 export type InsightsData = {
@@ -45,7 +46,6 @@ export type InsightsData = {
       topScenes: InsightListItem[];
     };
     discovery: {
-      popularArtistsInNicheGenres: InsightListItem[];
       deepUndergroundDrops: InsightListItem[];
     };
   };
@@ -92,9 +92,6 @@ export function createInsightsData(options: {
   const topActiveCountries = new Set(
     [...countryStats].sort((left, right) => right.releaseCount - left.releaseCount).slice(0, ACTIVE_TOP_SIZE).map((stat) => stat.name),
   );
-  const topActiveGenres = new Set(
-    [...genreStats].sort((left, right) => right.releaseCount - left.releaseCount).slice(0, ACTIVE_TOP_SIZE).map((stat) => stat.name),
-  );
 
   return {
     period: options.period,
@@ -120,7 +117,6 @@ export function createInsightsData(options: {
         topScenes: getTopScenes(releases),
       },
       discovery: {
-        popularArtistsInNicheGenres: getPopularArtistsInNicheGenres(releases, genreStats, topActiveGenres),
         deepUndergroundDrops: getDeepUndergroundDrops(releases),
       },
     },
@@ -131,7 +127,7 @@ function getMostActiveCountriesByReleases(stats: CountStat[]): InsightListItem[]
   return [...stats]
     .sort((left, right) => right.releaseCount - left.releaseCount || left.name.localeCompare(right.name))
     .slice(0, ITEM_LIMIT)
-    .map((stat) => makeItem(stat.name, `${stat.releaseCount} releases`, '', { country: stat.name }));
+    .map((stat) => makeItem(stat.name, `${stat.releaseCount} releases`, `${stat.artistCount} artists`, { country: stat.name }));
 }
 
 function getMostActiveCountriesByArtists(stats: CountStat[]): InsightListItem[] {
@@ -151,21 +147,35 @@ function getRareCountries(stats: CountStat[]): InsightListItem[] {
 
 function getBigArtistsFromSmallScenes(releases: Release[], topActiveCountries: Set<string>): InsightListItem[] {
   const countryCounts = countBy(releases.map((release) => getKnownCountry(release)).filter(isPresent));
+  const latestReleaseByArtist = new Map<string, Release>();
 
-  return releases
-    .filter((release) => {
-      const country = getKnownCountry(release);
+  for (const release of releases) {
+    const country = getKnownCountry(release);
 
-      return Boolean(country && !topActiveCountries.has(country) && (countryCounts.get(country) ?? 0) <= 20 && (release.popularity ?? -1) >= 50);
-    })
+    if (!country || topActiveCountries.has(country) || (countryCounts.get(country) ?? 0) > 20 || (release.popularity ?? -1) < 50) {
+      continue;
+    }
+
+    const artistId = release.primaryArtist?.id ?? release.artists[0]?.id ?? release.id;
+    const current = latestReleaseByArtist.get(artistId);
+
+    if (!current || release.releaseDate.localeCompare(current.releaseDate) > 0) {
+      latestReleaseByArtist.set(artistId, release);
+    }
+  }
+
+  return Array.from(latestReleaseByArtist.values())
     .sort((left, right) => (right.popularity ?? -1) - (left.popularity ?? -1) || right.releaseDate.localeCompare(left.releaseDate))
     .slice(0, ITEM_LIMIT)
-    .map((release) => makeItem(
-      release.primaryArtist?.name ?? release.artists[0]?.name ?? 'Unknown artist',
-      `popularity ${release.popularity} · latest release: ${release.title}`,
-      getKnownCountry(release) ?? '',
-      { country: getKnownCountry(release), popularityMin: 50 },
-    ));
+    .map((release) => ({
+      ...makeItem(
+        release.primaryArtist?.name ?? release.artists[0]?.name ?? 'Unknown artist',
+        `popularity ${release.popularity} · latest release: ${release.title}`,
+        getKnownCountry(release) ?? '',
+        { releaseId: release.id, country: getKnownCountry(release), popularityMin: 50 },
+      ),
+      release,
+    }));
 }
 
 function getMostDiverseCountries(releases: Release[], stats: CountStat[]): InsightListItem[] {
@@ -255,22 +265,6 @@ function getTopScenes(releases: Release[]): InsightListItem[] {
       country: stat.country,
       genre: stat.genre,
     }));
-}
-
-function getPopularArtistsInNicheGenres(releases: Release[], genreStats: CountStat[], topActiveGenres: Set<string>): InsightListItem[] {
-  const genreCounts = new Map(genreStats.map((stat) => [stat.name, stat.releaseCount]));
-
-  return releases
-    .flatMap((release) => getKnownGenres(release).map((genre) => ({ release, genre })))
-    .filter(({ release, genre }) => !topActiveGenres.has(genre) && (genreCounts.get(genre) ?? 0) <= 20 && (release.popularity ?? -1) >= 50)
-    .sort((left, right) => (right.release.popularity ?? -1) - (left.release.popularity ?? -1) || left.genre.localeCompare(right.genre))
-    .slice(0, ITEM_LIMIT)
-    .map(({ release, genre }) => makeItem(
-      release.primaryArtist?.name ?? release.artists[0]?.name ?? 'Unknown artist',
-      `${genre} · popularity ${release.popularity} · latest release: ${release.title}`,
-      '',
-      { genre, popularityMin: 50 },
-    ));
 }
 
 function getDeepUndergroundDrops(releases: Release[]): InsightListItem[] {

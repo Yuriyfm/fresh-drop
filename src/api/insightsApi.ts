@@ -57,7 +57,6 @@ const EMPTY_SECTIONS: InsightsData['sections'] = {
     topScenes: [],
   },
   discovery: {
-    popularArtistsInNicheGenres: [],
     deepUndergroundDrops: [],
   },
 };

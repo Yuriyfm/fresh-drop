@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
+import type { InsightsData } from './domain/insights';
 import type { Release } from './domain/release';
 import { LANGUAGE_STORAGE_KEY } from './i18n';
 
@@ -94,6 +95,7 @@ describe('App', () => {
     const releaseRow = await screen.findByRole('button', { name: 'Open Release One' });
 
     expect(within(releaseRow).getByText('Artist One')).toBeInTheDocument();
+    expect(within(releaseRow).getByText('Artist One')).toHaveAttribute('title', 'Artist One');
     expect(within(releaseRow).getByText('hip hop, rap +1')).toBeInTheDocument();
   });
 
@@ -1435,6 +1437,128 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: 'Как это работает' })).toBeInTheDocument();
     expect(window.localStorage.getItem(LANGUAGE_STORAGE_KEY)).toBe('ru');
   });
+
+  it('reuses loaded insights when returning to the insights page', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = String(input);
+
+      if (url.startsWith('/api/insights')) {
+        return Promise.resolve(makeResponse(makeInsightsData()));
+      }
+
+      return Promise.resolve(makeResponse({
+        items: [makeRelease()],
+        pagination: {
+          page: 1,
+          limit: 20,
+          total: 1,
+          hasNextPage: false,
+        },
+        error: null,
+      }));
+    });
+    window.history.pushState(null, '', '/insights?period=30&type=all');
+
+    render(<App />);
+
+    expect(await screen.findByText('Deep underground drops')).toBeInTheDocument();
+    expect(fetchSpy.mock.calls.filter(([input]) => String(input).startsWith('/api/insights'))).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Releases' }));
+    expect(await screen.findByText('Release One')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Insights' }));
+    expect(await screen.findByText('Deep underground drops')).toBeInTheDocument();
+    expect(fetchSpy.mock.calls.filter(([input]) => String(input).startsWith('/api/insights'))).toHaveLength(1);
+  });
+
+  it('refreshes insights only when the refresh button is clicked', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(makeResponse(makeInsightsData()));
+    window.history.pushState(null, '', '/insights?period=30&type=all');
+
+    render(<App />);
+
+    expect(await screen.findByText('Deep underground drops')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+
+    await waitFor(() => {
+      expect(fetchSpy.mock.calls.filter(([input]) => String(input).startsWith('/api/insights'))).toHaveLength(2);
+    });
+  });
+
+  it('opens a big artist from a small scene on the latest release detail page', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = String(input);
+
+      if (url.startsWith('/api/insights')) {
+        return Promise.resolve(makeResponse(makeInsightsData()));
+      }
+
+      return Promise.resolve(makeResponse({
+        items: [],
+        pagination: {
+          page: 1,
+          limit: 20,
+          total: 0,
+          hasNextPage: false,
+        },
+        error: null,
+      }));
+    });
+    window.history.pushState(null, '', '/insights?period=30&type=all');
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /Scene Star/i }));
+
+    expect(window.location.pathname).toBe('/releases/small-scene-new');
+    expect(window.location.search).toBe('?period=1m&type=all&sort=newest&country=Poland&popularityMin=50');
+    expect(await screen.findByRole('heading', { name: 'New Small Scene Release' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open in Spotify' })).toHaveAttribute(
+      'href',
+      'https://open.spotify.com/album/small-scene-new',
+    );
+    expect(screen.queryByText('Release not loaded')).toBeNull();
+    expect(fetchSpy.mock.calls.filter(([input]) => String(input).startsWith('/api/releases'))).toHaveLength(0);
+  });
+
+  it('opens deep underground insight items as filtered search results instead of unloaded release details', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = String(input);
+
+      if (url.startsWith('/api/insights')) {
+        return Promise.resolve(makeResponse(makeInsightsData()));
+      }
+
+      return Promise.resolve(makeResponse({
+        items: [makeRelease({ id: 'release-underground', title: 'Basement Signal', popularity: 12 })],
+        pagination: {
+          page: 1,
+          limit: 20,
+          total: 1,
+          hasNextPage: false,
+        },
+        error: null,
+      }));
+    });
+    window.history.pushState(null, '', '/insights?period=30&type=all');
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /Basement Signal/i }));
+
+    expect(window.location.pathname).toBe('/');
+    expect(window.location.search).toBe('?period=1m&type=all&sort=newest&popularityMax=20&from=insights&insightId=deep-underground-drops');
+
+    await waitFor(() => {
+      expect(fetchSpy).toHaveBeenLastCalledWith(
+        '/api/releases?period=1m&type=all&sort=newest&page=1&limit=20&popularityMax=20',
+        expect.any(Object),
+      );
+    });
+    expect(await screen.findByText('Basement Signal')).toBeInTheDocument();
+    expect(screen.queryByText('Release not loaded')).toBeNull();
+  });
 });
 
 function makeResponse(body: unknown): Response {
@@ -1474,10 +1598,10 @@ function isReleaseApiBody(body: unknown): body is { items: Release[]; genres?: u
   return typeof body === 'object' && body !== null && 'items' in body && Array.isArray((body as { items?: unknown }).items);
 }
 
-function makeRelease(overrides: Partial<Release> = {}): Release {
+function makeRelease(overrides: Partial<Release> & { artistName?: string } = {}): Release {
   const artist = {
     id: 'artist-1',
-    name: 'Artist One',
+    name: overrides.artistName ?? 'Artist One',
     genres: overrides.genres ?? ['indie pop'],
     country: 'unknown' as const,
     popularity: 70,
@@ -1509,6 +1633,72 @@ function makeReleases(startId: number, count: number): Release[] {
       title: `Release ${id}`,
     });
   });
+}
+
+function makeInsightsData(): InsightsData & { error: null } {
+  const smallSceneRelease = makeRelease({
+    id: 'small-scene-new',
+    title: 'New Small Scene Release',
+    spotifyUrl: 'https://open.spotify.com/album/small-scene-new',
+    country: 'Poland',
+    popularity: 80,
+    releaseDate: '2026-07-06',
+    artistName: 'Scene Star',
+  });
+
+  return {
+    period: 30,
+    type: 'all',
+    generatedAt: '2026-07-07T00:00:00.000Z',
+    sections: {
+      countries: {
+        mostActiveCountries: {
+          byReleases: [],
+          byArtists: [],
+        },
+        rareCountries: [],
+        bigArtistsFromSmallScenes: [
+          {
+            id: 'Scene Star',
+            title: 'Scene Star',
+            description: 'Poland',
+            metric: 'popularity 80 · latest release: New Small Scene Release',
+            query: {
+              releaseId: 'small-scene-new',
+              country: 'Poland',
+              popularityMin: 50,
+            },
+            release: smallSceneRelease,
+          },
+        ],
+        mostDiverseCountries: [],
+      },
+      genres: {
+        mostActiveGenres: [],
+        rareGenreDrops: [],
+        mostMainstreamGenres: [],
+        deepUndergroundGenres: [],
+      },
+      scenes: {
+        topScenes: [],
+      },
+      discovery: {
+        deepUndergroundDrops: [
+          {
+            id: 'release-underground',
+            title: 'Basement Signal',
+            description: 'Unknown · lo-fi',
+            metric: 'Artist One · popularity 12',
+            query: {
+              releaseId: 'release-underground',
+              popularityMax: 20,
+            },
+          },
+        ],
+      },
+    },
+    error: null,
+  };
 }
 
 function scrollToVirtualRelease(releaseNumber: number): void {

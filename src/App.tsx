@@ -135,6 +135,7 @@ function App() {
   const currentSearchStateRef = useRef<ReleaseSearchState>(initialSearchState);
   const currentLanguageRef = useRef<Language>(initialLanguage);
   const lastReleaseRequestKeyRef = useRef<string | null>(null);
+  const insightsCacheRef = useRef<Map<string, InsightsData>>(new Map());
   const t = translations[language];
   const isMobile = viewportWidth < MOBILE_BREAKPOINT;
   const isDesktopSidebar = viewportWidth >= DESKTOP_SIDEBAR_BREAKPOINT;
@@ -324,6 +325,15 @@ function App() {
       return undefined;
     }
 
+    const cacheKey = getInsightsCacheKey({ period: insightsPeriod, type: insightsType });
+    const cachedData = insightsCacheRef.current.get(cacheKey);
+
+    if (cachedData && insightsRetryCount === 0) {
+      setInsightsData(cachedData);
+      setInsightsStatus('success');
+      return undefined;
+    }
+
     const controller = new AbortController();
 
     setInsightsStatus('loading');
@@ -336,6 +346,7 @@ function App() {
       { signal: controller.signal },
     )
       .then((response) => {
+        insightsCacheRef.current.set(cacheKey, response);
         setInsightsData(response);
         setInsightsStatus('success');
       })
@@ -497,7 +508,7 @@ function App() {
         isMobile={isMobile}
         t={t}
         onFiltersChange={updateInsightsFilters}
-        onRetry={() => setInsightsRetryCount((current) => current + 1)}
+        onRetry={refreshInsights}
         onOpenReleases={openSearch}
         onOpenInsight={openInsightItem}
         onLanguageChange={setLanguage}
@@ -787,6 +798,7 @@ function App() {
   function updateInsightsFilters(nextFilters: InsightsFilters): void {
     setInsightsPeriod(nextFilters.period);
     setInsightsType(nextFilters.type);
+    setInsightsRetryCount(0);
   }
 
   function resetFilters(): void {
@@ -825,6 +837,10 @@ function App() {
 
   function retry(): void {
     setRetryCount((current) => current + 1);
+  }
+
+  function refreshInsights(): void {
+    setInsightsRetryCount((current) => current + 1);
   }
 
   function clearSelectedGenres(): void {
@@ -875,19 +891,22 @@ function App() {
   }
 
   function openInsightItem(item: InsightListItem, insightId?: string): void {
-    if (item.query.releaseId && !item.query.country && !item.query.genre) {
+    if (item.query.releaseId && item.release) {
+      const release = item.release;
       const nextPath = getReleasePath(item.query.releaseId, {
         period: getSearchPeriodFromInsightsPeriod(insightsPeriod),
-        genres: [],
-        countries: [],
+        genres: item.query.genre ? [item.query.genre] : [],
+        countries: item.query.country ? [item.query.country] : [],
         popularityMin: item.query.popularityMin,
         popularityMax: item.query.popularityMax,
         type: getSearchTypeFromInsightsType(insightsType),
         sort: 'newest',
       }, language);
 
+      setReleases((current) => mergeReleases(current, [release]));
       window.history.pushState(null, '', nextPath);
       setRoute({ view: 'release', releaseId: item.query.releaseId });
+      window.scrollTo({ top: 0, behavior: 'auto' });
       return;
     }
 
@@ -1068,9 +1087,12 @@ function InsightsPage({
           ]}
           onChange={(value) => onFiltersChange({ ...filters, type: value })}
         />
+        <button type="button" className="secondaryButton insightsRefreshButton" onClick={onRetry} disabled={isLoading}>
+          {isLoading ? t.insights.refreshing : t.insights.refresh}
+        </button>
       </section>
 
-      {isLoading && <InsightsSkeleton />}
+      {isLoading && !data && <InsightsSkeleton />}
 
       {isError && (
         <div className="statePanel" role="alert">
@@ -1082,14 +1104,14 @@ function InsightsPage({
         </div>
       )}
 
-      {!isLoading && !isError && data && !hasItems && (
+      {!isError && data && !hasItems && (
         <div className="statePanel">
           <h2>{t.insights.emptyTitle}</h2>
           <p>{t.insights.emptyDescription}</p>
         </div>
       )}
 
-      {!isLoading && !isError && data && hasItems && (
+      {!isError && data && hasItems && (
         <div className="insightsSections">
           <InsightsSection title={t.insights.sections.countries}>
             <InsightCard
@@ -1120,7 +1142,6 @@ function InsightsPage({
           </InsightsSection>
 
           <InsightsSection title={t.insights.sections.discovery}>
-            <InsightCard id="popular-artists-niche-genres" title={t.insights.cards.popularArtistsNicheGenres.title} description={t.insights.cards.popularArtistsNicheGenres.description} items={data.sections.discovery.popularArtistsInNicheGenres} t={t} onOpenInsight={onOpenInsight} />
             <InsightCard id="deep-underground-drops" title={t.insights.cards.undergroundDrops.title} description={t.insights.cards.undergroundDrops.description} items={data.sections.discovery.deepUndergroundDrops} cta={t.insights.cards.undergroundDrops.cta} t={t} onOpenInsight={onOpenInsight} />
           </InsightsSection>
         </div>
@@ -1709,6 +1730,8 @@ type ReleaseRowProps = {
 };
 
 function ReleaseRow({ isMobile, release, t, onSelect }: ReleaseRowProps) {
+  const artistsLabel = formatArtists(release, t);
+
   return (
     <article className="releaseItem">
       <button type="button" className="releaseRow" onClick={onSelect} aria-label={t.release.openLabel(release.title)}>
@@ -1716,7 +1739,7 @@ function ReleaseRow({ isMobile, release, t, onSelect }: ReleaseRowProps) {
         <span className="releaseInfo">
           <span className="releaseTitle">{release.title}</span>
           <span className="releaseSubtitle">
-            <span className="releaseArtist">{formatArtists(release, t)}</span>
+            <span className="releaseArtist" title={artistsLabel}>{artistsLabel}</span>
             <span className="releaseSubtitleDivider" aria-hidden="true">
               &middot;
             </span>
@@ -2164,6 +2187,10 @@ function getReleaseRequestKey(searchState: ReleaseSearchState & { page: number; 
   });
 }
 
+function getInsightsCacheKey(filters: InsightsFilters): string {
+  return `${filters.period}:${filters.type}`;
+}
+
 function getPeriodLabel(period: ReleasePeriod, t: Translation): string {
   return t.periods[period];
 }
@@ -2581,7 +2608,6 @@ function getInsightsItemsCount(data: InsightsData): number {
     data.sections.genres.mostMainstreamGenres,
     data.sections.genres.deepUndergroundGenres,
     data.sections.scenes.topScenes,
-    data.sections.discovery.popularArtistsInNicheGenres,
     data.sections.discovery.deepUndergroundDrops,
   ].reduce((total, items) => total + items.length, 0);
 }

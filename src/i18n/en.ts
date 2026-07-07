@@ -141,6 +141,8 @@ export const en = {
     loadingErrorTitle: 'Could not load insights',
     loadingErrorDescription: 'Try again without changing your release filters.',
     retry: 'Try again',
+    refresh: 'Refresh',
+    refreshing: 'Refreshing',
     emptyTitle: 'Not enough data for insights yet',
     emptyDescription: 'Try a longer period or run a fresh release sync.',
     noCardData: 'Not enough matching data.',
@@ -189,10 +191,6 @@ export const en = {
       topScenes: {
         title: 'Top scenes this month',
         description: 'The most active country + genre combinations.',
-      },
-      popularArtistsNicheGenres: {
-        title: 'Popular artists in niche genres',
-        description: 'Higher-popularity artists releasing in less common genres.',
       },
       undergroundDrops: {
         title: 'Deep underground drops',

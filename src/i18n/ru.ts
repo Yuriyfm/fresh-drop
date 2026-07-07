@@ -141,6 +141,8 @@ export const ru = {
     loadingErrorTitle: 'Не удалось загрузить инсайты',
     loadingErrorDescription: 'Попробуйте ещё раз, не меняя фильтры релизов.',
     retry: 'Попробовать снова',
+    refresh: 'Обновить',
+    refreshing: 'Обновляем',
     emptyTitle: 'Пока недостаточно данных для инсайтов',
     emptyDescription: 'Попробуйте увеличить период или запустить свежую синхронизацию релизов.',
     noCardData: 'Недостаточно подходящих данных.',
@@ -189,10 +191,6 @@ export const ru = {
       topScenes: {
         title: 'Главные сцены месяца',
         description: 'Самые активные сочетания страны и жанра.',
-      },
-      popularArtistsNicheGenres: {
-        title: 'Популярные артисты в нишевых жанрах',
-        description: 'Артисты с высокой популярностью, выпускающие релизы в менее массовых жанрах.',
       },
       undergroundDrops: {
         title: 'Deep underground-релизы',
