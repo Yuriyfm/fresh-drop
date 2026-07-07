@@ -213,7 +213,8 @@ MVP route:
 * copyright;
 * технические Spotify ID;
 * raw API data.
-* metadata rows со значениями `Unknown`, `null`, `undefined` или пустой строкой.
+* metadata card всегда показывает `release date / artist country / popularity / type`;
+* если metadata-поле отсутствует, `null`, `undefined`, пустое или `unknown`, вместо него показывается текстовая заглушка `Unknown` / `Неизвестно`.
 
 При возврате назад желательно сохранять фильтры, позицию скролла и загруженный список.
 

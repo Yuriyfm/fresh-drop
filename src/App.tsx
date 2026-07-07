@@ -97,6 +97,7 @@ function App() {
   const filterPanelRef = useRef<HTMLElement | null>(null);
   const releaseListRef = useRef<HTMLElement | null>(null);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
+  const isNextPageScheduledRef = useRef(false);
   const searchScrollRestoreRef = useRef<number | null>(null);
   const currentSearchStateRef = useRef<ReleaseSearchState>(initialSearchState);
   const currentLanguageRef = useRef<Language>(initialLanguage);
@@ -222,6 +223,7 @@ function App() {
       { signal: controller.signal },
     )
       .then((response) => {
+        isNextPageScheduledRef.current = false;
         setReleases((current) => (page === 1 ? response.items : mergeReleases(current, response.items)));
         setPagination(response.pagination);
         setGenreOptions(response.genres);
@@ -233,6 +235,7 @@ function App() {
           return;
         }
 
+        isNextPageScheduledRef.current = false;
         setStatus('error');
       });
 
@@ -278,6 +281,15 @@ function App() {
   }, [releases.length, route.view]);
 
   useEffect(() => {
+    function requestNextPage(): void {
+      if (isNextPageScheduledRef.current) {
+        return;
+      }
+
+      isNextPageScheduledRef.current = true;
+      setPage((current) => current + 1);
+    }
+
     const target = loadMoreRef.current;
 
     if (!target || !pagination.hasNextPage || status !== 'success') {
@@ -287,7 +299,7 @@ function App() {
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries.some((entry) => entry.isIntersecting)) {
-          setPage((current) => current + 1);
+          requestNextPage();
         }
       },
       {
@@ -301,6 +313,30 @@ function App() {
       observer.disconnect();
     };
   }, [pagination.hasNextPage, status]);
+
+  useEffect(() => {
+    if (route.view !== 'search' || status !== 'success' || !pagination.hasNextPage) {
+      return;
+    }
+
+    const documentHeight = Math.max(
+      document.documentElement.scrollHeight,
+      document.body.scrollHeight,
+    );
+    const viewportBottom = scrollPosition.top + scrollPosition.height;
+
+    if (
+      scrollPosition.top <= 0
+      || documentHeight === 0
+      || viewportBottom + 360 < documentHeight
+      || isNextPageScheduledRef.current
+    ) {
+      return;
+    }
+
+    isNextPageScheduledRef.current = true;
+    setPage((current) => current + 1);
+  }, [pagination.hasNextPage, route.view, scrollPosition.height, scrollPosition.top, status]);
 
   const summaryFilters = useMemo(
     () =>
@@ -334,11 +370,9 @@ function App() {
       <ReleaseDetail
         isLoading={status === 'loading' || status === 'loadingMore'}
         release={release}
-        language={language}
         isMobile={isMobile}
         t={t}
         onBack={goBackToSearch}
-        onLanguageChange={setLanguage}
       />
     );
   }
@@ -1283,11 +1317,9 @@ function ReleaseCover({ coverUrl, isMobile, title, t }: ReleaseCoverProps) {
 type ReleaseDetailProps = {
   isLoading: boolean;
   release: Release | undefined;
-  language: Language;
   isMobile: boolean;
   t: Translation;
   onBack: () => void;
-  onLanguageChange: (language: Language) => void;
 };
 
 type DetailMetaItem = {
@@ -1295,7 +1327,7 @@ type DetailMetaItem = {
   value: ReactNode;
 };
 
-function ReleaseDetail({ isLoading, release, language, isMobile, t, onBack, onLanguageChange }: ReleaseDetailProps) {
+function ReleaseDetail({ isLoading, release, isMobile, t, onBack }: ReleaseDetailProps) {
   if (!release) {
     return (
       <main className="detailPage">
@@ -1310,30 +1342,31 @@ function ReleaseDetail({ isLoading, release, language, isMobile, t, onBack, onLa
     );
   }
 
-  const detailMetaItems: DetailMetaItem[] = [];
-
-  if (hasMeaningfulText(release.releaseDate)) {
-    detailMetaItems.push({ label: t.release.releaseDate, value: <dd>{release.releaseDate}</dd> });
-  }
-
-  if (hasMeaningfulText(release.country)) {
-    detailMetaItems.push({ label: t.release.country, value: <dd>{release.country}</dd> });
-  }
-
-  if (release.popularity !== null) {
-    detailMetaItems.push({ label: t.release.popularity, value: <dd>{String(release.popularity)}</dd> });
-  }
-
-  if (release.type !== 'unknown') {
-    detailMetaItems.push({
+  const detailMetaItems: DetailMetaItem[] = [
+    {
+      label: t.release.releaseDate,
+      value: <dd>{hasMeaningfulText(release.releaseDate) ? release.releaseDate : t.release.unknown}</dd>,
+    },
+    {
+      label: t.release.country,
+      value: <dd>{hasMeaningfulText(release.country) ? release.country : t.release.unknown}</dd>,
+    },
+    {
+      label: t.release.popularity,
+      value: <dd>{release.popularity === null ? t.release.unknown : String(release.popularity)}</dd>,
+    },
+    {
       label: t.release.type,
-      value: (
-        <dd>
-          <span className="releaseTypeBadge detailMetaBadge">{getReleaseTypeLabel(release.type, t)}</span>
-        </dd>
-      ),
-    });
-  }
+      value:
+        release.type === 'unknown' ? (
+          <dd>{t.release.unknown}</dd>
+        ) : (
+          <dd>
+            <span className="releaseTypeBadge detailMetaBadge">{getReleaseTypeLabel(release.type, t)}</span>
+          </dd>
+        ),
+    },
+  ];
   const knownGenres = getKnownReleaseGenres(release);
 
   return (
@@ -1349,11 +1382,6 @@ function ReleaseDetail({ isLoading, release, language, isMobile, t, onBack, onLa
             )}
           </div>
           <div className="detailContent">
-            {!isMobile && (
-              <div className="detailHeading">
-                <LanguageSwitcher language={language} t={t} onChange={onLanguageChange} />
-              </div>
-            )}
             <h1 className="detailTitle">{release.title}</h1>
             <p className="detailArtist">{formatArtists(release, t)}</p>
             {!isMobile && (

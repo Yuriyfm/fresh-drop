@@ -955,6 +955,69 @@ describe('App', () => {
     );
   });
 
+  it('loads the next page on scroll when the bottom is reached even if the observer does not fire initially', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        makeResponse({
+          items: [makeRelease({ id: 'release-1', title: 'Release One' })],
+          pagination: {
+            page: 1,
+            limit: 20,
+            total: 2,
+            hasNextPage: true,
+          },
+          error: null,
+        }),
+      )
+      .mockResolvedValueOnce(
+        makeResponse({
+          items: [makeRelease({ id: 'release-2', title: 'Release Two' })],
+          pagination: {
+            page: 2,
+            limit: 20,
+            total: 2,
+            hasNextPage: false,
+          },
+          error: null,
+        }),
+      );
+
+    Object.defineProperty(window, 'innerHeight', {
+      configurable: true,
+      value: 900,
+    });
+    Object.defineProperty(document.documentElement, 'scrollHeight', {
+      configurable: true,
+      value: 1200,
+    });
+    Object.defineProperty(document.body, 'scrollHeight', {
+      configurable: true,
+      value: 1200,
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText('Release One')).toBeInTheDocument();
+
+    Object.defineProperty(window, 'scrollY', {
+      configurable: true,
+      value: 320,
+    });
+
+    act(() => {
+      window.dispatchEvent(new Event('scroll'));
+    });
+
+    expect(await screen.findByText('Release Two')).toBeInTheDocument();
+    expect(fetchSpy).toHaveBeenLastCalledWith(
+      expect.stringMatching(
+        /^\/api\/releases\?period=7d&type=all&sort=newest&page=2&limit=20&randomStartSeed=.+/,
+      ),
+      expect.any(Object),
+    );
+  });
+
   it('virtualizes loaded releases without dropping old data', async () => {
     vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(
@@ -1047,7 +1110,7 @@ describe('App', () => {
     expect(screen.getAllByLabelText('Country')[0]).toBeInTheDocument();
   });
 
-  it('hides null popularity in release details instead of showing 0 or Unknown', async () => {
+  it('shows Unknown for null popularity in release details instead of showing 0', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       makeResponse({
         items: [makeRelease({ popularity: null })],
@@ -1065,8 +1128,8 @@ describe('App', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Open Release One' }));
 
-    expect(screen.queryByText('Popularity')).toBeNull();
-    expect(screen.queryByText('Unknown')).toBeNull();
+    expect(screen.getByText('Popularity')).toBeInTheDocument();
+    expect(screen.getAllByText('Unknown').length).toBeGreaterThanOrEqual(1);
     expect(screen.queryByText('0')).not.toBeInTheDocument();
   });
 
@@ -1107,10 +1170,11 @@ describe('App', () => {
       'href',
       'https://open.spotify.com/album/release-1',
     );
-    expect(screen.queryByText('Unknown')).toBeNull();
-    expect(screen.queryByText('Artist country')).toBeNull();
-    expect(screen.queryByText('Popularity')).toBeNull();
-    expect(screen.queryByText('Type')).toBeNull();
+    expect(screen.queryByRole('combobox', { name: 'Language' })).not.toBeInTheDocument();
+    expect(screen.getAllByText('Unknown').length).toBeGreaterThanOrEqual(3);
+    expect(screen.getByText('Artist country')).toBeInTheDocument();
+    expect(screen.getByText('Popularity')).toBeInTheDocument();
+    expect(screen.getByText('Type')).toBeInTheDocument();
     expect(container.querySelector('.detailCoverPlaceholder')).not.toBeNull();
     expect(container.querySelector('.releaseTopBarTitle')).toBeNull();
     expect(window.scrollTo).toHaveBeenCalledWith({
