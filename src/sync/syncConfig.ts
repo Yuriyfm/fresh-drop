@@ -34,13 +34,13 @@ export function getReleaseSyncConfigFromEnv(env: SyncEnv): ReleaseSyncConfig {
 
 export function getSpotifyRequestSchedulerConfigFromEnv(env: SyncEnv): SpotifyRequestSchedulerConfig {
   return {
-    initialRps: normalizePositiveNumber(env.SPOTIFY_INITIAL_RPS, 1, 'SPOTIFY_INITIAL_RPS'),
-    maxRps: normalizePositiveNumber(env.SPOTIFY_MAX_RPS, 2, 'SPOTIFY_MAX_RPS'),
+    initialRps: normalizePositiveNumber(env.SPOTIFY_INITIAL_RPS, 2, 'SPOTIFY_INITIAL_RPS'),
+    maxRps: normalizePositiveNumber(env.SPOTIFY_MAX_RPS, 4, 'SPOTIFY_MAX_RPS'),
     minRps: normalizePositiveNumber(env.SPOTIFY_MIN_RPS, 0.1, 'SPOTIFY_MIN_RPS'),
-    maxConcurrency: normalizePositiveInteger(env.SPOTIFY_MAX_CONCURRENCY, 1, 'SPOTIFY_MAX_CONCURRENCY'),
+    maxConcurrency: normalizePositiveInteger(env.SPOTIFY_MAX_CONCURRENCY, 2, 'SPOTIFY_MAX_CONCURRENCY'),
     rateIncreaseStep: normalizePositiveNumber(env.SPOTIFY_RATE_INCREASE_STEP, 0.2, 'SPOTIFY_RATE_INCREASE_STEP'),
     rateDecreaseFactor: normalizeFactor(env.SPOTIFY_RATE_DECREASE_FACTOR, 0.5, 'SPOTIFY_RATE_DECREASE_FACTOR'),
-    stableWindowMs: normalizeNonNegativeInteger(env.SPOTIFY_RATE_STABLE_WINDOW_MS, 300_000, 'SPOTIFY_RATE_STABLE_WINDOW_MS'),
+    stableWindowMs: normalizeNonNegativeInteger(env.SPOTIFY_RATE_STABLE_WINDOW_MS, 60_000, 'SPOTIFY_RATE_STABLE_WINDOW_MS'),
     retryJitterMs: normalizeNonNegativeInteger(env.SPOTIFY_RETRY_JITTER_MS, 500, 'SPOTIFY_RETRY_JITTER_MS'),
   };
 }

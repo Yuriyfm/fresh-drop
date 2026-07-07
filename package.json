@@ -18,6 +18,7 @@
     "enrich:musicbrainz:artists": "vite-node scripts/enrichMusicBrainzArtists.ts",
     "backfill:musicbrainz": "vite-node scripts/backfillMusicBrainzArtists.ts",
     "repair:musicbrainz:countries": "vite-node scripts/repairMusicBrainzCountries.ts",
+    "wikidata:check": "vite-node scripts/checkWikidataSpotifyArtists.ts",
     "reset:country-data": "vite-node scripts/resetCountryData.ts",
     "cleanup:releases": "vite-node scripts/cleanupReleases.ts",
     "sync:last": "vite-node scripts/printLatestSyncRun.ts",
