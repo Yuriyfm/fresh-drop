@@ -149,6 +149,8 @@ function normalizeReleasesQuery(query: ReleasesApiQuery, currentDate?: Date): No
       genres: normalizeOptionalTextList(query.genres ?? query.genre),
       country: normalizeOptionalText(query.country),
       countries: normalizeOptionalTextList(query.countries ?? query.country),
+      popularityMin: normalizeOptionalBoundedNumber(query.popularityMin),
+      popularityMax: normalizeOptionalBoundedNumber(query.popularityMax),
       type,
       sort,
       page: page.value,
@@ -234,6 +236,20 @@ function normalizeOptionalTextList(value: string | string[] | number | undefined
   );
 
   return normalized.length > 0 ? normalized : undefined;
+}
+
+function normalizeOptionalBoundedNumber(value: string | string[] | number | undefined): number | undefined {
+  if (Array.isArray(value) || value === undefined || value === '') {
+    return undefined;
+  }
+
+  const normalized = typeof value === 'number' ? value : Number(value);
+
+  if (!Number.isFinite(normalized)) {
+    return undefined;
+  }
+
+  return Math.min(Math.max(Math.trunc(normalized), 0), 100);
 }
 
 function isAllowedValue(value: string | number, allowed: readonly ReleasePeriod[]): value is ReleasePeriod;

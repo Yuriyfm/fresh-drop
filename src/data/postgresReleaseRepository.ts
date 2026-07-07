@@ -288,6 +288,65 @@ export class PostgresReleaseRepository implements ReleaseRepository {
     };
   }
 
+  async listInsightsReleases(query: ReleaseQuery): Promise<Release[]> {
+    const filter = buildSqlFilter(query);
+    const itemsResult = await this.pool.query<ReleaseRow>(
+      `
+        select
+          r.spotify_id,
+          r.title,
+          r.type,
+          r.release_date,
+          r.release_date_precision,
+          r.spotify_url,
+          r.cover_url,
+          r.popularity,
+          coalesce(${PRIMARY_ARTIST_COUNTRY_SQL}, r.country) as country,
+          (
+            select coalesce(array_agg(rg.genre order by rg.genre), '{}'::text[])
+            from release_genres rg
+            where rg.release_id = r.id
+          ) as genres,
+          coalesce(
+            json_agg(
+              json_build_object(
+                'spotify_id', a.spotify_id,
+                'name', a.name,
+                'genres',
+                (
+                  select coalesce(array_agg(distinct lower(trim(merged_artist_genre.genre)) order by lower(trim(merged_artist_genre.genre))), '{}'::text[])
+                  from (
+                    select unnest(a.genres) as genre
+                    union all
+                    select genre_item->>'name' as genre
+                    from jsonb_array_elements(coalesce(ae.genres, '[]'::jsonb)) as genre_item
+                  ) as merged_artist_genre
+                  where length(trim(merged_artist_genre.genre)) > 0
+                ),
+                'country', coalesce(nullif(trim(ae.musicbrainz_artist_country), ''), a.country),
+                'popularity', a.popularity,
+                'is_primary', ra.is_primary
+              )
+              order by ra.position
+            ) filter (where a.id is not null),
+            '[]'::json
+          ) as artists
+        from releases r
+        left join release_artists ra on ra.release_id = r.id
+        left join artists a on a.id = ra.artist_id
+        left join artist_enrichment ae
+          on ae.spotify_artist_id = a.spotify_id
+         and ae.match_status = 'matched'
+        ${filter.whereSql}
+        group by r.id
+        ${getOrderBySql(query.sort ?? 'newest')}
+      `,
+      filter.params,
+    );
+
+    return itemsResult.rows.map(mapReleaseRow);
+  }
+
   async listActiveGenres(): Promise<GenreCount[]> {
     const exactResult = await this.pool.query<GenreCountRow>(
       `
@@ -601,6 +660,16 @@ function buildSqlFilter(query: ReleaseQuery): SqlFilter {
   if (type !== 'all') {
     params.push(type);
     where.push(`r.type = $${params.length}`);
+  }
+
+  if (query.popularityMin !== undefined) {
+    params.push(query.popularityMin);
+    where.push(`r.popularity is not null and r.popularity >= $${params.length}`);
+  }
+
+  if (query.popularityMax !== undefined) {
+    params.push(query.popularityMax);
+    where.push(`r.popularity is not null and r.popularity <= $${params.length}`);
   }
 
   return {

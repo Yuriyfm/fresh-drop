@@ -7,6 +7,8 @@ export type FetchReleasesQuery = {
   genres?: string[];
   country?: string;
   countries?: string[];
+  popularityMin?: number;
+  popularityMax?: number;
   type: ReleaseTypeFilter;
   sort: ReleaseSort;
   page: number;
@@ -64,6 +66,8 @@ function toSearchParams(query: FetchReleasesQuery): URLSearchParams {
 
   appendOptionalParams(params, 'genre', query.genres ?? (query.genre ? [query.genre] : []));
   appendOptionalParams(params, 'country', query.countries ?? (query.country ? [query.country] : []));
+  appendOptionalNumberParam(params, 'popularityMin', query.popularityMin);
+  appendOptionalNumberParam(params, 'popularityMax', query.popularityMax);
   appendOptionalParam(params, 'randomStartSeed', query.randomStartSeed);
 
   return params;
@@ -84,5 +88,11 @@ function appendOptionalParam(params: URLSearchParams, name: string, value?: stri
 
   if (normalized) {
     params.set(name, normalized);
+  }
+}
+
+function appendOptionalNumberParam(params: URLSearchParams, name: string, value?: number): void {
+  if (value !== undefined && Number.isFinite(value)) {
+    params.set(name, String(value));
   }
 }

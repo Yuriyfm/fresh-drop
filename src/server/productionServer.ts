@@ -7,6 +7,7 @@ import { PostgresReleaseRepository } from '../data/postgresReleaseRepository';
 import type { ReleaseRepository } from '../data/releaseRepository';
 import { PostgresSyncRunRepository, type SyncRunRepository } from '../data/syncRunRepository';
 import { createInternalErrorResponse, writeJsonResponse } from '../api/httpResponse';
+import { handleGetInsightsRoute } from '../api/insightsRoute';
 import { handleGetReleasesRoute } from '../api/releasesRoute';
 import type { ReleasesApiHandlerOptions } from '../api/releasesApi';
 import { getLatestSyncRunApiResponse } from '../api/syncRunsApi';
@@ -84,6 +85,25 @@ async function handleProductionRequest(
   if (request.method === 'GET' && requestUrl.pathname === '/api/releases') {
     try {
       const result = await handleGetReleasesRoute(options.repository, request.url ?? '/api/releases', options.handlerOptions);
+      writeJsonResponse(response, result);
+    } catch {
+      writeJsonResponse(response, createInternalErrorResponse(), 500);
+    }
+    return;
+  }
+
+  if (request.method === 'GET' && requestUrl.pathname === '/api/insights') {
+    if (!options.repository.listInsightsReleases) {
+      writeJsonResponse(response, createInternalErrorResponse(), 500);
+      return;
+    }
+
+    try {
+      const result = await handleGetInsightsRoute(
+        { listInsightsReleases: options.repository.listInsightsReleases.bind(options.repository) },
+        request.url ?? '/api/insights',
+        options.handlerOptions,
+      );
       writeJsonResponse(response, result);
     } catch {
       writeJsonResponse(response, createInternalErrorResponse(), 500);

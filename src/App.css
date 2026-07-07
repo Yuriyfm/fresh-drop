@@ -75,6 +75,35 @@ body {
   gap: 2px;
 }
 
+.headerNav {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+  color: var(--color-text-tertiary);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.headerNavLink {
+  min-height: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-secondary);
+}
+
+.headerNavLink.isActive {
+  color: var(--color-accent);
+}
+
+.mobileNavButton {
+  min-height: 38px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 12px;
+}
+
 .mobileHeaderActions {
   display: flex;
   gap: 8px;
@@ -102,6 +131,171 @@ body {
 .searchLayout {
   display: grid;
   gap: 18px;
+}
+
+.insightsReturnPanel {
+  margin-bottom: 12px;
+}
+
+.insightsReturnButton {
+  min-height: 36px;
+  border-radius: 999px;
+  font-size: 13px;
+}
+
+.insightsShell {
+  display: grid;
+  gap: 18px;
+}
+
+.insightsFilterBar {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(22, 33, 26, 0.94), rgba(15, 23, 18, 0.98));
+}
+
+.insightsSections,
+.insightsSection {
+  display: grid;
+  gap: 14px;
+}
+
+.insightsSection {
+  padding-top: 4px;
+}
+
+.insightsSection h2 {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: 20px;
+  line-height: 1.2;
+}
+
+.insightsGrid {
+  display: grid;
+  gap: 12px;
+}
+
+.insightCard {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(22, 33, 26, 0.94), rgba(15, 23, 18, 0.98));
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.2);
+}
+
+.insightCardHeader {
+  display: grid;
+  gap: 10px;
+}
+
+.insightCard h3 {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.2;
+}
+
+.insightCard p {
+  margin: 6px 0 0;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.insightModeSwitch {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 14px;
+  background: var(--color-field);
+}
+
+.insightModeSwitch button {
+  min-height: 34px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+}
+
+.insightModeSwitch button.isActive {
+  background: var(--color-accent);
+  color: #07110a;
+}
+
+.insightItemList {
+  display: grid;
+  gap: 8px;
+}
+
+.insightItem {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  align-items: start;
+  width: 100%;
+  min-height: 64px;
+  padding: 10px 12px;
+  border: 1px solid rgba(63, 86, 73, 0.68);
+  border-radius: 12px;
+  background: rgba(10, 16, 12, 0.54);
+  color: var(--color-text-primary);
+  text-align: left;
+}
+
+.insightItem strong,
+.insightItem small {
+  display: block;
+  min-width: 0;
+}
+
+.insightItem strong {
+  overflow-wrap: anywhere;
+  line-height: 1.25;
+  white-space: normal;
+}
+
+.insightItem small {
+  margin-top: 3px;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.insightMetric {
+  justify-self: start;
+  color: var(--color-accent);
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.insightEmpty {
+  margin: 0;
+  color: var(--color-text-tertiary);
+  font-size: 13px;
+}
+
+.insightCta {
+  justify-self: start;
+  min-height: 36px;
+  border-radius: 999px;
+  font-size: 12px;
 }
 
 .searchSidebar,
@@ -1947,6 +2141,25 @@ dd {
     align-items: start;
   }
 
+  .insightsFilterBar {
+    grid-template-columns: minmax(0, 1fr) minmax(220px, 320px);
+    align-items: end;
+  }
+
+  .insightsGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .insightItem {
+    grid-template-columns: minmax(0, 1fr) minmax(96px, auto);
+    align-items: center;
+  }
+
+  .insightMetric {
+    justify-self: end;
+    text-align: right;
+  }
+
   .desktopSecondaryFilters {
     grid-template-columns: minmax(0, 1fr) minmax(220px, 280px);
     align-items: start;
@@ -2058,5 +2271,9 @@ dd {
 
   .searchLayout.isDesktopSidebar .releaseList {
     padding-top: 0;
+  }
+
+  .insightsGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }

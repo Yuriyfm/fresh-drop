@@ -47,6 +47,7 @@ export type ReleaseRepository = {
   findCachedArtists(ids: string[], options: { maxAgeDays: number; now?: Date }): Promise<Map<string, ArtistSummary>>;
   saveReleaseMarkets(ids: string[], market: string, seenAt?: Date): Promise<void>;
   findReleases(query: ReleaseQuery): Promise<ReleasePage>;
+  listInsightsReleases?(query: ReleaseQuery): Promise<Release[]>;
   listActiveGenres(): Promise<GenreCount[]>;
   listActiveCountries(): Promise<CountryCount[]>;
   cleanupOldReleases(currentDate: Date, retentionDays: number): Promise<{ deleted: number }>;
@@ -128,6 +129,8 @@ export class InMemoryReleaseRepository implements ReleaseRepository {
       genres: query.genres,
       country: query.country,
       countries: query.countries,
+      popularityMin: query.popularityMin,
+      popularityMax: query.popularityMax,
       type: query.type ?? 'all',
       sort: query.sort ?? 'newest',
       currentDate,
@@ -149,6 +152,24 @@ export class InMemoryReleaseRepository implements ReleaseRepository {
         hasNextPage: offset + items.length < filtered.length,
       },
     };
+  }
+
+  async listInsightsReleases(query: ReleaseQuery): Promise<Release[]> {
+    const currentDate = query.currentDate ?? new Date();
+    const filtered = sortReleasesForSearch(filterReleases(Array.from(this.releasesBySpotifyId.values()), {
+      period: query.period,
+      genre: query.genre,
+      genres: query.genres,
+      country: query.country,
+      countries: query.countries,
+      popularityMin: query.popularityMin,
+      popularityMax: query.popularityMax,
+      type: query.type ?? 'all',
+      sort: query.sort ?? 'newest',
+      currentDate,
+    }), query.sort ?? 'newest');
+
+    return filtered.map(cloneRelease);
   }
 
   async listActiveGenres(): Promise<GenreCount[]> {

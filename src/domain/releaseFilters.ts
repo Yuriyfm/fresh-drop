@@ -9,6 +9,7 @@ export function filterReleases(releases: Release[], filters: ReleaseFilters): Re
       matchesPeriod(release, filters.period, filters.currentDate) &&
       matchesGenres(release, filters.genres ?? toGenreArray(filters.genre)) &&
       matchesCountries(release, filters.countries ?? toCountryArray(filters.country)) &&
+      matchesPopularity(release, filters.popularityMin, filters.popularityMax) &&
       matchesType(release, filters.type)
     );
   });
@@ -96,6 +97,22 @@ export function matchesCountries(release: Release, countries?: string[]): boolea
 
 export function matchesType(release: Release, type: ReleaseTypeFilter): boolean {
   return type === 'all' || release.type === type;
+}
+
+export function matchesPopularity(release: Release, min?: number, max?: number): boolean {
+  if (min === undefined && max === undefined) {
+    return true;
+  }
+
+  if (release.popularity === null) {
+    return false;
+  }
+
+  if (min !== undefined && release.popularity < min) {
+    return false;
+  }
+
+  return max === undefined || release.popularity <= max;
 }
 
 function getPeriodDays(period: ReleasePeriod): number {

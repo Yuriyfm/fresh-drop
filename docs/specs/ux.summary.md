@@ -28,7 +28,8 @@ Mobile-first веб-приложение для поиска свежих рел
 
 1. Главная страница поиска.
 2. Страница релиза: `/releases/:id`.
-3. How it works overlay на search page.
+3. Страница Insights: `/insights`.
+4. How it works overlay на search page.
 
 ## Главная страница
 
@@ -59,6 +60,14 @@ Last 7 days
 * известные артисты с новыми релизами.
 
 Не перегружать overview аналитикой.
+
+## Insights
+
+`/insights` — discovery-страница, которая помогает перейти в обычную выдачу через статистические срезы: страны, жанры, сцены country+genre и underground-релизы.
+
+Страница mobile-first, выглядит как обычная лента/сетка карточек, а не full-screen wrapped-формат. Вверху есть глобальные фильтры `Last 7 days / Last 14 days / Last 30 days` и `All / Singles / Albums`.
+
+Каждый кликабельный пункт ведёт в основную выдачу с применёнными query-фильтрами и `from=insights`. На выдаче с этим параметром показывается компактная кнопка `Back to Insights`.
 
 ## Фильтры MVP
 

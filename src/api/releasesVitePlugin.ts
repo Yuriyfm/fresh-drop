@@ -5,6 +5,7 @@ import { PostgresReleaseRepository } from '../data/postgresReleaseRepository';
 import type { ReleaseRepository } from '../data/releaseRepository';
 import { PostgresSyncRunRepository, type SyncRunRepository } from '../data/syncRunRepository';
 import { createInternalErrorResponse, writeJsonResponse } from './httpResponse';
+import { handleGetInsightsRoute } from './insightsRoute';
 import { handleGetReleasesRoute } from './releasesRoute';
 import type { ReleasesApiHandlerOptions } from './releasesApi';
 import { getLatestSyncRunApiResponse } from './syncRunsApi';
@@ -54,6 +55,22 @@ export function createReleasesApiMiddleware(
 
     if (request.method === 'GET' && pathname === '/api/releases') {
       void handleGetReleasesRoute(repository, request.url ?? '/api/releases', handlerOptions)
+        .then((result) => writeJsonResponse(response, result))
+        .catch(() => writeJsonResponse(response, createInternalErrorResponse(), 500));
+      return;
+    }
+
+    if (request.method === 'GET' && pathname === '/api/insights') {
+      if (!repository.listInsightsReleases) {
+        writeJsonResponse(response, createInternalErrorResponse(), 500);
+        return;
+      }
+
+      void handleGetInsightsRoute(
+        { listInsightsReleases: repository.listInsightsReleases.bind(repository) },
+        request.url ?? '/api/insights',
+        handlerOptions,
+      )
         .then((result) => writeJsonResponse(response, result))
         .catch(() => writeJsonResponse(response, createInternalErrorResponse(), 500));
       return;

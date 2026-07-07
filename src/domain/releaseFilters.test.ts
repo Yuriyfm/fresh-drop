@@ -115,6 +115,26 @@ describe('filterReleases', () => {
 
     expect(result.map((release) => release.id)).toEqual(['missing-genres']);
   });
+
+  it('filters by popularity bounds without treating null as zero', () => {
+    const releases = [
+      makeRelease({ id: 'too-low', popularity: 19 }),
+      makeRelease({ id: 'match', popularity: 50 }),
+      makeRelease({ id: 'too-high', popularity: 81 }),
+      makeRelease({ id: 'unknown', popularity: null }),
+    ];
+
+    const result = filterReleases(releases, {
+      period: '14d',
+      popularityMin: 20,
+      popularityMax: 80,
+      type: 'all',
+      sort: 'newest',
+      currentDate,
+    });
+
+    expect(result.map((release) => release.id)).toEqual(['match']);
+  });
 });
 
 describe('sortReleasesForSearch', () => {

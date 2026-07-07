@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import './App.css';
 import type { CountryOption, GenreOption } from './api/releasesApi';
+import type { InsightListItem, InsightsData, InsightsPeriod, InsightsType } from './domain/insights';
 import type { Release, ReleasePeriod, ReleaseSort, ReleaseTypeFilter } from './domain/release';
 import { NO_GENRE_FILTER } from './domain/topLevelGenres';
 import {
@@ -10,6 +11,7 @@ import {
   type Language,
   type Translation,
 } from './i18n';
+import { fetchInsights } from './insightsClient';
 import { fetchReleases } from './releasesClient';
 
 const PAGE_LIMIT = 20;
@@ -24,8 +26,14 @@ const DEFAULT_SEARCH_STATE: ReleaseSearchState = {
   period: '7d',
   genres: [],
   countries: [],
+  popularityMin: undefined,
+  popularityMax: undefined,
   type: 'all',
   sort: 'newest',
+};
+const DEFAULT_INSIGHTS_FILTERS: InsightsFilters = {
+  period: 30,
+  type: 'all',
 };
 
 type PaginationState = {
@@ -42,6 +50,9 @@ type AppRoute =
       view: 'search';
     }
   | {
+      view: 'insights';
+    }
+  | {
       view: 'release';
       releaseId: string;
     };
@@ -50,8 +61,21 @@ type ReleaseSearchState = {
   period: ReleasePeriod;
   genres: string[];
   countries: string[];
+  popularityMin?: number;
+  popularityMax?: number;
   type: ReleaseTypeFilter;
   sort: ReleaseSort;
+};
+
+type InsightsFilters = {
+  period: InsightsPeriod;
+  type: InsightsType;
+};
+
+type InsightsReturnState = {
+  period: InsightsPeriod;
+  type: InsightsType;
+  insightId?: string;
 };
 
 type ScrollPosition = {
@@ -68,14 +92,23 @@ type VirtualReleaseRange = {
 
 function App() {
   const [initialSearchState] = useState<ReleaseSearchState>(() => getInitialReleaseSearchState(window.location));
+  const [initialInsightsFilters] = useState<InsightsFilters>(() => getInitialInsightsFilters(window.location));
   const [initialLanguage] = useState<Language>(() => getInitialLanguage(window.location));
   const [route, setRoute] = useState<AppRoute>(() => getRouteFromPath(window.location.pathname));
   const [language, setLanguage] = useState<Language>(initialLanguage);
   const [period, setPeriod] = useState<ReleasePeriod>(initialSearchState.period);
   const [genres, setGenres] = useState<string[]>(initialSearchState.genres);
   const [countries, setCountries] = useState<string[]>(initialSearchState.countries);
+  const [popularityMin, setPopularityMin] = useState<number | undefined>(initialSearchState.popularityMin);
+  const [popularityMax, setPopularityMax] = useState<number | undefined>(initialSearchState.popularityMax);
   const [type, setType] = useState<ReleaseTypeFilter>(initialSearchState.type);
   const [sort, setSort] = useState<ReleaseSort>(initialSearchState.sort);
+  const [insightsPeriod, setInsightsPeriod] = useState<InsightsPeriod>(initialInsightsFilters.period);
+  const [insightsType, setInsightsType] = useState<InsightsType>(initialInsightsFilters.type);
+  const [insightsData, setInsightsData] = useState<InsightsData | null>(null);
+  const [insightsStatus, setInsightsStatus] = useState<RequestStatus>('loading');
+  const [insightsRetryCount, setInsightsRetryCount] = useState(0);
+  const [insightsReturn, setInsightsReturn] = useState<InsightsReturnState | null>(() => getInsightsReturnState(window.location));
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
   const [randomStartSeed] = useState(() => createRandomStartSeed());
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
@@ -101,6 +134,7 @@ function App() {
   const searchScrollRestoreRef = useRef<number | null>(null);
   const currentSearchStateRef = useRef<ReleaseSearchState>(initialSearchState);
   const currentLanguageRef = useRef<Language>(initialLanguage);
+  const lastReleaseRequestKeyRef = useRef<string | null>(null);
   const t = translations[language];
   const isMobile = viewportWidth < MOBILE_BREAKPOINT;
   const isDesktopSidebar = viewportWidth >= DESKTOP_SIDEBAR_BREAKPOINT;
@@ -111,13 +145,13 @@ function App() {
   }, [language]);
 
   useEffect(() => {
-    window.localStorage.setItem(RELEASE_SEARCH_STORAGE_KEY, JSON.stringify({ period, genres, countries, type, sort }));
-  }, [countries, genres, period, sort, type]);
+    window.localStorage.setItem(RELEASE_SEARCH_STORAGE_KEY, JSON.stringify({ period, genres, countries, popularityMin, popularityMax, type, sort }));
+  }, [countries, genres, period, popularityMax, popularityMin, sort, type]);
 
   useEffect(() => {
-    currentSearchStateRef.current = { period, genres, countries, type, sort };
+    currentSearchStateRef.current = { period, genres, countries, popularityMin, popularityMax, type, sort };
     currentLanguageRef.current = language;
-  }, [countries, genres, language, period, sort, type]);
+  }, [countries, genres, language, period, popularityMax, popularityMin, sort, type]);
 
   useEffect(() => {
     if (!('scrollRestoration' in window.history)) {
@@ -136,6 +170,7 @@ function App() {
     function handlePopState(event: PopStateEvent): void {
       const nextRoute = getRouteFromPath(window.location.pathname);
       const nextSearchState = getInitialReleaseSearchState(window.location);
+      const nextInsightsFilters = getInitialInsightsFilters(window.location);
       const nextLanguage = getInitialLanguage(window.location);
       const shouldPreserveLoadedSearch =
         nextRoute.view === 'search' &&
@@ -148,6 +183,9 @@ function App() {
         applySearchState(nextSearchState, nextLanguage);
       }
 
+      setInsightsPeriod(nextInsightsFilters.period);
+      setInsightsType(nextInsightsFilters.type);
+      setInsightsReturn(getInsightsReturnState(window.location));
       setRoute(nextRoute);
     }
 
@@ -163,13 +201,26 @@ function App() {
       return;
     }
 
-    const nextUrl = buildSearchUrl({ period, genres, countries, type, sort }, language);
+    const nextUrl = buildSearchUrl({ period, genres, countries, popularityMin, popularityMax, type, sort }, language, insightsReturn);
     const currentUrl = `${window.location.pathname}${window.location.search}`;
 
     if (currentUrl !== nextUrl) {
       window.history.replaceState(null, '', nextUrl);
     }
-  }, [countries, genres, language, period, route.view, sort, type]);
+  }, [countries, genres, insightsReturn, language, period, popularityMax, popularityMin, route.view, sort, type]);
+
+  useEffect(() => {
+    if (route.view !== 'insights') {
+      return;
+    }
+
+    const nextUrl = buildInsightsUrl({ period: insightsPeriod, type: insightsType }, language);
+    const currentUrl = `${window.location.pathname}${window.location.search}`;
+
+    if (currentUrl !== nextUrl) {
+      window.history.replaceState(null, '', nextUrl);
+    }
+  }, [insightsPeriod, insightsType, language, route.view]);
 
   useEffect(() => {
     function updateViewport(): void {
@@ -205,6 +256,28 @@ function App() {
   }, [isFiltersOpen, isSettingsOpen, isHowItWorksOpen]);
 
   useEffect(() => {
+    if (route.view !== 'search') {
+      return undefined;
+    }
+
+    const requestKey = getReleaseRequestKey({
+      period,
+      genres,
+      countries,
+      popularityMin,
+      popularityMax,
+      type,
+      sort,
+      page,
+      retryCount,
+    });
+
+    if (lastReleaseRequestKeyRef.current === requestKey && status === 'success') {
+      return undefined;
+    }
+
+    lastReleaseRequestKeyRef.current = requestKey;
+
     const controller = new AbortController();
 
     setStatus(page === 1 ? 'loading' : 'loadingMore');
@@ -214,11 +287,13 @@ function App() {
         period,
         genres,
         countries,
+        popularityMin,
+        popularityMax,
         type,
         sort,
         page,
         limit: PAGE_LIMIT,
-        randomStartSeed: isDefaultSearch(period, genres, countries, type, sort) ? randomStartSeed : undefined,
+        randomStartSeed: isDefaultSearch(period, genres, countries, popularityMin, popularityMax, type, sort) ? randomStartSeed : undefined,
       },
       { signal: controller.signal },
     )
@@ -242,7 +317,40 @@ function App() {
     return () => {
       controller.abort();
     };
-  }, [countries, genres, page, period, randomStartSeed, retryCount, sort, type]);
+  }, [countries, genres, page, period, popularityMax, popularityMin, randomStartSeed, retryCount, route.view, sort, type]);
+
+  useEffect(() => {
+    if (route.view !== 'insights') {
+      return undefined;
+    }
+
+    const controller = new AbortController();
+
+    setInsightsStatus('loading');
+
+    fetchInsights(
+      {
+        period: insightsPeriod,
+        type: insightsType,
+      },
+      { signal: controller.signal },
+    )
+      .then((response) => {
+        setInsightsData(response);
+        setInsightsStatus('success');
+      })
+      .catch((error: unknown) => {
+        if (isAbortError(error)) {
+          return;
+        }
+
+        setInsightsStatus('error');
+      });
+
+    return () => {
+      controller.abort();
+    };
+  }, [insightsPeriod, insightsRetryCount, insightsType, route.view]);
 
   useEffect(() => {
     function updateScrollPosition(): void {
@@ -344,9 +452,10 @@ function App() {
         ...genres.map((selectedGenre) => getGenreLabel(selectedGenre, t)),
         getPeriodLabel(period, t),
         ...getCompactCountrySummary(countries),
+        getPopularitySummary(popularityMin, popularityMax),
         type === 'all' ? undefined : getReleaseTypeFilterLabel(type, t),
       ].filter(isPresent),
-    [countries, genres, period, t, type],
+    [countries, genres, period, popularityMax, popularityMin, t, type],
   );
   const summaryText = t.results.summary(pagination.total, summaryFilters);
   const isInitialLoading = status === 'loading' && releases.length === 0;
@@ -354,11 +463,11 @@ function App() {
   const isSummaryUpdating = status === 'loading' || status === 'loadingMore';
   const desktopSummaryText = isInitialLoading ? t.results.loadingSummary(summaryFilters) : summaryText;
   const mobileSummaryChips = useMemo(
-    () => getMobileSummaryChips(period, genres, countries, type, t),
-    [countries, genres, period, t, type],
+    () => getMobileSummaryChips(period, genres, countries, popularityMin, popularityMax, type, t),
+    [countries, genres, period, popularityMax, popularityMin, t, type],
   );
   const mobileResultsCountText = isInitialLoading ? t.results.loading : getResultsCountText(pagination.total, t);
-  const hasActiveSearchFilters = hasActiveFilters(period, genres, countries, type);
+  const hasActiveSearchFilters = hasActiveFilters(period, genres, countries, popularityMin, popularityMax, type);
   const hasActiveSheetFilters = genres.length > 0 || countries.length > 0 || type !== 'all';
   const virtualRange = getVirtualReleaseRange(releases.length, scrollPosition, releaseListRef.current);
   const visibleReleases = releases.slice(virtualRange.startIndex, virtualRange.endIndex);
@@ -377,6 +486,25 @@ function App() {
     );
   }
 
+  if (route.view === 'insights') {
+    return (
+      <InsightsPage
+        data={insightsData}
+        isLoading={insightsStatus === 'loading'}
+        isError={insightsStatus === 'error'}
+        filters={{ period: insightsPeriod, type: insightsType }}
+        language={language}
+        isMobile={isMobile}
+        t={t}
+        onFiltersChange={updateInsightsFilters}
+        onRetry={() => setInsightsRetryCount((current) => current + 1)}
+        onOpenReleases={openSearch}
+        onOpenInsight={openInsightItem}
+        onLanguageChange={setLanguage}
+      />
+    );
+  }
+
   return (
     <main className="appShell">
       <header className={isMobile ? 'appHeader isMobileHeader' : 'appHeader'}>
@@ -384,10 +512,18 @@ function App() {
           {!isMobile && <p className="eyebrow">{t.app.eyebrow}</p>}
           <h1>{t.app.title}</h1>
           {!isMobile && <p>{t.app.description}</p>}
+          {!isMobile && <HeaderNav active="releases" onOpenReleases={openSearch} onOpenInsights={openInsights} />}
         </div>
         <div className={isMobile ? 'headerActions mobileHeaderActions' : 'headerActions'}>
           {isMobile ? (
             <>
+              <button
+                type="button"
+                className="secondaryButton mobileNavButton"
+                onClick={openInsights}
+              >
+                Insights
+              </button>
               <button
                 type="button"
                 className="iconButton headerIconButton"
@@ -419,6 +555,14 @@ function App() {
           )}
         </div>
       </header>
+
+      {insightsReturn && (
+        <section className="insightsReturnPanel">
+          <button type="button" className="ghostButton insightsReturnButton" onClick={backToInsights}>
+            &larr; Back to Insights
+          </button>
+        </section>
+      )}
 
       <div className={isDesktopSidebar ? 'searchLayout isDesktopSidebar' : 'searchLayout'}>
         <aside className="searchSidebar">
@@ -640,10 +784,17 @@ function App() {
     resetResults();
   }
 
+  function updateInsightsFilters(nextFilters: InsightsFilters): void {
+    setInsightsPeriod(nextFilters.period);
+    setInsightsType(nextFilters.type);
+  }
+
   function resetFilters(): void {
     setPeriod(DEFAULT_SEARCH_STATE.period);
     setGenres(DEFAULT_SEARCH_STATE.genres);
     setCountries(DEFAULT_SEARCH_STATE.countries);
+    setPopularityMin(DEFAULT_SEARCH_STATE.popularityMin);
+    setPopularityMax(DEFAULT_SEARCH_STATE.popularityMax);
     setType(DEFAULT_SEARCH_STATE.type);
     setSort(DEFAULT_SEARCH_STATE.sort);
     window.localStorage.setItem(RELEASE_SEARCH_STORAGE_KEY, JSON.stringify(DEFAULT_SEARCH_STATE));
@@ -694,16 +845,84 @@ function App() {
     resetResults();
   }
 
+  function openSearch(): void {
+    const nextUrl = buildSearchUrl({ period, genres, countries, popularityMin, popularityMax, type, sort }, language, insightsReturn);
+
+    window.history.pushState(null, '', nextUrl);
+    setRoute({ view: 'search' });
+    window.scrollTo({ top: 0, behavior: 'auto' });
+  }
+
+  function openInsights(): void {
+    const nextUrl = buildInsightsUrl({ period: insightsPeriod, type: insightsType }, language);
+
+    window.history.pushState(null, '', nextUrl);
+    setRoute({ view: 'insights' });
+    setInsightsReturn(null);
+    window.scrollTo({ top: 0, behavior: 'auto' });
+  }
+
+  function backToInsights(): void {
+    const nextFilters = insightsReturn ? { period: insightsReturn.period, type: insightsReturn.type } : { period: insightsPeriod, type: insightsType };
+    const nextUrl = buildInsightsUrl(nextFilters, language);
+
+    setInsightsPeriod(nextFilters.period);
+    setInsightsType(nextFilters.type);
+    setInsightsReturn(null);
+    window.history.pushState(null, '', nextUrl);
+    setRoute({ view: 'insights' });
+    window.scrollTo({ top: 0, behavior: 'auto' });
+  }
+
+  function openInsightItem(item: InsightListItem, insightId?: string): void {
+    if (item.query.releaseId && !item.query.country && !item.query.genre) {
+      const nextPath = getReleasePath(item.query.releaseId, {
+        period: getSearchPeriodFromInsightsPeriod(insightsPeriod),
+        genres: [],
+        countries: [],
+        popularityMin: item.query.popularityMin,
+        popularityMax: item.query.popularityMax,
+        type: getSearchTypeFromInsightsType(insightsType),
+        sort: 'newest',
+      }, language);
+
+      window.history.pushState(null, '', nextPath);
+      setRoute({ view: 'release', releaseId: item.query.releaseId });
+      return;
+    }
+
+    const nextSearchState: ReleaseSearchState = {
+      period: getSearchPeriodFromInsightsPeriod(insightsPeriod),
+      genres: item.query.genre ? [item.query.genre] : [],
+      countries: item.query.country ? [item.query.country] : [],
+      popularityMin: item.query.popularityMin,
+      popularityMax: item.query.popularityMax,
+      type: getSearchTypeFromInsightsType(insightsType),
+      sort: 'newest',
+    };
+    const nextReturnState: InsightsReturnState = {
+      period: insightsPeriod,
+      type: insightsType,
+      insightId,
+    };
+
+    applySearchState(nextSearchState, language);
+    setInsightsReturn(nextReturnState);
+    window.history.pushState(null, '', buildSearchUrl(nextSearchState, language, nextReturnState));
+    setRoute({ view: 'search' });
+    window.scrollTo({ top: 0, behavior: 'auto' });
+  }
+
   function openRelease(release: Release): void {
     window.history.replaceState(
       {
         searchScrollY: window.scrollY,
       },
       '',
-      buildSearchUrl({ period, genres, countries, type, sort }, language),
+      buildSearchUrl({ period, genres, countries, popularityMin, popularityMax, type, sort }, language, insightsReturn),
     );
 
-    const nextPath = getReleasePath(release.id, { period, genres, countries, type, sort }, language);
+    const nextPath = getReleasePath(release.id, { period, genres, countries, popularityMin, popularityMax, type, sort }, language);
 
     window.history.pushState(null, '', nextPath);
     setRoute({ view: 'release', releaseId: release.id });
@@ -723,7 +942,7 @@ function App() {
       return;
     }
 
-    window.history.pushState(null, '', buildSearchUrl({ period, genres, countries, type, sort }, language));
+    window.history.pushState(null, '', buildSearchUrl({ period, genres, countries, popularityMin, popularityMax, type, sort }, language, insightsReturn));
     setRoute({ view: 'search' });
   }
 
@@ -748,11 +967,263 @@ function App() {
     setPeriod(nextSearchState.period);
     setGenres(nextSearchState.genres);
     setCountries(nextSearchState.countries);
+    setPopularityMin(nextSearchState.popularityMin);
+    setPopularityMax(nextSearchState.popularityMax);
     setType(nextSearchState.type);
     setSort(nextSearchState.sort);
     setLanguage(nextLanguage);
     setPage(1);
   }
+}
+
+type HeaderNavProps = {
+  active: 'releases' | 'insights';
+  onOpenReleases: () => void;
+  onOpenInsights: () => void;
+};
+
+function HeaderNav({ active, onOpenReleases, onOpenInsights }: HeaderNavProps) {
+  return (
+    <nav className="headerNav" aria-label="Primary navigation">
+      <button type="button" className={active === 'releases' ? 'headerNavLink isActive' : 'headerNavLink'} onClick={onOpenReleases}>
+        Releases
+      </button>
+      <span aria-hidden="true">|</span>
+      <button type="button" className={active === 'insights' ? 'headerNavLink isActive' : 'headerNavLink'} onClick={onOpenInsights}>
+        Insights
+      </button>
+    </nav>
+  );
+}
+
+type InsightsPageProps = {
+  data: InsightsData | null;
+  filters: InsightsFilters;
+  isLoading: boolean;
+  isError: boolean;
+  isMobile: boolean;
+  language: Language;
+  t: Translation;
+  onFiltersChange: (filters: InsightsFilters) => void;
+  onRetry: () => void;
+  onOpenReleases: () => void;
+  onOpenInsight: (item: InsightListItem, insightId?: string) => void;
+  onLanguageChange: (language: Language) => void;
+};
+
+function InsightsPage({
+  data,
+  filters,
+  isLoading,
+  isError,
+  isMobile,
+  language,
+  t,
+  onFiltersChange,
+  onRetry,
+  onOpenReleases,
+  onOpenInsight,
+  onLanguageChange,
+}: InsightsPageProps) {
+  const hasItems = data ? getInsightsItemsCount(data) > 0 : false;
+
+  return (
+    <main className="appShell insightsShell">
+      <header className={isMobile ? 'appHeader isMobileHeader' : 'appHeader'}>
+        <div className="headerBrand">
+          <h1>Insights</h1>
+          <p>Explore fresh music through countries, genres and scenes.</p>
+          {!isMobile && <HeaderNav active="insights" onOpenReleases={onOpenReleases} onOpenInsights={() => undefined} />}
+        </div>
+        <div className={isMobile ? 'headerActions mobileHeaderActions' : 'headerActions'}>
+          {isMobile ? (
+            <button type="button" className="secondaryButton mobileNavButton" onClick={onOpenReleases}>
+              Releases
+            </button>
+          ) : (
+            <LanguageSwitcher language={language} t={t} onChange={onLanguageChange} />
+          )}
+        </div>
+      </header>
+
+      <section className="insightsFilterBar" aria-label="Insights filters">
+        <SegmentedControl
+          label="Period"
+          value={String(filters.period)}
+          options={[
+            { value: '7', label: 'Last 7 days' },
+            { value: '14', label: 'Last 14 days' },
+            { value: '30', label: 'Last 30 days' },
+          ]}
+          onChange={(value) => onFiltersChange({ ...filters, period: Number(value) as InsightsPeriod })}
+        />
+        <SegmentedControl
+          label="Type"
+          value={filters.type}
+          options={[
+            { value: 'all', label: 'All' },
+            { value: 'single', label: 'Singles' },
+            { value: 'album', label: 'Albums' },
+          ]}
+          onChange={(value) => onFiltersChange({ ...filters, type: value })}
+        />
+      </section>
+
+      {isLoading && <InsightsSkeleton />}
+
+      {isError && (
+        <div className="statePanel" role="alert">
+          <h2>Could not load insights</h2>
+          <p>Try again without changing your release filters.</p>
+          <button type="button" onClick={onRetry}>
+            Try again
+          </button>
+        </div>
+      )}
+
+      {!isLoading && !isError && data && !hasItems && (
+        <div className="statePanel">
+          <h2>Not enough data for insights yet</h2>
+          <p>Try a longer period or run a fresh release sync.</p>
+        </div>
+      )}
+
+      {!isLoading && !isError && data && hasItems && (
+        <div className="insightsSections">
+          <InsightsSection title="Countries">
+            <InsightCard
+              id="most-active-countries"
+              title="Most active countries"
+              description="Countries with the most fresh releases in the selected period."
+              items={data.sections.countries.mostActiveCountries.byReleases}
+              alternateItems={data.sections.countries.mostActiveCountries.byArtists}
+              alternateLabel="By artists"
+              defaultLabel="By releases"
+              onOpenInsight={onOpenInsight}
+            />
+            <InsightCard id="rare-countries" title="Rare countries in new releases" description="Fresh releases from countries that rarely appear in the catalog." items={data.sections.countries.rareCountries} onOpenInsight={onOpenInsight} />
+            <InsightCard id="big-artists-small-scenes" title="Big artists from small scenes" description="Popular artists releasing from countries with a smaller number of fresh releases." items={data.sections.countries.bigArtistsFromSmallScenes} onOpenInsight={onOpenInsight} />
+            <InsightCard id="most-diverse-countries" title="Most diverse countries" description="Countries with the widest genre variety in the selected period." items={data.sections.countries.mostDiverseCountries} onOpenInsight={onOpenInsight} />
+          </InsightsSection>
+
+          <InsightsSection title="Genres">
+            <InsightCard id="most-active-genres" title="Most active genres" description="Genres with the most fresh releases in the selected period." items={data.sections.genres.mostActiveGenres} onOpenInsight={onOpenInsight} />
+            <InsightCard id="rare-genre-drops" title="Rare genre drops" description="Fresh releases in genres that rarely appear in the catalog." items={data.sections.genres.rareGenreDrops} onOpenInsight={onOpenInsight} />
+            <InsightCard id="mainstream-genres" title="Most mainstream genres" description="Genres where fresh releases mostly come from higher-popularity artists." items={data.sections.genres.mostMainstreamGenres} onOpenInsight={onOpenInsight} />
+            <InsightCard id="deep-underground-genres" title="Deep underground genres" description="Genres where fresh releases mostly come from low-popularity artists." items={data.sections.genres.deepUndergroundGenres} onOpenInsight={onOpenInsight} />
+          </InsightsSection>
+
+          <InsightsSection title="Scenes">
+            <InsightCard id="top-scenes" title="Top scenes this month" description="The most active country + genre combinations." items={data.sections.scenes.topScenes} onOpenInsight={onOpenInsight} />
+          </InsightsSection>
+
+          <InsightsSection title="Discovery">
+            <InsightCard id="popular-artists-niche-genres" title="Popular artists in niche genres" description="Higher-popularity artists releasing in less common genres." items={data.sections.discovery.popularArtistsInNicheGenres} onOpenInsight={onOpenInsight} />
+            <InsightCard id="deep-underground-drops" title="Deep underground drops" description="Fresh releases from artists with very low Spotify popularity." items={data.sections.discovery.deepUndergroundDrops} cta="Explore underground drops" onOpenInsight={onOpenInsight} />
+          </InsightsSection>
+        </div>
+      )}
+    </main>
+  );
+}
+
+function InsightsSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="insightsSection">
+      <h2>{title}</h2>
+      <div className="insightsGrid">{children}</div>
+    </section>
+  );
+}
+
+type InsightCardProps = {
+  id: string;
+  title: string;
+  description: string;
+  items: InsightListItem[];
+  alternateItems?: InsightListItem[];
+  defaultLabel?: string;
+  alternateLabel?: string;
+  cta?: string;
+  onOpenInsight: (item: InsightListItem, insightId?: string) => void;
+};
+
+function InsightCard({
+  id,
+  title,
+  description,
+  items,
+  alternateItems,
+  defaultLabel = 'Primary',
+  alternateLabel = 'Alternate',
+  cta,
+  onOpenInsight,
+}: InsightCardProps) {
+  const [mode, setMode] = useState<'default' | 'alternate'>('default');
+  const visibleItems = mode === 'alternate' && alternateItems ? alternateItems : items;
+  const ctaItem = visibleItems[0];
+
+  return (
+    <article className="insightCard" id={id}>
+      <div className="insightCardHeader">
+        <div>
+          <h3>{title}</h3>
+          <p>{description}</p>
+        </div>
+        {alternateItems && (
+          <div className="insightModeSwitch" role="group" aria-label={title}>
+            <button type="button" className={mode === 'default' ? 'isActive' : undefined} onClick={() => setMode('default')}>
+              {defaultLabel}
+            </button>
+            <button type="button" className={mode === 'alternate' ? 'isActive' : undefined} onClick={() => setMode('alternate')}>
+              {alternateLabel}
+            </button>
+          </div>
+        )}
+      </div>
+      {visibleItems.length > 0 ? (
+        <div className="insightItemList">
+          {visibleItems.map((item) => (
+            <button type="button" className="insightItem" key={item.id} onClick={() => onOpenInsight(item, id)}>
+              <span>
+                <strong>{item.title}</strong>
+                {item.description && <small>{item.description}</small>}
+              </span>
+              <span className="insightMetric">{item.metric}</span>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <p className="insightEmpty">Not enough matching data.</p>
+      )}
+      {cta && ctaItem && (
+        <button type="button" className="ghostButton insightCta" onClick={() => onOpenInsight({ ...ctaItem, query: { popularityMax: 20 } }, id)}>
+          {cta}
+        </button>
+      )}
+    </article>
+  );
+}
+
+function InsightsSkeleton() {
+  return (
+    <div className="insightsSections" aria-hidden="true">
+      {[0, 1, 2].map((section) => (
+        <section className="insightsSection" key={section}>
+          <div className="skeletonLine titleLine" />
+          <div className="insightsGrid">
+            {[0, 1, 2].map((card) => (
+              <div className="insightCard skeletonCard" key={card}>
+                <div className="skeletonLine titleLine" />
+                <div className="skeletonLine" />
+                <div className="skeletonLine" />
+              </div>
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
 }
 
 type PeriodFilterProps = {
@@ -1634,19 +2105,29 @@ function hasActiveFilters(
   period: ReleasePeriod,
   genres: string[],
   countries: string[],
+  popularityMin: number | undefined,
+  popularityMax: number | undefined,
   type: ReleaseTypeFilter,
 ): boolean {
-  return period !== '7d' || genres.length > 0 || countries.length > 0 || type !== 'all';
+  return period !== '7d' || genres.length > 0 || countries.length > 0 || popularityMin !== undefined || popularityMax !== undefined || type !== 'all';
 }
 
 function isDefaultSearch(
   period: ReleasePeriod,
   genres: string[],
   countries: string[],
+  popularityMin: number | undefined,
+  popularityMax: number | undefined,
   type: ReleaseTypeFilter,
   sort: ReleaseSort,
 ): boolean {
-  return period === '7d' && genres.length === 0 && countries.length === 0 && type === 'all' && sort === 'newest';
+  return period === '7d'
+    && genres.length === 0
+    && countries.length === 0
+    && popularityMin === undefined
+    && popularityMax === undefined
+    && type === 'all'
+    && sort === 'newest';
 }
 
 function areSearchStatesEqual(left: ReleaseSearchState, right: ReleaseSearchState): boolean {
@@ -1654,6 +2135,8 @@ function areSearchStatesEqual(left: ReleaseSearchState, right: ReleaseSearchStat
     left.period === right.period &&
     left.type === right.type &&
     left.sort === right.sort &&
+    left.popularityMin === right.popularityMin &&
+    left.popularityMax === right.popularityMax &&
     areStringArraysEqual(left.genres, right.genres) &&
     areStringArraysEqual(left.countries, right.countries)
   );
@@ -1661,6 +2144,20 @@ function areSearchStatesEqual(left: ReleaseSearchState, right: ReleaseSearchStat
 
 function areStringArraysEqual(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function getReleaseRequestKey(searchState: ReleaseSearchState & { page: number; retryCount: number }): string {
+  return JSON.stringify({
+    period: searchState.period,
+    genres: searchState.genres,
+    countries: searchState.countries,
+    popularityMin: searchState.popularityMin,
+    popularityMax: searchState.popularityMax,
+    type: searchState.type,
+    sort: searchState.sort,
+    page: searchState.page,
+    retryCount: searchState.retryCount,
+  });
 }
 
 function getPeriodLabel(period: ReleasePeriod, t: Translation): string {
@@ -1679,6 +2176,22 @@ function getReleaseSortLabel(sort: ReleaseSort, t: Translation): string {
   return t.sorts[sort === 'less-popular' ? 'lessPopular' : sort];
 }
 
+function getPopularitySummary(popularityMin?: number, popularityMax?: number): string | undefined {
+  if (popularityMin !== undefined && popularityMax !== undefined) {
+    return `Popularity ${popularityMin}-${popularityMax}`;
+  }
+
+  if (popularityMin !== undefined) {
+    return `Popularity ${popularityMin}+`;
+  }
+
+  if (popularityMax !== undefined) {
+    return `Popularity <= ${popularityMax}`;
+  }
+
+  return undefined;
+}
+
 function getResultsCountText(count: number, t: Translation): string {
   const formattedCount = new Intl.NumberFormat().format(count);
 
@@ -1689,6 +2202,8 @@ function getMobileSummaryChips(
   period: ReleasePeriod,
   genres: string[],
   countries: string[],
+  popularityMin: number | undefined,
+  popularityMax: number | undefined,
   type: ReleaseTypeFilter,
   t: Translation,
 ): string[] {
@@ -1696,6 +2211,7 @@ function getMobileSummaryChips(
     getPeriodLabel(period, t),
     ...genres.map((genre) => getGenreLabel(genre, t)),
     ...countries,
+    getPopularitySummary(popularityMin, popularityMax),
     type === 'all' ? undefined : getReleaseTypeFilterLabel(type, t),
   ].filter(isPresent);
 }
@@ -1714,6 +2230,8 @@ function getStoredReleaseSearchState(storage: Storage = window.localStorage): Re
       period: isReleasePeriod(parsedValue.period) ? parsedValue.period : DEFAULT_SEARCH_STATE.period,
       genres: getStoredGenres(parsedValue),
       countries: getStoredCountries(parsedValue),
+      popularityMin: normalizePopularityQueryValue(parsedValue.popularityMin),
+      popularityMax: normalizePopularityQueryValue(parsedValue.popularityMax),
       type: isReleaseTypeFilter(parsedValue.type) ? parsedValue.type : DEFAULT_SEARCH_STATE.type,
       sort: isReleaseSort(parsedValue.sort) ? parsedValue.sort : DEFAULT_SEARCH_STATE.sort,
     };
@@ -1744,15 +2262,39 @@ function getInitialReleaseSearchState(location: Location, storage: Storage = win
   const rawPeriod = searchParams.get('period');
   const rawType = searchParams.get('type');
   const rawSort = searchParams.get('sort');
-  const rawCountry = searchParams.get('country');
   const genres = getUrlGenres(searchParams);
 
   return {
     period: isReleasePeriod(rawPeriod) ? rawPeriod : storedState.period,
     genres: genres ?? storedState.genres,
     countries: getUrlCountries(searchParams) ?? storedState.countries,
+    popularityMin: normalizePopularityQueryValue(searchParams.get('popularityMin')) ?? storedState.popularityMin,
+    popularityMax: normalizePopularityQueryValue(searchParams.get('popularityMax')) ?? storedState.popularityMax,
     type: isReleaseTypeFilter(rawType) ? rawType : storedState.type,
     sort: isReleaseSort(rawSort) ? rawSort : storedState.sort,
+  };
+}
+
+function getInitialInsightsFilters(location: Location): InsightsFilters {
+  const searchParams = new URLSearchParams(location.search);
+
+  return {
+    period: normalizeInsightsPeriod(searchParams.get('period')) ?? DEFAULT_INSIGHTS_FILTERS.period,
+    type: normalizeInsightsType(searchParams.get('type')) ?? DEFAULT_INSIGHTS_FILTERS.type,
+  };
+}
+
+function getInsightsReturnState(location: Location): InsightsReturnState | null {
+  const searchParams = new URLSearchParams(location.search);
+
+  if (searchParams.get('from') !== 'insights') {
+    return null;
+  }
+
+  return {
+    period: getInsightsPeriodFromSearchPeriod(searchParams.get('period')) ?? DEFAULT_INSIGHTS_FILTERS.period,
+    type: getInsightsTypeFromSearchType(searchParams.get('type')) ?? DEFAULT_INSIGHTS_FILTERS.type,
+    insightId: searchParams.get('insightId') ?? undefined,
   };
 }
 
@@ -1823,6 +2365,30 @@ function isReleaseSort(value: unknown): value is ReleaseSort {
   return value === 'newest' || value === 'oldest' || value === 'popular' || value === 'less-popular';
 }
 
+function normalizeInsightsPeriod(value: unknown): InsightsPeriod | undefined {
+  const normalized = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
+
+  return normalized === 7 || normalized === 14 || normalized === 30 ? normalized : undefined;
+}
+
+function normalizeInsightsType(value: unknown): InsightsType | undefined {
+  return value === 'all' || value === 'single' || value === 'album' ? value : undefined;
+}
+
+function normalizePopularityQueryValue(value: unknown): number | undefined {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+
+  const normalized = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
+
+  if (!Number.isFinite(normalized)) {
+    return undefined;
+  }
+
+  return Math.min(Math.max(Math.trunc(normalized), 0), 100);
+}
+
 function createRandomStartSeed(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
@@ -1889,11 +2455,11 @@ function getReleasePath(
   return `${RELEASE_ROUTE_PREFIX}${encodeURIComponent(releaseId)}${buildSearchQuery(searchState, language)}`;
 }
 
-function buildSearchUrl(searchState: ReleaseSearchState, language: Language): string {
-  return `/${buildSearchQuery(searchState, language)}`;
+function buildSearchUrl(searchState: ReleaseSearchState, language: Language, insightsReturnState: InsightsReturnState | null = null): string {
+  return `/${buildSearchQuery(searchState, language, insightsReturnState)}`;
 }
 
-function buildSearchQuery(searchState: ReleaseSearchState, language: Language): string {
+function buildSearchQuery(searchState: ReleaseSearchState, language: Language, insightsReturnState: InsightsReturnState | null = null): string {
   const params = new URLSearchParams({
     period: searchState.period,
     type: searchState.type,
@@ -1916,6 +2482,21 @@ function buildSearchQuery(searchState: ReleaseSearchState, language: Language): 
     }
   });
 
+  if (searchState.popularityMin !== undefined) {
+    params.set('popularityMin', String(searchState.popularityMin));
+  }
+
+  if (searchState.popularityMax !== undefined) {
+    params.set('popularityMax', String(searchState.popularityMax));
+  }
+
+  if (insightsReturnState) {
+    params.set('from', 'insights');
+    if (insightsReturnState.insightId) {
+      params.set('insightId', insightsReturnState.insightId);
+    }
+  }
+
   if (language !== 'en') {
     params.set('lang', language);
   }
@@ -1923,6 +2504,72 @@ function buildSearchQuery(searchState: ReleaseSearchState, language: Language): 
   const query = params.toString();
 
   return query ? `?${query}` : '';
+}
+
+function buildInsightsUrl(filters: InsightsFilters, language: Language): string {
+  const params = new URLSearchParams({
+    period: String(filters.period),
+    type: filters.type,
+  });
+
+  if (language !== 'en') {
+    params.set('lang', language);
+  }
+
+  return `/insights?${params}`;
+}
+
+function getSearchPeriodFromInsightsPeriod(period: InsightsPeriod): ReleasePeriod {
+  if (period === 7) {
+    return '7d';
+  }
+
+  if (period === 14) {
+    return '14d';
+  }
+
+  return '1m';
+}
+
+function getInsightsPeriodFromSearchPeriod(period: string | null): InsightsPeriod | undefined {
+  if (period === '7d') {
+    return 7;
+  }
+
+  if (period === '14d') {
+    return 14;
+  }
+
+  if (period === '1m') {
+    return 30;
+  }
+
+  return undefined;
+}
+
+function getSearchTypeFromInsightsType(type: InsightsType): ReleaseTypeFilter {
+  return type;
+}
+
+function getInsightsTypeFromSearchType(type: string | null): InsightsType | undefined {
+  return type === 'all' || type === 'single' || type === 'album' ? type : undefined;
+}
+
+function getInsightsItemsCount(data: InsightsData): number {
+  return [
+    data.sections.countries.mostActiveCountries.byReleases,
+    data.sections.countries.mostActiveCountries.byArtists,
+    data.sections.countries.rareCountries,
+    data.sections.countries.bigArtistsFromSmallScenes,
+    data.sections.countries.mostDiverseCountries,
+    data.sections.genres.mostActiveGenres,
+    data.sections.genres.rareGenreDrops,
+    data.sections.genres.mostMainstreamGenres,
+    data.sections.genres.deepUndergroundGenres,
+    data.sections.scenes.topScenes,
+    data.sections.discovery.popularArtistsInNicheGenres,
+    data.sections.discovery.deepUndergroundDrops,
+  ].reduce((total, items) => total + items.length, 0);
 }
 
 function getCompactCountrySummary(countries: string[]): string[] {
@@ -1934,6 +2581,10 @@ function getCompactCountrySummary(countries: string[]): string[] {
 }
 
 function getRouteFromPath(pathname: string): AppRoute {
+  if (pathname === '/insights') {
+    return { view: 'insights' };
+  }
+
   if (!pathname.startsWith(RELEASE_ROUTE_PREFIX)) {
     return { view: 'search' };
   }

@@ -22,6 +22,9 @@ describe('createReleasesApiMiddleware', () => {
       genre: undefined,
       genres: undefined,
       country: undefined,
+      countries: undefined,
+      popularityMin: undefined,
+      popularityMax: undefined,
       type: 'all',
       sort: 'newest',
       page: 2,
@@ -34,6 +37,7 @@ describe('createReleasesApiMiddleware', () => {
     expect(JSON.parse(response.body)).toEqual({
       items: [],
       genres: [],
+      countries: [],
       pagination: {
         page: 1,
         limit: 20,
