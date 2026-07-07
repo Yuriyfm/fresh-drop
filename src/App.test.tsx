@@ -1110,6 +1110,36 @@ describe('App', () => {
     expect(screen.getAllByLabelText('Country')[0]).toBeInTheDocument();
   });
 
+  it('shows the missing country option first in the country filter', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      makeResponse({
+        items: [
+          makeRelease({ id: 'release-1', title: 'Release One', country: 'unknown' }),
+          makeRelease({ id: 'release-2', title: 'Release Two', country: 'Germany' }),
+        ],
+        countries: [
+          { name: 'unknown', releaseCount: 1 },
+          { name: 'Germany', releaseCount: 1 },
+        ],
+        pagination: {
+          page: 1,
+          limit: 20,
+          total: 2,
+          hasNextPage: false,
+        },
+        error: null,
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByText('Release One')).toBeInTheDocument();
+    const countryOptions = screen.getAllByRole('checkbox', { name: /No country|Germany/ });
+
+    expect(countryOptions[0]).toHaveTextContent('No country');
+    expect(countryOptions[1]).toHaveTextContent('Germany');
+  });
+
   it('shows Unknown for null popularity in release details instead of showing 0', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       makeResponse({

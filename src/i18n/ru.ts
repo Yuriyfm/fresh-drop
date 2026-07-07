@@ -24,6 +24,7 @@ export const ru = {
     sorting: 'Сортировка',
     allGenres: 'Все жанры',
     noGenre: 'Без жанра',
+    noCountry: 'Без страны',
     searchGenres: 'Поиск жанров',
     searchCountry: 'Поиск страны',
     selectedCountries: 'Выбранные страны',

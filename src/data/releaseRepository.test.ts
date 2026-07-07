@@ -203,9 +203,25 @@ describe('InMemoryReleaseRepository', () => {
     await repository.cleanupOldReleases(new Date('2026-07-01T12:00:00.000Z'), 30);
 
     await expect(repository.listActiveGenres()).resolves.toEqual([
+      { genre: '__no_genre__', releaseCount: 1, kind: 'missing' },
       { genre: 'ambient', releaseCount: 1, kind: 'general' },
       { genre: 'techno', releaseCount: 2, kind: 'general' },
-      { genre: '__no_genre__', releaseCount: 1, kind: 'missing' },
+    ]);
+  });
+
+  it('lists missing country first with release counts', async () => {
+    const repository = new InMemoryReleaseRepository();
+
+    await repository.saveReleases([
+      makeRelease({ id: 'unknown-country', country: 'unknown' }),
+      makeRelease({ id: 'germany', country: 'Germany' }),
+      makeRelease({ id: 'sweden', country: 'Sweden' }),
+    ]);
+
+    await expect(repository.listActiveCountries()).resolves.toEqual([
+      { country: 'unknown', releaseCount: 1 },
+      { country: 'Germany', releaseCount: 1 },
+      { country: 'Sweden', releaseCount: 1 },
     ]);
   });
 });

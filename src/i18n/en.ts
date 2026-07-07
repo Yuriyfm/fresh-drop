@@ -24,6 +24,7 @@ export const en = {
     sorting: 'Sorting',
     allGenres: 'All genres',
     noGenre: 'No genre',
+    noCountry: 'No country',
     searchGenres: 'Search genres',
     searchCountry: 'Search country',
     selectedCountries: 'Selected countries',

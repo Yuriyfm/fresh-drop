@@ -335,8 +335,8 @@ export class PostgresReleaseRepository implements ReleaseRepository {
       : [];
 
     return [
-      ...generalGenres,
       ...missingGenre,
+      ...generalGenres,
       ...exactGenres.filter((option) => !generalGenres.some((general) => general.genre === option.genre)),
     ];
   }
@@ -354,35 +354,33 @@ export class PostgresReleaseRepository implements ReleaseRepository {
             r.country as release_country
           from releases r
         ) country_source
-        where (
-          country_source.musicbrainz_country is not null
-          and trim(country_source.musicbrainz_country) <> ''
-          and lower(trim(country_source.musicbrainz_country)) <> 'unknown'
-        ) or (
-          country_source.release_country is not null
-          and trim(country_source.release_country) <> ''
-          and lower(trim(country_source.release_country)) <> 'unknown'
-        )
         group by country_source.musicbrainz_country, country_source.release_country
         order by country_source.musicbrainz_country asc nulls last, country_source.release_country asc nulls last
       `,
     );
 
     const counts = new Map<string, number>();
+    let missingCountryCount = 0;
 
     for (const row of result.rows) {
       const country = normalizeCountryName(row.musicbrainz_country) ?? normalizeCountryName(row.release_country);
 
       if (!country) {
+        missingCountryCount += row.release_count;
         continue;
       }
 
       counts.set(country, (counts.get(country) ?? 0) + row.release_count);
     }
 
-    return Array.from(counts.entries())
+    const missingCountry = missingCountryCount > 0
+      ? [{ country: 'unknown', releaseCount: missingCountryCount }]
+      : [];
+    const knownCountries = Array.from(counts.entries())
       .map(([country, releaseCount]) => ({ country, releaseCount }))
       .sort((left, right) => left.country.localeCompare(right.country));
+
+    return [...missingCountry, ...knownCountries];
   }
 
   async cleanupOldReleases(currentDate: Date, retentionDays: number): Promise<{ deleted: number }> {
@@ -576,11 +574,27 @@ function buildSqlFilter(query: ReleaseQuery): SqlFilter {
   }
 
   if (countries.length > 0) {
-    const countryFilterValues = Array.from(new Set(countries.flatMap(getCountryFilterVariants)));
+    const hasUnknownCountryFilter = countries.some(isUnknownCountryFilter);
+    const countryFilterValues = Array.from(new Set(countries.filter((country) => !isUnknownCountryFilter(country)).flatMap(getCountryFilterVariants)));
+    const countryClauses: string[] = [];
 
     if (countryFilterValues.length > 0) {
       params.push(countryFilterValues);
-      where.push(`lower(trim(coalesce(${PRIMARY_ARTIST_COUNTRY_SQL}, r.country))) = any($${params.length}::text[])`);
+      countryClauses.push(`lower(trim(coalesce(${PRIMARY_ARTIST_COUNTRY_SQL}, r.country))) = any($${params.length}::text[])`);
+    }
+
+    if (hasUnknownCountryFilter) {
+      countryClauses.push(`
+        (
+          coalesce(${PRIMARY_ARTIST_COUNTRY_SQL}, r.country) is null
+          or trim(coalesce(${PRIMARY_ARTIST_COUNTRY_SQL}, r.country)) = ''
+          or lower(trim(coalesce(${PRIMARY_ARTIST_COUNTRY_SQL}, r.country))) = 'unknown'
+        )
+      `);
+    }
+
+    if (countryClauses.length > 0) {
+      where.push(`(${countryClauses.join(' or ')})`);
     }
   }
 
@@ -704,6 +718,10 @@ function normalizeTextFilter(value?: string): string {
 
 function normalizeTextFilters(values?: string[]): string[] {
   return Array.from(new Set((values ?? []).map(normalizeTextFilter).filter(Boolean)));
+}
+
+function isUnknownCountryFilter(country: string): boolean {
+  return normalizeTextFilter(country) === 'unknown';
 }
 
 function normalizeGenreFilters(genres: string[]): string[] {

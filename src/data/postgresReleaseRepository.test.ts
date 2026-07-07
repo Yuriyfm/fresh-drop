@@ -367,7 +367,10 @@ describeWithPostgres('PostgresReleaseRepository', () => {
 
     expect(result.items.map((release) => release.id)).toEqual(['fresh']);
     expect(links.rows[0].total).toBe(1);
-    expect(genreCounts).toEqual([{ genre: 'pop', releaseCount: 1, kind: 'general' }]);
+    expect(genreCounts).toEqual([
+      { genre: '__no_genre__', releaseCount: 1, kind: 'missing' },
+      { genre: 'pop', releaseCount: 1, kind: 'general' },
+    ]);
   });
 
   it('backs active genre options with materialized release genres', async () => {
@@ -419,9 +422,29 @@ describeWithPostgres('PostgresReleaseRepository', () => {
     ]);
 
     await expect(repository.listActiveCountries()).resolves.toEqual([
+      { country: 'unknown', releaseCount: 1 },
       { country: 'Germany', releaseCount: 2 },
       { country: 'Sweden', releaseCount: 1 },
     ]);
+  });
+
+  it('filters releases by missing country', async () => {
+    const germanyArtist = makeArtist({ id: 'artist-de', country: 'Germany' });
+
+    await repository.saveReleases([
+      makeRelease({ id: 'unknown-country', country: 'unknown' }),
+      makeRelease({ id: 'known-country', country: 'Germany', artists: [germanyArtist], primaryArtist: germanyArtist }),
+    ]);
+
+    const result = await repository.findReleases({
+      period: '1m',
+      countries: ['unknown'],
+      type: 'all',
+      sort: 'newest',
+      currentDate: new Date('2026-07-01T12:00:00.000Z'),
+    });
+
+    expect(result.items.map((release) => release.id)).toEqual(['unknown-country']);
   });
 
   it('normalizes active countries and excludes city-level MusicBrainz areas', async () => {

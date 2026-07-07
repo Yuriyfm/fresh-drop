@@ -176,25 +176,32 @@ export class InMemoryReleaseRepository implements ReleaseRepository {
       ? [{ genre: NO_GENRE_FILTER, releaseCount: missingGenreCount, kind: 'missing' as const }]
       : [];
 
-    return [...generalGenres, ...missingGenre, ...exactGenres];
+    return [...missingGenre, ...generalGenres, ...exactGenres];
   }
 
   async listActiveCountries(): Promise<CountryCount[]> {
     const counts = new Map<string, number>();
+    let missingCountryCount = 0;
 
     for (const release of this.releasesBySpotifyId.values()) {
       const country = normalizeCountryOption(release.country);
 
       if (!country) {
+        missingCountryCount += 1;
         continue;
       }
 
       counts.set(country, (counts.get(country) ?? 0) + 1);
     }
 
-    return Array.from(counts.entries())
+    const missingCountry = missingCountryCount > 0
+      ? [{ country: 'unknown', releaseCount: missingCountryCount }]
+      : [];
+    const knownCountries = Array.from(counts.entries())
       .map(([country, releaseCount]) => ({ country, releaseCount }))
       .sort((left, right) => left.country.localeCompare(right.country));
+
+    return [...missingCountry, ...knownCountries];
   }
 
   async cleanupOldReleases(currentDate: Date, retentionDays: number): Promise<{ deleted: number }> {

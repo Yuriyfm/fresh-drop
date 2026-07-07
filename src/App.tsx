@@ -942,7 +942,7 @@ type CountryFilterProps = {
 function CountryFilter({ selectedCountries, options, t, onChange }: CountryFilterProps) {
   const [query, setQuery] = useState('');
   const normalizedQuery = query.trim().toLowerCase();
-  const visibleOptions = options.filter((option) => option.name.toLowerCase().includes(normalizedQuery));
+  const visibleOptions = options.filter((option) => getCountryLabel(option.name, t).toLowerCase().includes(normalizedQuery));
   const visibleSelectedCountries = selectedCountries.slice(0, MAX_VISIBLE_SELECTED_GENRES);
   const hiddenSelectedCountriesCount = Math.max(selectedCountries.length - visibleSelectedCountries.length, 0);
 
@@ -957,7 +957,7 @@ function CountryFilter({ selectedCountries, options, t, onChange }: CountryFilte
             <div className="selectedGenreChips" aria-label={t.filters.selectedCountries}>
               {visibleSelectedCountries.map((country) => (
                 <button type="button" className="genreChip" key={country} onClick={() => toggleCountry(country)}>
-                  {country} x
+                  {getCountryLabel(country, t)} x
                 </button>
               ))}
               {hiddenSelectedCountriesCount > 0 && <span className="genreChip genreChipOverflow">+{hiddenSelectedCountriesCount}</span>}
@@ -996,7 +996,7 @@ function CountryFilter({ selectedCountries, options, t, onChange }: CountryFilte
                 <span className={isSelected ? 'genreCheckbox isChecked' : 'genreCheckbox'} aria-hidden="true">
                   <span className="genreCheckboxMark" />
                 </span>
-                <span className="genreOptionLabel">{option.name}</span>
+                <span className="genreOptionLabel">{getCountryLabel(option.name, t)}</span>
                 <span className="genreCount">{option.releaseCount}</span>
               </button>
             );
@@ -1875,6 +1875,10 @@ function isPresent(value: string | undefined): value is string {
 
 function getGenreLabel(genre: string, t: Translation): string {
   return genre === NO_GENRE_FILTER ? t.filters.noGenre : genre;
+}
+
+function getCountryLabel(country: string, t: Translation): string {
+  return country.trim().toLowerCase() === 'unknown' ? t.filters.noCountry : country;
 }
 
 function getReleasePath(
