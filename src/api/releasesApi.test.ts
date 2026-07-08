@@ -31,6 +31,7 @@ describe('getReleasesApiResponse', () => {
       period: '7d',
       genre: undefined,
       genres: undefined,
+      excludedGenres: undefined,
       country: undefined,
       countries: undefined,
       type: 'all',
@@ -68,6 +69,7 @@ describe('getReleasesApiResponse', () => {
       period: 'today',
       genre: undefined,
       genres: undefined,
+      excludedGenres: undefined,
       country: undefined,
       countries: undefined,
       type: 'all',
@@ -117,6 +119,29 @@ describe('getReleasesApiResponse', () => {
       },
       error: null,
     });
+  });
+
+  it('passes excluded genre filters to the repository', async () => {
+    const repository = new InMemoryReleaseRepository();
+
+    await repository.saveReleases([
+      makeRelease({ id: 'kept', releaseDate: '2026-06-30', genres: ['deep techno'] }),
+      makeRelease({ id: 'excluded', releaseDate: '2026-06-30', genres: ['melodic techno'] }),
+    ]);
+
+    const response = await getReleasesApiResponse(
+      repository,
+      {
+        period: '7d',
+        genre: 'techno',
+        excludeGenre: 'melodic techno',
+        type: 'all',
+        sort: 'newest',
+      },
+      { currentDate: new Date('2026-07-01T12:00:00.000Z') },
+    );
+
+    expect(response.items.map((release) => release.id)).toEqual(['kept']);
   });
 
   it.each([

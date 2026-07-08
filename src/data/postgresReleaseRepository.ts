@@ -590,6 +590,7 @@ function buildSqlFilter(query: ReleaseQuery): SqlFilter {
     'r.release_date <= $1::date',
   ];
   const genres = normalizeGenreFilters(query.genres ?? (query.genre ? [query.genre] : []));
+  const excludedGenres = normalizeGenreFilters(query.excludedGenres ?? []);
   const countries = normalizeTextFilters(query.countries ?? (query.country ? [query.country] : []));
   const type = query.type ?? 'all';
 
@@ -630,6 +631,45 @@ function buildSqlFilter(query: ReleaseQuery): SqlFilter {
     }
 
     where.push(`(${genreClauses.join(' or ')})`);
+  }
+
+  if (excludedGenres.length > 0) {
+    const selectedExcludedGenres = excludedGenres.filter((genre) => !isNoGenreFilter(genre));
+    const hasNoGenreFilter = excludedGenres.some(isNoGenreFilter);
+    const excludedGenreClauses: string[] = [];
+
+    if (selectedExcludedGenres.length > 0) {
+      params.push(selectedExcludedGenres);
+      excludedGenreClauses.push(`
+        not exists (
+          select 1
+          from release_genres rg
+          where rg.release_id = r.id
+            and exists (
+              select 1
+              from unnest($${params.length}::text[]) as selected(genre)
+              where rg.genre = selected.genre
+                 or (
+                   selected.genre = any($${params.length + 1}::text[])
+                   and rg.genre like '%' || selected.genre || '%'
+                 )
+            )
+        )
+      `);
+      params.push(TOP_LEVEL_GENRES);
+    }
+
+    if (hasNoGenreFilter) {
+      excludedGenreClauses.push(`
+        exists (
+          select 1
+          from release_genres rg
+          where rg.release_id = r.id
+        )
+      `);
+    }
+
+    where.push(`(${excludedGenreClauses.join(' and ')})`);
   }
 
   if (countries.length > 0) {

@@ -8,6 +8,7 @@ export function filterReleases(releases: Release[], filters: ReleaseFilters): Re
     return (
       matchesPeriod(release, filters.period, filters.currentDate) &&
       matchesGenres(release, filters.genres ?? toGenreArray(filters.genre)) &&
+      matchesExcludedGenres(release, filters.excludedGenres) &&
       matchesCountries(release, filters.countries ?? toCountryArray(filters.country)) &&
       matchesPopularity(release, filters.popularityMin, filters.popularityMax) &&
       matchesType(release, filters.type)
@@ -70,6 +71,20 @@ export function matchesGenres(release: Release, genres?: string[]): boolean {
     return true;
   }
 
+  return releaseMatchesAnyGenre(release, normalizedGenres);
+}
+
+export function matchesExcludedGenres(release: Release, genres?: string[]): boolean {
+  const normalizedGenres = normalizeGenreFilters(genres);
+
+  if (normalizedGenres.length === 0) {
+    return true;
+  }
+
+  return !releaseMatchesAnyGenre(release, normalizedGenres);
+}
+
+function releaseMatchesAnyGenre(release: Release, normalizedGenres: string[]): boolean {
   const releaseGenres = release.genres.map(normalizeGenreText).filter(Boolean);
 
   return normalizedGenres.some((genre) => {

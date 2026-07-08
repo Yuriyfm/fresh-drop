@@ -193,6 +193,38 @@ describe('App', () => {
     });
   });
 
+  it('sends excluded genres to the API and blocks them in the include genre list', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.resolve(
+      makeResponse({
+        items: [makeRelease({ genres: ['techno', 'pop'] })],
+        pagination: {
+          page: 1,
+          limit: 20,
+          total: 1,
+          hasNextPage: false,
+        },
+        error: null,
+      }),
+    ));
+
+    render(<App />);
+
+    expect(await screen.findByRole('checkbox', { name: /pop/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Exclude genres Manage/i }));
+
+    const excludedGenreResults = screen.getByRole('list', { name: 'Excluded genre results' });
+
+    fireEvent.click(within(excludedGenreResults).getByRole('checkbox', { name: /pop/i }));
+
+    await waitFor(() => {
+      expect(fetchSpy).toHaveBeenLastCalledWith(
+        '/api/releases?period=7d&type=all&sort=newest&page=1&limit=20&excludeGenre=pop',
+        expect.any(Object),
+      );
+    });
+    expect(within(screen.getByRole('list', { name: 'Genre results' })).getByRole('checkbox', { name: /pop/i })).toBeDisabled();
+  });
+
   it('sends today period to the API and keeps the compact period control usable', async () => {
     setViewportWidth(390);
 
@@ -639,15 +671,15 @@ describe('App', () => {
     );
     window.localStorage.setItem(
       RELEASE_SEARCH_STORAGE_KEY,
-      JSON.stringify({ period: '7d', genres: ['techno'], type: 'album', sort: 'newest' }),
+      JSON.stringify({ period: '7d', genres: ['techno'], excludedGenres: ['edm'], type: 'album', sort: 'newest' }),
     );
-    window.history.pushState(null, '', '/?period=14d&type=single&sort=popular&genre=rap&lang=ru');
+    window.history.pushState(null, '', '/?period=14d&type=single&sort=popular&genre=rap&excludeGenre=pop&lang=ru');
 
     render(<App />);
 
     expect(await screen.findByText('Release One')).toBeInTheDocument();
     expect(fetchSpy).toHaveBeenCalledWith(
-      '/api/releases?period=14d&type=single&sort=popular&page=1&limit=20&genre=rap',
+      '/api/releases?period=14d&type=single&sort=popular&page=1&limit=20&genre=rap&excludeGenre=pop',
       expect.any(Object),
     );
     expect(screen.getByRole('button', { name: 'Как это работает' })).toBeInTheDocument();
@@ -679,6 +711,7 @@ describe('App', () => {
       expect(JSON.parse(window.localStorage.getItem(RELEASE_SEARCH_STORAGE_KEY) ?? '{}')).toEqual({
         period: '7d',
         genres: [],
+        excludedGenres: [],
         countries: [],
         type: 'all',
         sort: 'newest',

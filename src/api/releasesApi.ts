@@ -147,6 +147,7 @@ function normalizeReleasesQuery(query: ReleasesApiQuery, currentDate?: Date): No
       period,
       genre: normalizeOptionalText(query.genre),
       genres: normalizeOptionalTextList(query.genres ?? query.genre),
+      excludedGenres: normalizeOptionalTextList(query.excludedGenres ?? query.excludeGenres ?? query.excludeGenre),
       country: normalizeOptionalText(query.country),
       countries: normalizeOptionalTextList(query.countries ?? query.country),
       popularityMin: normalizeOptionalBoundedNumber(query.popularityMin),

@@ -116,6 +116,44 @@ describe('filterReleases', () => {
     expect(result.map((release) => release.id)).toEqual(['missing-genres']);
   });
 
+  it('excludes releases matching excluded genres after include genre filtering', () => {
+    const result = filterReleases(
+      [
+        makeRelease({ id: 'kept-techno', genres: ['deep techno'] }),
+        makeRelease({ id: 'excluded-techno', genres: ['melodic techno'] }),
+        makeRelease({ id: 'other-genre', genres: ['ambient'] }),
+      ],
+      {
+        period: '14d',
+        genres: ['techno'],
+        excludedGenres: ['melodic techno'],
+        type: 'all',
+        sort: 'newest',
+        currentDate,
+      },
+    );
+
+    expect(result.map((release) => release.id)).toEqual(['kept-techno']);
+  });
+
+  it('can exclude releases without genres', () => {
+    const result = filterReleases(
+      [
+        makeRelease({ id: 'missing-genres', genres: [] }),
+        makeRelease({ id: 'with-genres', genres: ['pop'] }),
+      ],
+      {
+        period: '14d',
+        excludedGenres: ['__no_genre__'],
+        type: 'all',
+        sort: 'newest',
+        currentDate,
+      },
+    );
+
+    expect(result.map((release) => release.id)).toEqual(['with-genres']);
+  });
+
   it('filters by popularity bounds without treating null as zero', () => {
     const releases = [
       makeRelease({ id: 'too-low', popularity: 19 }),

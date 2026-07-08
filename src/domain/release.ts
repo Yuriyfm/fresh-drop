@@ -35,6 +35,7 @@ export type ReleaseFilters = {
   period: ReleasePeriod;
   genre?: string;
   genres?: string[];
+  excludedGenres?: string[];
   country?: string;
   countries?: string[];
   popularityMin?: number;

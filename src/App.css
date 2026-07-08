@@ -625,6 +625,12 @@ select:disabled {
   color: #dffce7;
 }
 
+.genreChipExclude {
+  border-color: rgba(248, 113, 113, 0.54);
+  background: rgba(127, 29, 29, 0.34);
+  color: #fecaca;
+}
+
 .genreChipOverflow {
   border: 1px solid rgba(63, 86, 73, 0.82);
   background: rgba(22, 33, 26, 0.92);
@@ -727,9 +733,14 @@ select:disabled {
   background: rgba(21, 43, 29, 0.78);
 }
 
+.genreOption.isExcluded {
+  background: rgba(69, 22, 22, 0.58);
+}
+
 .genreOption.isDisabled {
   color: var(--color-text-tertiary);
   opacity: 0.62;
+  cursor: not-allowed;
 }
 
 .genreCheckbox {
@@ -758,6 +769,15 @@ select:disabled {
 
 .genreCheckbox.isChecked .genreCheckboxMark {
   background: var(--color-accent);
+}
+
+.genreCheckbox.isExcluded {
+  border-color: rgba(248, 113, 113, 0.72);
+  background: rgba(127, 29, 29, 0.34);
+}
+
+.genreCheckbox.isExcluded .genreCheckboxMark {
+  background: #f87171;
 }
 
 .genreOptionLabel {
@@ -816,6 +836,43 @@ select:disabled {
   background: var(--color-accent-surface);
   color: #dffce7;
   box-shadow: 0 0 0 1px rgba(30, 215, 96, 0.18);
+}
+
+.excludedGenreBlock {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.excludedGenreToggle {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  background: rgba(14, 21, 17, 0.9);
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-weight: 800;
+  text-align: left;
+}
+
+.excludedGenreToggle span:last-child {
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+}
+
+.excludedGenreToggle.isActive {
+  border-color: rgba(248, 113, 113, 0.54);
+  background: rgba(69, 22, 22, 0.36);
+}
+
+.excludedGenrePreview {
+  padding: 0 2px;
 }
 
 .sheetOptionList {

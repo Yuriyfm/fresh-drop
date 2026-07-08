@@ -5,6 +5,7 @@ export type FetchReleasesQuery = {
   period: ReleasePeriod;
   genre?: string;
   genres?: string[];
+  excludedGenres?: string[];
   country?: string;
   countries?: string[];
   popularityMin?: number;
@@ -65,6 +66,7 @@ function toSearchParams(query: FetchReleasesQuery): URLSearchParams {
   });
 
   appendOptionalParams(params, 'genre', query.genres ?? (query.genre ? [query.genre] : []));
+  appendOptionalParams(params, 'excludeGenre', query.excludedGenres ?? []);
   appendOptionalParams(params, 'country', query.countries ?? (query.country ? [query.country] : []));
   appendOptionalNumberParam(params, 'popularityMin', query.popularityMin);
   appendOptionalNumberParam(params, 'popularityMax', query.popularityMax);

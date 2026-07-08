@@ -21,6 +21,7 @@ describe('createReleasesApiMiddleware', () => {
       period: '14d',
       genre: undefined,
       genres: undefined,
+      excludedGenres: undefined,
       country: undefined,
       countries: undefined,
       popularityMin: undefined,

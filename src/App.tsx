@@ -25,6 +25,7 @@ const RELEASE_SEARCH_STORAGE_KEY = 'fresh-drop-release-search-state';
 const DEFAULT_SEARCH_STATE: ReleaseSearchState = {
   period: '7d',
   genres: [],
+  excludedGenres: [],
   countries: [],
   popularityMin: undefined,
   popularityMax: undefined,
@@ -60,6 +61,7 @@ type AppRoute =
 type ReleaseSearchState = {
   period: ReleasePeriod;
   genres: string[];
+  excludedGenres: string[];
   countries: string[];
   popularityMin?: number;
   popularityMax?: number;
@@ -90,6 +92,11 @@ type VirtualReleaseRange = {
   totalHeight: number;
 };
 
+type SummaryChip = {
+  label: string;
+  variant?: 'exclude';
+};
+
 function App() {
   const [initialSearchState] = useState<ReleaseSearchState>(() => getInitialReleaseSearchState(window.location));
   const [initialInsightsFilters] = useState<InsightsFilters>(() => getInitialInsightsFilters(window.location));
@@ -98,6 +105,7 @@ function App() {
   const [language, setLanguage] = useState<Language>(initialLanguage);
   const [period, setPeriod] = useState<ReleasePeriod>(initialSearchState.period);
   const [genres, setGenres] = useState<string[]>(initialSearchState.genres);
+  const [excludedGenres, setExcludedGenres] = useState<string[]>(initialSearchState.excludedGenres);
   const [countries, setCountries] = useState<string[]>(initialSearchState.countries);
   const [popularityMin, setPopularityMin] = useState<number | undefined>(initialSearchState.popularityMin);
   const [popularityMax, setPopularityMax] = useState<number | undefined>(initialSearchState.popularityMax);
@@ -146,13 +154,13 @@ function App() {
   }, [language]);
 
   useEffect(() => {
-    window.localStorage.setItem(RELEASE_SEARCH_STORAGE_KEY, JSON.stringify({ period, genres, countries, popularityMin, popularityMax, type, sort }));
-  }, [countries, genres, period, popularityMax, popularityMin, sort, type]);
+    window.localStorage.setItem(RELEASE_SEARCH_STORAGE_KEY, JSON.stringify({ period, genres, excludedGenres, countries, popularityMin, popularityMax, type, sort }));
+  }, [countries, excludedGenres, genres, period, popularityMax, popularityMin, sort, type]);
 
   useEffect(() => {
-    currentSearchStateRef.current = { period, genres, countries, popularityMin, popularityMax, type, sort };
+    currentSearchStateRef.current = { period, genres, excludedGenres, countries, popularityMin, popularityMax, type, sort };
     currentLanguageRef.current = language;
-  }, [countries, genres, language, period, popularityMax, popularityMin, sort, type]);
+  }, [countries, excludedGenres, genres, language, period, popularityMax, popularityMin, sort, type]);
 
   useEffect(() => {
     if (!('scrollRestoration' in window.history)) {
@@ -202,13 +210,13 @@ function App() {
       return;
     }
 
-    const nextUrl = buildSearchUrl({ period, genres, countries, popularityMin, popularityMax, type, sort }, language, insightsReturn);
+    const nextUrl = buildSearchUrl({ period, genres, excludedGenres, countries, popularityMin, popularityMax, type, sort }, language, insightsReturn);
     const currentUrl = `${window.location.pathname}${window.location.search}`;
 
     if (currentUrl !== nextUrl) {
       window.history.replaceState(null, '', nextUrl);
     }
-  }, [countries, genres, insightsReturn, language, period, popularityMax, popularityMin, route.view, sort, type]);
+  }, [countries, excludedGenres, genres, insightsReturn, language, period, popularityMax, popularityMin, route.view, sort, type]);
 
   useEffect(() => {
     if (route.view !== 'insights') {
@@ -264,6 +272,7 @@ function App() {
     const requestKey = getReleaseRequestKey({
       period,
       genres,
+      excludedGenres,
       countries,
       popularityMin,
       popularityMax,
@@ -287,6 +296,7 @@ function App() {
       {
         period,
         genres,
+        excludedGenres,
         countries,
         popularityMin,
         popularityMax,
@@ -294,7 +304,7 @@ function App() {
         sort,
         page,
         limit: PAGE_LIMIT,
-        randomStartSeed: isDefaultSearch(period, genres, countries, popularityMin, popularityMax, type, sort) ? randomStartSeed : undefined,
+        randomStartSeed: isDefaultSearch(period, genres, excludedGenres, countries, popularityMin, popularityMax, type, sort) ? randomStartSeed : undefined,
       },
       { signal: controller.signal },
     )
@@ -318,7 +328,7 @@ function App() {
     return () => {
       controller.abort();
     };
-  }, [countries, genres, page, period, popularityMax, popularityMin, randomStartSeed, retryCount, route.view, sort, type]);
+  }, [countries, excludedGenres, genres, page, period, popularityMax, popularityMin, randomStartSeed, retryCount, route.view, sort, type]);
 
   useEffect(() => {
     if (route.view !== 'insights') {
@@ -461,12 +471,13 @@ function App() {
     () =>
       [
         ...genres.map((selectedGenre) => getGenreLabel(selectedGenre, t)),
+        ...excludedGenres.map((excludedGenre) => t.filters.excludeGenreSummary(getGenreLabel(excludedGenre, t))),
         getPeriodLabel(period, t),
         ...getCompactCountrySummary(countries),
         getPopularitySummary(popularityMin, popularityMax),
         type === 'all' ? undefined : getReleaseTypeFilterLabel(type, t),
       ].filter(isPresent),
-    [countries, genres, period, popularityMax, popularityMin, t, type],
+    [countries, excludedGenres, genres, period, popularityMax, popularityMin, t, type],
   );
   const summaryText = t.results.summary(pagination.total, summaryFilters);
   const isInitialLoading = status === 'loading' && releases.length === 0;
@@ -474,12 +485,12 @@ function App() {
   const isSummaryUpdating = status === 'loading' || status === 'loadingMore';
   const desktopSummaryText = isInitialLoading ? t.results.loadingSummary(summaryFilters) : summaryText;
   const mobileSummaryChips = useMemo(
-    () => getMobileSummaryChips(period, genres, countries, popularityMin, popularityMax, type, t),
-    [countries, genres, period, popularityMax, popularityMin, t, type],
+    () => getMobileSummaryChips(period, genres, excludedGenres, countries, popularityMin, popularityMax, type, t),
+    [countries, excludedGenres, genres, period, popularityMax, popularityMin, t, type],
   );
   const mobileResultsCountText = isInitialLoading ? t.results.loading : getResultsCountText(pagination.total, t);
-  const hasActiveSearchFilters = hasActiveFilters(period, genres, countries, popularityMin, popularityMax, type);
-  const hasActiveSheetFilters = genres.length > 0 || countries.length > 0 || type !== 'all';
+  const hasActiveSearchFilters = hasActiveFilters(period, genres, excludedGenres, countries, popularityMin, popularityMax, type);
+  const hasActiveSheetFilters = genres.length > 0 || excludedGenres.length > 0 || countries.length > 0 || type !== 'all';
   const virtualRange = getVirtualReleaseRange(releases.length, scrollPosition, releaseListRef.current);
   const visibleReleases = releases.slice(virtualRange.startIndex, virtualRange.endIndex);
 
@@ -609,8 +620,8 @@ function App() {
                 </div>
                 <div className="mobileActiveFilters" aria-label={t.filters.activeFilters(mobileSummaryChips.length)}>
                   {mobileSummaryChips.map((chip) => (
-                    <span className="genreChip mobileSummaryChip" key={chip}>
-                      {chip}
+                    <span className={chip.variant === 'exclude' ? 'genreChip genreChipExclude mobileSummaryChip' : 'genreChip mobileSummaryChip'} key={`${chip.variant ?? 'include'}-${chip.label}`}>
+                      {chip.label}
                     </span>
                   ))}
                 </div>
@@ -628,9 +639,18 @@ function App() {
                 <GenreFilter
                   isMobile={false}
                   selectedGenres={genres}
+                  blockedGenres={excludedGenres}
                   genreOptions={genreOptions}
                   t={t}
                   onChange={updateGenres}
+                />
+                <ExcludedGenreFilter
+                  isMobile={false}
+                  selectedGenres={excludedGenres}
+                  blockedGenres={genres}
+                  genreOptions={genreOptions}
+                  t={t}
+                  onChange={updateExcludedGenres}
                 />
                 <CountryFilter
                   selectedCountries={countries}
@@ -686,7 +706,7 @@ function App() {
                 <h2>{t.results.noTitle}</h2>
                 <p>{t.results.noDescription}</p>
                 <div className="stateActions">
-                  <button type="button" className="secondaryButton" disabled={genres.length === 0} onClick={clearSelectedGenres}>
+                  <button type="button" className="secondaryButton" disabled={genres.length === 0 && excludedGenres.length === 0} onClick={clearSelectedGenres}>
                     {t.filters.clearGenres}
                   </button>
                   <button type="button" className="ghostButton" onClick={resetFilters}>
@@ -742,6 +762,7 @@ function App() {
       <MobileFiltersSheet
         isOpen={isFiltersOpen}
         genres={genres}
+        excludedGenres={excludedGenres}
         genreOptions={genreOptions}
         countries={countries}
         countryOptions={countryOptions}
@@ -750,6 +771,7 @@ function App() {
         t={t}
         onClose={() => setIsFiltersOpen(false)}
         onGenresChange={updateGenres}
+        onExcludedGenresChange={updateExcludedGenres}
         onCountriesChange={updateCountries}
         onTypeChange={updateType}
         onReset={resetFiltersInSheet}
@@ -776,7 +798,18 @@ function App() {
   }
 
   function updateGenres(nextGenres: string[]): void {
+    const nextGenreSet = new Set(nextGenres);
+
     setGenres(nextGenres);
+    setExcludedGenres((current) => current.filter((genre) => !nextGenreSet.has(genre)));
+    resetResults();
+  }
+
+  function updateExcludedGenres(nextExcludedGenres: string[]): void {
+    const nextExcludedGenreSet = new Set(nextExcludedGenres);
+
+    setExcludedGenres(nextExcludedGenres);
+    setGenres((current) => current.filter((genre) => !nextExcludedGenreSet.has(genre)));
     resetResults();
   }
 
@@ -804,6 +837,7 @@ function App() {
   function resetFilters(): void {
     setPeriod(DEFAULT_SEARCH_STATE.period);
     setGenres(DEFAULT_SEARCH_STATE.genres);
+    setExcludedGenres(DEFAULT_SEARCH_STATE.excludedGenres);
     setCountries(DEFAULT_SEARCH_STATE.countries);
     setPopularityMin(DEFAULT_SEARCH_STATE.popularityMin);
     setPopularityMax(DEFAULT_SEARCH_STATE.popularityMax);
@@ -816,6 +850,7 @@ function App() {
 
   function resetFiltersInSheet(): void {
     setGenres(DEFAULT_SEARCH_STATE.genres);
+    setExcludedGenres(DEFAULT_SEARCH_STATE.excludedGenres);
     setCountries(DEFAULT_SEARCH_STATE.countries);
     setType(DEFAULT_SEARCH_STATE.type);
     window.localStorage.setItem(
@@ -823,6 +858,7 @@ function App() {
       JSON.stringify({
         period,
         genres: DEFAULT_SEARCH_STATE.genres,
+        excludedGenres: DEFAULT_SEARCH_STATE.excludedGenres,
         countries: DEFAULT_SEARCH_STATE.countries,
         type: DEFAULT_SEARCH_STATE.type,
         sort,
@@ -844,11 +880,12 @@ function App() {
   }
 
   function clearSelectedGenres(): void {
-    if (genres.length === 0) {
+    if (genres.length === 0 && excludedGenres.length === 0) {
       return;
     }
 
     setGenres([]);
+    setExcludedGenres([]);
     resetResults();
   }
 
@@ -862,7 +899,7 @@ function App() {
   }
 
   function openSearch(): void {
-    const nextUrl = buildSearchUrl({ period, genres, countries, popularityMin, popularityMax, type, sort }, language, insightsReturn);
+    const nextUrl = buildSearchUrl({ period, genres, excludedGenres, countries, popularityMin, popularityMax, type, sort }, language, insightsReturn);
 
     window.history.pushState(null, '', nextUrl);
     setRoute({ view: 'search' });
@@ -896,6 +933,7 @@ function App() {
       const nextPath = getReleasePath(item.query.releaseId, {
         period: getSearchPeriodFromInsightsPeriod(insightsPeriod),
         genres: item.query.genre ? [item.query.genre] : [],
+        excludedGenres: [],
         countries: item.query.country ? [item.query.country] : [],
         popularityMin: item.query.popularityMin,
         popularityMax: item.query.popularityMax,
@@ -913,6 +951,7 @@ function App() {
     const nextSearchState: ReleaseSearchState = {
       period: getSearchPeriodFromInsightsPeriod(insightsPeriod),
       genres: item.query.genre ? [item.query.genre] : [],
+      excludedGenres: [],
       countries: item.query.country ? [item.query.country] : [],
       popularityMin: item.query.popularityMin,
       popularityMax: item.query.popularityMax,
@@ -938,10 +977,10 @@ function App() {
         searchScrollY: window.scrollY,
       },
       '',
-      buildSearchUrl({ period, genres, countries, popularityMin, popularityMax, type, sort }, language, insightsReturn),
+      buildSearchUrl({ period, genres, excludedGenres, countries, popularityMin, popularityMax, type, sort }, language, insightsReturn),
     );
 
-    const nextPath = getReleasePath(release.id, { period, genres, countries, popularityMin, popularityMax, type, sort }, language);
+    const nextPath = getReleasePath(release.id, { period, genres, excludedGenres, countries, popularityMin, popularityMax, type, sort }, language);
 
     window.history.pushState(null, '', nextPath);
     setRoute({ view: 'release', releaseId: release.id });
@@ -961,7 +1000,7 @@ function App() {
       return;
     }
 
-    window.history.pushState(null, '', buildSearchUrl({ period, genres, countries, popularityMin, popularityMax, type, sort }, language, insightsReturn));
+    window.history.pushState(null, '', buildSearchUrl({ period, genres, excludedGenres, countries, popularityMin, popularityMax, type, sort }, language, insightsReturn));
     setRoute({ view: 'search' });
   }
 
@@ -985,6 +1024,7 @@ function App() {
   function applySearchState(nextSearchState: ReleaseSearchState, nextLanguage: Language): void {
     setPeriod(nextSearchState.period);
     setGenres(nextSearchState.genres);
+    setExcludedGenres(nextSearchState.excludedGenres);
     setCountries(nextSearchState.countries);
     setPopularityMin(nextSearchState.popularityMin);
     setPopularityMax(nextSearchState.popularityMax);
@@ -1277,19 +1317,40 @@ function PeriodFilter({ period, t, onChange }: PeriodFilterProps) {
 type GenreFilterProps = {
   isMobile: boolean;
   selectedGenres: string[];
+  blockedGenres?: string[];
   genreOptions: GenreOption[];
   t: Translation;
+  label?: string;
+  selectedLabel?: string;
+  resultsLabel?: string;
+  clearLabel?: string;
+  variant?: 'include' | 'exclude';
+  hideHeader?: boolean;
   onChange: (genres: string[]) => void;
 };
 
-function GenreFilter({ isMobile, selectedGenres, genreOptions, t, onChange }: GenreFilterProps) {
+function GenreFilter({
+  isMobile,
+  selectedGenres,
+  blockedGenres = [],
+  genreOptions,
+  t,
+  label = t.filters.genre,
+  selectedLabel = t.filters.selectedGenres,
+  resultsLabel = t.filters.genreResults,
+  clearLabel = t.filters.clearGenres,
+  variant = 'include',
+  hideHeader = false,
+  onChange,
+}: GenreFilterProps) {
   const [query, setQuery] = useState('');
   const [isExpanded, setIsExpanded] = useState(false);
   const normalizedQuery = query.trim().toLowerCase();
   const visibleOptions = genreOptions.filter((option) => getGenreLabel(option.name, t).toLowerCase().includes(normalizedQuery));
   const visibleSelectedGenres = selectedGenres.slice(0, MAX_VISIBLE_SELECTED_GENRES);
   const hiddenSelectedGenresCount = Math.max(selectedGenres.length - visibleSelectedGenres.length, 0);
-  const selectableVisibleOptions = visibleOptions.filter((option) => !selectedGenres.includes(option.name));
+  const blockedGenreSet = new Set(blockedGenres);
+  const selectableVisibleOptions = visibleOptions.filter((option) => !selectedGenres.includes(option.name) && !blockedGenreSet.has(option.name));
   const showOptions = !isMobile || isExpanded;
   const showSelectMatchesButton = normalizedQuery.length > 0 && selectableVisibleOptions.length > 0;
 
@@ -1303,26 +1364,28 @@ function GenreFilter({ isMobile, selectedGenres, genreOptions, t, onChange }: Ge
   }, [isMobile]);
 
   return (
-    <div className="genreSelector filterField">
-      <div className="fieldHeader">
-        <span className="fieldLabel">{t.filters.genre}</span>
-        {isMobile && (
-          <button
-            type="button"
-            className={showOptions ? 'inlineFilterButton genreToggleButton isActive' : 'inlineFilterButton genreToggleButton'}
-            aria-expanded={showOptions}
-            onClick={() => setIsExpanded((current) => !current)}
-          >
-            {showOptions ? t.filters.hideGenres : t.filters.browseGenres}
-          </button>
-        )}
-      </div>
+    <div className={variant === 'exclude' ? 'genreSelector filterField isExcludeGenreSelector' : 'genreSelector filterField'}>
+      {!hideHeader && (
+        <div className="fieldHeader">
+          <span className="fieldLabel">{label}</span>
+          {isMobile && (
+            <button
+              type="button"
+              className={showOptions ? 'inlineFilterButton genreToggleButton isActive' : 'inlineFilterButton genreToggleButton'}
+              aria-expanded={showOptions}
+              onClick={() => setIsExpanded((current) => !current)}
+            >
+              {showOptions ? t.filters.hideGenres : t.filters.browseGenres}
+            </button>
+          )}
+        </div>
+      )}
       <div className="genreSearchRow">
         <div className="genreSearchField">
           {selectedGenres.length > 0 && (
-            <div className="selectedGenreChips" aria-label={t.filters.selectedGenres}>
+            <div className="selectedGenreChips" aria-label={selectedLabel}>
               {visibleSelectedGenres.map((genre) => (
-                <button type="button" className="genreChip" key={genre} onClick={() => toggleGenre(genre)}>
+                <button type="button" className={variant === 'exclude' ? 'genreChip genreChipExclude' : 'genreChip'} key={genre} onClick={() => toggleGenre(genre)}>
                   {getGenreLabel(genre, t)} x
                 </button>
               ))}
@@ -1346,7 +1409,7 @@ function GenreFilter({ isMobile, selectedGenres, genreOptions, t, onChange }: Ge
             )}
             {selectedGenres.length > 0 && (
               <button type="button" className="genreActionButton clearGenresButton" onClick={clearGenres}>
-                {t.filters.clearGenres}
+                {clearLabel}
               </button>
             )}
           </div>
@@ -1354,21 +1417,33 @@ function GenreFilter({ isMobile, selectedGenres, genreOptions, t, onChange }: Ge
       </div>
       {showOptions && (
         <>
-          <div className="genreOptionList" role="list" aria-label={t.filters.genreResults}>
+          <div className="genreOptionList" role="list" aria-label={resultsLabel}>
             {visibleOptions.length > 0 ? (
               visibleOptions.map((option) => {
                 const isSelected = selectedGenres.includes(option.name);
+                const isBlocked = blockedGenreSet.has(option.name);
 
                 return (
                   <button
                     type="button"
                     role="checkbox"
                     aria-checked={isSelected}
-                    className={isSelected ? 'genreOption isSelected' : 'genreOption'}
+                    aria-disabled={isBlocked}
+                    className={[
+                      'genreOption',
+                      isSelected ? 'isSelected' : '',
+                      isBlocked ? 'isDisabled' : '',
+                      variant === 'exclude' && isSelected ? 'isExcluded' : '',
+                    ].filter(Boolean).join(' ')}
+                    disabled={isBlocked}
                     key={`${option.kind}-${option.name}`}
                     onClick={() => toggleGenre(option.name)}
                   >
-                    <span className={isSelected ? 'genreCheckbox isChecked' : 'genreCheckbox'} aria-hidden="true">
+                    <span className={[
+                      'genreCheckbox',
+                      isSelected ? 'isChecked' : '',
+                      variant === 'exclude' && isSelected ? 'isExcluded' : '',
+                    ].filter(Boolean).join(' ')} aria-hidden="true">
                       <span className="genreCheckboxMark" />
                     </span>
                     <span className="genreOptionLabel">{getGenreLabel(option.name, t)}</span>
@@ -1387,6 +1462,10 @@ function GenreFilter({ isMobile, selectedGenres, genreOptions, t, onChange }: Ge
   );
 
   function toggleGenre(nextGenre: string): void {
+    if (blockedGenreSet.has(nextGenre)) {
+      return;
+    }
+
     if (selectedGenres.includes(nextGenre)) {
       onChange(selectedGenres.filter((genre) => genre !== nextGenre));
       return;
@@ -1401,6 +1480,67 @@ function GenreFilter({ isMobile, selectedGenres, genreOptions, t, onChange }: Ge
 
   function clearGenres(): void {
     onChange([]);
+  }
+}
+
+type ExcludedGenreFilterProps = {
+  isMobile: boolean;
+  selectedGenres: string[];
+  blockedGenres: string[];
+  genreOptions: GenreOption[];
+  t: Translation;
+  onChange: (genres: string[]) => void;
+};
+
+function ExcludedGenreFilter({ isMobile, selectedGenres, blockedGenres, genreOptions, t, onChange }: ExcludedGenreFilterProps) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const visibleSelectedGenres = selectedGenres.slice(0, MAX_VISIBLE_SELECTED_GENRES);
+  const hiddenSelectedGenresCount = Math.max(selectedGenres.length - visibleSelectedGenres.length, 0);
+
+  return (
+    <div className="excludedGenreBlock">
+      <button
+        type="button"
+        className={isExpanded ? 'excludedGenreToggle isActive' : 'excludedGenreToggle'}
+        aria-expanded={isExpanded}
+        onClick={() => setIsExpanded((current) => !current)}
+      >
+        <span>
+          {selectedGenres.length > 0 ? `${t.filters.excludeGenres} · ${selectedGenres.length}` : t.filters.excludeGenres}
+        </span>
+        <span>{isExpanded ? t.filters.hideExcludedGenres : t.filters.manageExcludedGenres}</span>
+      </button>
+      {selectedGenres.length > 0 && (
+        <div className="selectedGenreChips excludedGenrePreview" aria-label={t.filters.selectedExcludedGenres}>
+          {visibleSelectedGenres.map((genre) => (
+            <button type="button" className="genreChip genreChipExclude" key={genre} onClick={() => toggleGenre(genre)}>
+              {getGenreLabel(genre, t)} x
+            </button>
+          ))}
+          {hiddenSelectedGenresCount > 0 && <span className="genreChip genreChipOverflow">+{hiddenSelectedGenresCount}</span>}
+        </div>
+      )}
+      {isExpanded && (
+        <GenreFilter
+          isMobile={isMobile}
+          selectedGenres={selectedGenres}
+          blockedGenres={blockedGenres}
+          genreOptions={genreOptions}
+          t={t}
+          label={t.filters.excludeGenres}
+          selectedLabel={t.filters.selectedExcludedGenres}
+          resultsLabel={t.filters.excludedGenreResults}
+          clearLabel={t.filters.clearExcludedGenres}
+          variant="exclude"
+          hideHeader
+          onChange={onChange}
+        />
+      )}
+    </div>
+  );
+
+  function toggleGenre(genreToRemove: string): void {
+    onChange(selectedGenres.filter((genre) => genre !== genreToRemove));
   }
 }
 
@@ -1560,6 +1700,7 @@ function SortToolbar({ sort, isMobile = false, t, onChange }: SortToolbarProps) 
 type MobileFiltersSheetProps = {
   isOpen: boolean;
   genres: string[];
+  excludedGenres: string[];
   genreOptions: GenreOption[];
   countries: string[];
   countryOptions: CountryOption[];
@@ -1568,6 +1709,7 @@ type MobileFiltersSheetProps = {
   hasActiveFilters: boolean;
   onClose: () => void;
   onGenresChange: (genres: string[]) => void;
+  onExcludedGenresChange: (genres: string[]) => void;
   onCountriesChange: (countries: string[]) => void;
   onTypeChange: (type: ReleaseTypeFilter) => void;
   onReset: () => void;
@@ -1576,6 +1718,7 @@ type MobileFiltersSheetProps = {
 function MobileFiltersSheet({
   isOpen,
   genres,
+  excludedGenres,
   genreOptions,
   countries,
   countryOptions,
@@ -1584,6 +1727,7 @@ function MobileFiltersSheet({
   t,
   onClose,
   onGenresChange,
+  onExcludedGenresChange,
   onCountriesChange,
   onTypeChange,
   onReset,
@@ -1602,7 +1746,15 @@ function MobileFiltersSheet({
         </div>
         <div className="sheetBody">
           <div className="sheetFilters">
-            <GenreFilter isMobile={false} selectedGenres={genres} genreOptions={genreOptions} t={t} onChange={onGenresChange} />
+            <GenreFilter isMobile={false} selectedGenres={genres} blockedGenres={excludedGenres} genreOptions={genreOptions} t={t} onChange={onGenresChange} />
+            <ExcludedGenreFilter
+              isMobile={false}
+              selectedGenres={excludedGenres}
+              blockedGenres={genres}
+              genreOptions={genreOptions}
+              t={t}
+              onChange={onExcludedGenresChange}
+            />
             <CountryFilter selectedCountries={countries} options={countryOptions} t={t} onChange={onCountriesChange} />
             <TypeFilter type={type} t={t} layout="sheet" onChange={onTypeChange} />
           </div>
@@ -2131,17 +2283,19 @@ function getVirtualReleaseRange(
 function hasActiveFilters(
   period: ReleasePeriod,
   genres: string[],
+  excludedGenres: string[],
   countries: string[],
   popularityMin: number | undefined,
   popularityMax: number | undefined,
   type: ReleaseTypeFilter,
 ): boolean {
-  return period !== '7d' || genres.length > 0 || countries.length > 0 || popularityMin !== undefined || popularityMax !== undefined || type !== 'all';
+  return period !== '7d' || genres.length > 0 || excludedGenres.length > 0 || countries.length > 0 || popularityMin !== undefined || popularityMax !== undefined || type !== 'all';
 }
 
 function isDefaultSearch(
   period: ReleasePeriod,
   genres: string[],
+  excludedGenres: string[],
   countries: string[],
   popularityMin: number | undefined,
   popularityMax: number | undefined,
@@ -2150,6 +2304,7 @@ function isDefaultSearch(
 ): boolean {
   return period === '7d'
     && genres.length === 0
+    && excludedGenres.length === 0
     && countries.length === 0
     && popularityMin === undefined
     && popularityMax === undefined
@@ -2165,6 +2320,7 @@ function areSearchStatesEqual(left: ReleaseSearchState, right: ReleaseSearchStat
     left.popularityMin === right.popularityMin &&
     left.popularityMax === right.popularityMax &&
     areStringArraysEqual(left.genres, right.genres) &&
+    areStringArraysEqual(left.excludedGenres, right.excludedGenres) &&
     areStringArraysEqual(left.countries, right.countries)
   );
 }
@@ -2177,6 +2333,7 @@ function getReleaseRequestKey(searchState: ReleaseSearchState & { page: number; 
   return JSON.stringify({
     period: searchState.period,
     genres: searchState.genres,
+    excludedGenres: searchState.excludedGenres,
     countries: searchState.countries,
     popularityMin: searchState.popularityMin,
     popularityMax: searchState.popularityMax,
@@ -2242,18 +2399,20 @@ function getResultsCountText(count: number, t: Translation): string {
 function getMobileSummaryChips(
   period: ReleasePeriod,
   genres: string[],
+  excludedGenres: string[],
   countries: string[],
   popularityMin: number | undefined,
   popularityMax: number | undefined,
   type: ReleaseTypeFilter,
   t: Translation,
-): string[] {
+): SummaryChip[] {
   return [
-    getPeriodLabel(period, t),
-    ...genres.map((genre) => getGenreLabel(genre, t)),
-    ...countries,
-    getPopularitySummary(popularityMin, popularityMax),
-    type === 'all' ? undefined : getReleaseTypeFilterLabel(type, t),
+    { label: getPeriodLabel(period, t) },
+    ...genres.map((genre) => ({ label: getGenreLabel(genre, t) })),
+    ...excludedGenres.map((genre) => ({ label: `- ${getGenreLabel(genre, t)}`, variant: 'exclude' as const })),
+    ...countries.map((country) => ({ label: country })),
+    getPopularitySummary(popularityMin, popularityMax) ? { label: getPopularitySummary(popularityMin, popularityMax) as string } : undefined,
+    type === 'all' ? undefined : { label: getReleaseTypeFilterLabel(type, t) },
   ].filter(isPresent);
 }
 
@@ -2267,9 +2426,12 @@ function getStoredReleaseSearchState(storage: Storage = window.localStorage): Re
   try {
     const parsedValue = JSON.parse(rawValue) as Partial<ReleaseSearchState>;
 
+    const storedGenres = getStoredGenres(parsedValue);
+
     return {
       period: isReleasePeriod(parsedValue.period) ? parsedValue.period : DEFAULT_SEARCH_STATE.period,
-      genres: getStoredGenres(parsedValue),
+      genres: storedGenres,
+      excludedGenres: removeGenresAlreadyIncluded(getStoredExcludedGenres(parsedValue), storedGenres),
       countries: getStoredCountries(parsedValue),
       popularityMin: normalizePopularityQueryValue(parsedValue.popularityMin),
       popularityMax: normalizePopularityQueryValue(parsedValue.popularityMax),
@@ -2289,6 +2451,26 @@ function getStoredGenres(value: Partial<ReleaseSearchState> & { genre?: unknown 
   return typeof value.genre === 'string' && value.genre.trim().length > 0 ? [value.genre] : DEFAULT_SEARCH_STATE.genres;
 }
 
+function getStoredExcludedGenres(value: Partial<ReleaseSearchState> & { excludeGenre?: unknown; excludeGenres?: unknown; excludedGenre?: unknown }): string[] {
+  if (Array.isArray(value.excludedGenres)) {
+    return value.excludedGenres.filter((genre): genre is string => typeof genre === 'string' && genre.trim().length > 0);
+  }
+
+  if (Array.isArray(value.excludeGenres)) {
+    return value.excludeGenres.filter((genre): genre is string => typeof genre === 'string' && genre.trim().length > 0);
+  }
+
+  if (typeof value.excludeGenre === 'string' && value.excludeGenre.trim().length > 0) {
+    return [value.excludeGenre.trim()];
+  }
+
+  if (typeof value.excludedGenre === 'string' && value.excludedGenre.trim().length > 0) {
+    return [value.excludedGenre.trim()];
+  }
+
+  return DEFAULT_SEARCH_STATE.excludedGenres;
+}
+
 function getStoredCountries(value: Partial<ReleaseSearchState> & { country?: unknown }): string[] {
   if (Array.isArray(value.countries)) {
     return value.countries.filter((country): country is string => typeof country === 'string' && country.trim().length > 0);
@@ -2304,16 +2486,25 @@ function getInitialReleaseSearchState(location: Location, storage: Storage = win
   const rawType = searchParams.get('type');
   const rawSort = searchParams.get('sort');
   const genres = getUrlGenres(searchParams);
+  const excludedGenres = getUrlExcludedGenres(searchParams);
+  const nextGenres = genres ?? storedState.genres;
 
   return {
     period: isReleasePeriod(rawPeriod) ? rawPeriod : storedState.period,
-    genres: genres ?? storedState.genres,
+    genres: nextGenres,
+    excludedGenres: removeGenresAlreadyIncluded(excludedGenres ?? storedState.excludedGenres, nextGenres),
     countries: getUrlCountries(searchParams) ?? storedState.countries,
     popularityMin: normalizePopularityQueryValue(searchParams.get('popularityMin')) ?? storedState.popularityMin,
     popularityMax: normalizePopularityQueryValue(searchParams.get('popularityMax')) ?? storedState.popularityMax,
     type: isReleaseTypeFilter(rawType) ? rawType : storedState.type,
     sort: isReleaseSort(rawSort) ? rawSort : storedState.sort,
   };
+}
+
+function removeGenresAlreadyIncluded(excludedGenres: string[], includedGenres: string[]): string[] {
+  const includedGenreSet = new Set(includedGenres);
+
+  return excludedGenres.filter((genre) => !includedGenreSet.has(genre));
 }
 
 function getInitialInsightsFilters(location: Location): InsightsFilters {
@@ -2380,6 +2571,30 @@ function getUrlGenres(searchParams: URLSearchParams): string[] | undefined {
     .filter(Boolean);
 
   return parsedGenres.length > 0 ? parsedGenres : [];
+}
+
+function getUrlExcludedGenres(searchParams: URLSearchParams): string[] | undefined {
+  const rawGenres = [
+    ...searchParams.getAll('excludeGenre'),
+    ...searchParams.getAll('excludedGenre'),
+  ].map((genre) => genre.trim()).filter(Boolean);
+
+  if (rawGenres.length > 0) {
+    return Array.from(new Set(rawGenres));
+  }
+
+  const rawGenresParam = searchParams.get('excludeGenres') ?? searchParams.get('excludedGenres');
+
+  if (!rawGenresParam) {
+    return undefined;
+  }
+
+  const parsedGenres = rawGenresParam
+    .split(',')
+    .map((genre) => genre.trim())
+    .filter(Boolean);
+
+  return parsedGenres.length > 0 ? Array.from(new Set(parsedGenres)) : [];
 }
 
 function getUrlCountries(searchParams: URLSearchParams): string[] | undefined {
@@ -2476,7 +2691,7 @@ function hasMeaningfulText(value: string): boolean {
   return normalized !== '' && normalized !== 'unknown';
 }
 
-function isPresent(value: string | undefined): value is string {
+function isPresent<T>(value: T | undefined): value is T {
   return value !== undefined && value !== '';
 }
 
@@ -2512,6 +2727,14 @@ function buildSearchQuery(searchState: ReleaseSearchState, language: Language, i
 
     if (normalizedGenre) {
       params.append('genre', normalizedGenre);
+    }
+  });
+
+  searchState.excludedGenres.forEach((genre) => {
+    const normalizedGenre = genre.trim();
+
+    if (normalizedGenre) {
+      params.append('excludeGenre', normalizedGenre);
     }
   });
 

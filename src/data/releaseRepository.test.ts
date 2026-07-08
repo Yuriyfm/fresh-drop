@@ -91,6 +91,28 @@ describe('InMemoryReleaseRepository', () => {
     });
   });
 
+  it('filters out releases with excluded genres', async () => {
+    const repository = new InMemoryReleaseRepository();
+
+    await repository.saveReleases([
+      makeRelease({ id: 'kept', releaseDate: '2026-06-30', genres: ['death metal'], popularity: 78 }),
+      makeRelease({ id: 'excluded', releaseDate: '2026-06-30', genres: ['melodic death metal'], popularity: 80 }),
+      makeRelease({ id: 'wrong-include', releaseDate: '2026-06-30', genres: ['pop'], popularity: 80 }),
+    ]);
+
+    const result = await repository.findReleases({
+      period: '7d',
+      genres: ['metal'],
+      excludedGenres: ['melodic death metal'],
+      type: 'all',
+      sort: 'newest',
+      currentDate: new Date('2026-07-01T12:00:00.000Z'),
+    });
+
+    expect(result.items.map((release) => release.id)).toEqual(['kept']);
+    expect(result.pagination.total).toBe(1);
+  });
+
   it('sorts by less popular without filtering out null popularity', async () => {
     const repository = new InMemoryReleaseRepository();
 
