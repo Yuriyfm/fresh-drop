@@ -378,10 +378,24 @@ describe('App', () => {
     const { container } = render(<App />);
 
     expect(await screen.findByRole('checkbox', { name: /indie pop/i })).toBeInTheDocument();
+    const sidebar = container.querySelector('.searchSidebar .filterPanel') as HTMLElement;
+    const periodGroup = within(sidebar).getByRole('group', { name: 'Period' });
+    const typeGroup = within(sidebar).getByRole('group', { name: 'Type' });
+    const genreCheckbox = within(sidebar).getByRole('checkbox', { name: /indie pop/i });
+
     expect(container.querySelector('.searchLayout.isDesktopSidebar')).not.toBeNull();
-    expect(container.querySelector('.searchSidebar .filterPanel')).not.toBeNull();
+    expect(sidebar).not.toBeNull();
     expect(container.querySelector('.searchSidebar select')).toBeNull();
     expect(container.querySelector('.resultsToolbar .sortToolbar')).not.toBeNull();
+    expect(container.querySelector('.searchSidebar .sidebarResetButton')).toBeNull();
+    expect(periodGroup.compareDocumentPosition(typeGroup) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(typeGroup.compareDocumentPosition(genreCheckbox) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    fireEvent.click(genreCheckbox);
+
+    await waitFor(() => {
+      expect(within(container.querySelector('.resultsHeader') as HTMLElement).getByRole('button', { name: 'Reset filters' })).toBeInTheDocument();
+    });
     expect(container.querySelector('.searchSidebar .sidebarResetButton')).toBeNull();
   });
 
@@ -1199,6 +1213,11 @@ describe('App', () => {
   });
 
   it('opens release details at /releases/:id and returns to the preserved list', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       makeResponse({
         items: [
@@ -1235,6 +1254,11 @@ describe('App', () => {
       'href',
       'https://open.spotify.com/album/release-1',
     );
+    fireEvent.click(screen.getByRole('button', { name: 'Copy Spotify link' }));
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith('https://open.spotify.com/album/release-1');
+    });
+    expect(screen.getByRole('button', { name: 'Spotify link copied' })).toBeInTheDocument();
     expect(screen.queryByRole('combobox', { name: 'Language' })).not.toBeInTheDocument();
     expect(screen.getAllByText('Unknown').length).toBeGreaterThanOrEqual(3);
     expect(screen.getByText('Artist country')).toBeInTheDocument();
@@ -1322,6 +1346,11 @@ describe('App', () => {
 
   it('renders a compact mobile release detail with a sticky spotify action and genre chips', async () => {
     setViewportWidth(390);
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
 
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       makeResponse({
@@ -1351,6 +1380,10 @@ describe('App', () => {
     expect(screen.getByRole('heading', { name: 'Release One' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Open' })).toBeNull();
     expect(screen.getByRole('link', { name: 'Open in Spotify' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Copy Spotify link' }));
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith('https://open.spotify.com/album/release-1');
+    });
     expect(screen.getByRole('button', { name: 'Back' })).toBeInTheDocument();
     expect(screen.getByText('Type')).toBeInTheDocument();
     expect(screen.getByText('Genres')).toBeInTheDocument();

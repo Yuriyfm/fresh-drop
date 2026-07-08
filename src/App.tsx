@@ -636,6 +636,7 @@ function App() {
 
               <div className="primaryFilters">
                 <PeriodFilter period={period} t={t} onChange={updatePeriod} />
+                <TypeFilter type={type} t={t} onChange={updateType} />
                 <GenreFilter
                   isMobile={false}
                   selectedGenres={genres}
@@ -659,16 +660,6 @@ function App() {
                   onChange={updateCountries}
                 />
               </div>
-
-              <div className="desktopSecondaryFilters">
-                <TypeFilter type={type} t={t} onChange={updateType} />
-              </div>
-
-              {hasActiveSearchFilters && (
-                <button type="button" className="ghostButton sidebarResetButton" onClick={resetFilters}>
-                  {t.filters.reset}
-                </button>
-              )}
             </section>
           )}
         </aside>
@@ -683,6 +674,11 @@ function App() {
                 </p>
               </div>
               <div className="resultsToolbar">
+                {hasActiveSearchFilters && (
+                  <button type="button" className="ghostButton resultsResetButton" onClick={resetFilters}>
+                    {t.filters.reset}
+                  </button>
+                )}
                 <SortToolbar sort={sort} t={t} onChange={updateSort} />
               </div>
             </section>
@@ -2037,9 +2033,12 @@ function ReleaseDetail({ isLoading, release, isMobile, t, onBack }: ReleaseDetai
             {!isMobile && (
               <div className="detailActions">
                 {release.spotifyUrl && (
-                  <a className="spotifyLink detailPrimaryAction" href={release.spotifyUrl} target="_blank" rel="noreferrer">
-                    {t.release.openSpotify}
-                  </a>
+                  <>
+                    <a className="spotifyLink detailPrimaryAction" href={release.spotifyUrl} target="_blank" rel="noreferrer">
+                      {t.release.openSpotify}
+                    </a>
+                    <CopySpotifyLinkButton spotifyUrl={release.spotifyUrl} t={t} />
+                  </>
                 )}
               </div>
             )}
@@ -2074,10 +2073,55 @@ function ReleaseDetail({ isLoading, release, isMobile, t, onBack }: ReleaseDetai
             <a className="spotifyLink detailPrimaryAction detailBottomAction" href={release.spotifyUrl} target="_blank" rel="noreferrer">
               {t.release.openSpotify}
             </a>
+            <CopySpotifyLinkButton spotifyUrl={release.spotifyUrl} t={t} />
           </div>
         </div>
       )}
     </main>
+  );
+}
+
+type CopySpotifyLinkButtonProps = {
+  spotifyUrl: string;
+  t: Translation;
+};
+
+function CopySpotifyLinkButton({ spotifyUrl, t }: CopySpotifyLinkButtonProps) {
+  const [isCopied, setIsCopied] = useState(false);
+
+  useEffect(() => {
+    if (!isCopied) {
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => setIsCopied(false), 1800);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [isCopied]);
+
+  async function handleCopy(): Promise<void> {
+    const wasCopied = await copyTextToClipboard(spotifyUrl);
+    setIsCopied(wasCopied);
+  }
+
+  const label = isCopied ? t.release.copiedSpotifyLink : t.release.copySpotifyLink;
+
+  return (
+    <button type="button" className={isCopied ? 'copySpotifyButton isCopied' : 'copySpotifyButton'} aria-label={label} title={label} onClick={handleCopy}>
+      <span className="copySpotifyIcon" aria-hidden="true">
+        <svg viewBox="0 0 20 20" focusable="false">
+          {isCopied ? (
+            <path d="M4.5 10.5 8.2 14 15.5 6" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+          ) : (
+            <>
+              <rect x="7" y="5" width="8" height="10" rx="2" fill="none" stroke="currentColor" strokeWidth="1.7" />
+              <path d="M5 13V7a2 2 0 0 1 2-2h5" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.7" />
+            </>
+          )}
+        </svg>
+      </span>
+      <span className="srOnly">{label}</span>
+    </button>
   );
 }
 
@@ -2859,6 +2903,37 @@ function getRouteFromPath(pathname: string): AppRoute {
 
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'AbortError';
+}
+
+async function copyTextToClipboard(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // Fall through to the textarea fallback when Clipboard API is unavailable by permission.
+  }
+
+  if (!document.queryCommandSupported?.('copy')) {
+    return false;
+  }
+
+  const textArea = document.createElement('textarea');
+  textArea.value = text;
+  textArea.setAttribute('readonly', '');
+  textArea.style.position = 'fixed';
+  textArea.style.top = '-1000px';
+  textArea.style.left = '-1000px';
+
+  document.body.appendChild(textArea);
+  textArea.select();
+
+  try {
+    return document.execCommand('copy');
+  } finally {
+    document.body.removeChild(textArea);
+  }
 }
 
 export default App;

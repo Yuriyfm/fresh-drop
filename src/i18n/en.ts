@@ -121,6 +121,8 @@ export const en = {
     notLoadedDescription: 'Go back to the search results and open the release from the list.',
     noCover: 'No cover available',
     openSpotify: 'Open in Spotify',
+    copySpotifyLink: 'Copy Spotify link',
+    copiedSpotifyLink: 'Spotify link copied',
     releaseDate: 'Release date',
     country: 'Artist country',
     type: 'Type',

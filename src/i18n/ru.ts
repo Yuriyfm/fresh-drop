@@ -121,6 +121,8 @@ export const ru = {
     notLoadedDescription: 'Вернитесь к результатам поиска и откройте релиз из списка.',
     noCover: 'Обложка недоступна',
     openSpotify: 'Открыть в Spotify',
+    copySpotifyLink: 'Скопировать ссылку Spotify',
+    copiedSpotifyLink: 'Ссылка Spotify скопирована',
     releaseDate: 'Дата релиза',
     country: 'Страна артиста',
     type: 'Тип',

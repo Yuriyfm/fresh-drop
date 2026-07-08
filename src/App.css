@@ -671,34 +671,29 @@ select:disabled {
   background: linear-gradient(180deg, #0d1510, var(--color-field));
 }
 
-.genreOptionList,
-.searchLayout.isDesktopSidebar .filterPanel {
+.genreOptionList {
   scrollbar-width: thin;
   scrollbar-color: var(--color-scrollbar-thumb) var(--color-scrollbar-track);
 }
 
-.genreOptionList::-webkit-scrollbar,
-.searchLayout.isDesktopSidebar .filterPanel::-webkit-scrollbar {
+.genreOptionList::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
 
-.genreOptionList::-webkit-scrollbar-track,
-.searchLayout.isDesktopSidebar .filterPanel::-webkit-scrollbar-track {
+.genreOptionList::-webkit-scrollbar-track {
   background: var(--color-scrollbar-track);
   border-radius: 999px;
 }
 
-.genreOptionList::-webkit-scrollbar-thumb,
-.searchLayout.isDesktopSidebar .filterPanel::-webkit-scrollbar-thumb {
+.genreOptionList::-webkit-scrollbar-thumb {
   border: 2px solid transparent;
   border-radius: 999px;
   background: var(--color-scrollbar-thumb);
   background-clip: padding-box;
 }
 
-.genreOptionList::-webkit-scrollbar-thumb:hover,
-.searchLayout.isDesktopSidebar .filterPanel::-webkit-scrollbar-thumb:hover {
+.genreOptionList::-webkit-scrollbar-thumb:hover {
   background: var(--color-scrollbar-thumb-hover);
   background-clip: padding-box;
 }
@@ -1183,7 +1178,8 @@ button:disabled {
   color: #dffce7;
 }
 
-.sidebarResetButton {
+.sidebarResetButton,
+.resultsResetButton {
   width: 100%;
   margin-top: 4px;
 }
@@ -1678,6 +1674,10 @@ button:disabled {
 }
 
 .detailBottomBarInner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
   padding: 0;
 }
 
@@ -1766,7 +1766,8 @@ button:disabled {
 .detailActions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0;
+  gap: 10px;
+  align-items: stretch;
 }
 
 .spotifyLink {
@@ -1777,8 +1778,47 @@ button:disabled {
 }
 
 .detailPrimaryAction {
-  width: 100%;
+  flex: 1 1 220px;
+  width: auto;
   min-width: 196px;
+}
+
+.copySpotifyButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 44px;
+  width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border-color: var(--color-border-strong);
+  border-radius: 999px;
+  background: var(--color-surface-raised);
+  color: var(--color-text-primary);
+}
+
+.copySpotifyButton:hover,
+.copySpotifyButton:focus-visible {
+  border-color: rgba(30, 215, 96, 0.7);
+  background: var(--color-accent-surface);
+  color: #dffce7;
+}
+
+.copySpotifyButton.isCopied {
+  border-color: var(--color-accent);
+  background: var(--color-accent-surface);
+  color: #dffce7;
+}
+
+.copySpotifyIcon {
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+}
+
+.copySpotifyIcon svg {
+  width: 100%;
+  height: 100%;
 }
 
 .detailMetaBadge {
@@ -2189,7 +2229,8 @@ dd {
     min-width: 160px;
   }
 
-  .sidebarResetButton {
+  .sidebarResetButton,
+  .resultsResetButton {
     width: auto;
     margin-top: 0;
     justify-self: start;
@@ -2291,8 +2332,6 @@ dd {
   .searchLayout.isDesktopSidebar .filterPanel {
     position: sticky;
     top: 84px;
-    max-height: calc(100dvh - 108px);
-    overflow: auto;
     align-self: start;
   }
 
