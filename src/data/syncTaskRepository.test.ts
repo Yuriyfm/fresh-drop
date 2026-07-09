@@ -102,6 +102,45 @@ describe('InMemorySyncTaskRepository', () => {
     ]);
   });
 
+  it('postpones all runnable tasks until the shared retry window', async () => {
+    const tasks = new InMemorySyncTaskRepository();
+    const now = new Date('2026-07-03T12:00:00.000Z');
+    const retryAt = new Date('2026-07-03T12:10:00.000Z');
+
+    await tasks.enqueueTasks([
+      { source: 'search', query: 'tag:new', market: 'TR', family: 'plain', token: '' },
+      { source: 'search', query: 'tag:new album:a', market: 'TR', family: 'album', token: 'a', depth: 1 },
+      { source: 'search', query: 'tag:new album:b', market: 'TR', family: 'album', token: 'b', depth: 1 },
+    ]);
+
+    const [pendingTask, completedTask, exhaustedTask] = await tasks.claimPendingTasks(3, now);
+    await tasks.releaseTasks([pendingTask.id], now);
+    await tasks.completeTask({
+      id: completedTask.id,
+      status: 'completed',
+      itemsFound: 100,
+      itemsSaved: 1,
+      nextRunAt: new Date('2026-07-03T12:05:00.000Z'),
+    });
+    await tasks.completeTask({
+      id: exhaustedTask.id,
+      status: 'exhausted',
+      itemsFound: 300,
+      itemsSaved: 0,
+      nextRunAt: new Date('2026-07-03T12:06:00.000Z'),
+    });
+
+    const postponed = await tasks.postponeRunnableTasks(retryAt);
+
+    expect(postponed).toBe(3);
+    await expect(tasks.claimPendingTasks(10, new Date('2026-07-03T12:09:59.000Z'))).resolves.toEqual([]);
+    await expect(tasks.claimPendingTasks(10, retryAt)).resolves.toEqual([
+      expect.objectContaining({ id: pendingTask.id }),
+      expect.objectContaining({ id: completedTask.id }),
+      expect.objectContaining({ id: exhaustedTask.id }),
+    ]);
+  });
+
   it('reactivates completed and exhausted search shards after their next run time', async () => {
     const tasks = new InMemorySyncTaskRepository();
     const now = new Date('2026-07-03T12:00:00.000Z');

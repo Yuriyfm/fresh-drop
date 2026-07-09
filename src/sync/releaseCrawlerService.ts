@@ -88,6 +88,27 @@ export async function runReleaseCrawler(
 ): Promise<ReleaseCrawlerResult> {
   await tasks.deactivateLegacySearchTasks(currentDate);
 
+  const activeRetryAt = await tasks.getActiveRateLimitRetryAt(currentDate);
+  if (activeRetryAt) {
+    const cleanup = await releases.cleanupOldReleases(currentDate, config.retentionDays);
+    const tasksDeferred = await tasks.postponeRunnableTasks(activeRetryAt);
+
+    return {
+      tasksClaimed: 0,
+      tasksSucceeded: 0,
+      tasksFailed: 0,
+      tasksInserted: 0,
+      tasksDeferred,
+      requestsMade: 0,
+      itemsFound: 0,
+      itemsSaved: 0,
+      itemsDeleted: cleanup.deleted,
+      stoppedDueToRateLimit: true,
+      retryAt: activeRetryAt,
+      taskSummaries: [],
+    };
+  }
+
   const seedTasks = config.markets.flatMap((market) => config.searchSeeds
     .filter((seed) => seed.markets === undefined || seed.markets.includes(market))
     .map<SyncTaskInput>((seed) => ({
@@ -139,7 +160,7 @@ export async function runReleaseCrawler(
         await tasks.releaseTasks(remainingTaskIds, taskResult.completeInput.nextRunAt ?? currentDate, taskResult.completeInput.errorMessage);
         result.tasksFailed += 1;
         result.tasksDeferred += remainingTaskIds.length;
-        result.tasksDeferred += await tasks.postponePendingTasks(taskResult.completeInput.nextRunAt ?? currentDate, taskResult.completeInput.errorMessage);
+        result.tasksDeferred += await tasks.postponeRunnableTasks(taskResult.completeInput.nextRunAt ?? currentDate, taskResult.completeInput.errorMessage);
         result.stoppedDueToRateLimit = true;
         result.retryAt = taskResult.completeInput.nextRunAt;
         break;
@@ -162,7 +183,7 @@ export async function runReleaseCrawler(
 
         await tasks.releaseTasks(remainingTaskIds, failure.retryNextRunAt, failure.completeInput.errorMessage);
         result.tasksDeferred += remainingTaskIds.length;
-        result.tasksDeferred += await tasks.postponePendingTasks(failure.retryNextRunAt, failure.completeInput.errorMessage);
+        result.tasksDeferred += await tasks.postponeRunnableTasks(failure.retryNextRunAt, failure.completeInput.errorMessage);
         result.stoppedDueToRateLimit = true;
         result.retryAt = failure.retryNextRunAt;
         break;

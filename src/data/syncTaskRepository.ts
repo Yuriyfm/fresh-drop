@@ -79,6 +79,8 @@ export type SyncTaskRepository = {
   completeTask(input: CompleteSyncTaskInput): Promise<void>;
   releaseTasks(taskIds: string[], nextRunAt: Date, errorMessage?: string | null): Promise<void>;
   postponePendingTasks(nextRunAt: Date, errorMessage?: string | null): Promise<number>;
+  postponeRunnableTasks(nextRunAt: Date, errorMessage?: string | null): Promise<number>;
+  getActiveRateLimitRetryAt(now?: Date): Promise<Date | undefined>;
   deactivateLegacySearchTasks(now?: Date): Promise<number>;
 };
 
@@ -237,6 +239,36 @@ export class InMemorySyncTaskRepository implements SyncTaskRepository {
     }
 
     return updated;
+  }
+
+  async postponeRunnableTasks(nextRunAt: Date, errorMessage?: string | null): Promise<number> {
+    let updated = 0;
+    const statuses: SyncTaskStatus[] = ['pending', 'completed', 'exhausted', 'rate_limited'];
+
+    for (const task of this.tasks.values()) {
+      if (!statuses.includes(task.status)) {
+        continue;
+      }
+
+      if (task.nextRunAt && task.nextRunAt >= nextRunAt) {
+        continue;
+      }
+
+      task.nextRunAt = nextRunAt;
+      task.lastError = errorMessage ?? task.lastError;
+      updated += 1;
+    }
+
+    return updated;
+  }
+
+  async getActiveRateLimitRetryAt(now = new Date()): Promise<Date | undefined> {
+    const retryTimes = Array.from(this.tasks.values())
+      .filter((task) => task.status === 'rate_limited' && task.nextRunAt && task.nextRunAt > now)
+      .map((task) => task.nextRunAt as Date)
+      .sort((a, b) => b.getTime() - a.getTime());
+
+    return retryTimes[0];
   }
 
   async deactivateLegacySearchTasks(now = new Date()): Promise<number> {
@@ -454,6 +486,37 @@ export class PostgresSyncTaskRepository implements SyncTaskRepository {
     );
 
     return result.rowCount ?? 0;
+  }
+
+  async postponeRunnableTasks(nextRunAt: Date, errorMessage?: string | null): Promise<number> {
+    const result = await this.pool.query(
+      `
+        update sync_tasks
+        set next_run_at = $1,
+            error_message = coalesce($2, error_message),
+            last_error = coalesce($2, last_error),
+            updated_at = now()
+        where status in ('pending', 'completed', 'exhausted', 'rate_limited')
+          and next_run_at < $1
+      `,
+      [nextRunAt, errorMessage ?? null],
+    );
+
+    return result.rowCount ?? 0;
+  }
+
+  async getActiveRateLimitRetryAt(now = new Date()): Promise<Date | undefined> {
+    const result = await this.pool.query<{ retry_at: Date | null }>(
+      `
+        select max(next_run_at) as retry_at
+        from sync_tasks
+        where status = 'rate_limited'
+          and next_run_at > $1
+      `,
+      [now],
+    );
+
+    return result.rows[0]?.retry_at ?? undefined;
   }
 
   async deactivateLegacySearchTasks(now = new Date()): Promise<number> {
