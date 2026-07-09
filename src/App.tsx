@@ -1322,6 +1322,7 @@ type GenreFilterProps = {
   clearLabel?: string;
   variant?: 'include' | 'exclude';
   hideHeader?: boolean;
+  showSelectedPreview?: boolean;
   onChange: (genres: string[]) => void;
 };
 
@@ -1337,6 +1338,7 @@ function GenreFilter({
   clearLabel = t.filters.clearGenres,
   variant = 'include',
   hideHeader = false,
+  showSelectedPreview = true,
   onChange,
 }: GenreFilterProps) {
   const [query, setQuery] = useState('');
@@ -1376,18 +1378,21 @@ function GenreFilter({
           )}
         </div>
       )}
+      {showSelectedPreview && selectedGenres.length > 0 && (
+        <div
+          className={variant === 'exclude' ? 'selectedGenreChips excludedGenrePreview' : 'selectedGenreChips selectedGenrePreview'}
+          aria-label={selectedLabel}
+        >
+          {visibleSelectedGenres.map((genre) => (
+            <button type="button" className={variant === 'exclude' ? 'genreChip genreChipExclude' : 'genreChip'} key={genre} onClick={() => toggleGenre(genre)}>
+              {getGenreLabel(genre, t)} x
+            </button>
+          ))}
+          {hiddenSelectedGenresCount > 0 && <span className="genreChip genreChipOverflow">+{hiddenSelectedGenresCount}</span>}
+        </div>
+      )}
       <div className="genreSearchRow">
         <div className="genreSearchField">
-          {selectedGenres.length > 0 && (
-            <div className="selectedGenreChips" aria-label={selectedLabel}>
-              {visibleSelectedGenres.map((genre) => (
-                <button type="button" className={variant === 'exclude' ? 'genreChip genreChipExclude' : 'genreChip'} key={genre} onClick={() => toggleGenre(genre)}>
-                  {getGenreLabel(genre, t)} x
-                </button>
-              ))}
-              {hiddenSelectedGenresCount > 0 && <span className="genreChip genreChipOverflow">+{hiddenSelectedGenresCount}</span>}
-            </div>
-          )}
           <input
             type="search"
             value={query}
@@ -1529,6 +1534,7 @@ function ExcludedGenreFilter({ isMobile, selectedGenres, blockedGenres, genreOpt
           clearLabel={t.filters.clearExcludedGenres}
           variant="exclude"
           hideHeader
+          showSelectedPreview={false}
           onChange={onChange}
         />
       )}
@@ -1550,7 +1556,7 @@ type TypeFilterProps = {
 function TypeFilter({ type, t, layout = 'default', onChange }: TypeFilterProps) {
   return (
     <SegmentedControl
-      className={layout === 'sheet' ? 'isSheetTypeControl' : undefined}
+      className={layout === 'sheet' ? 'isSheetTypeControl' : 'isTypeControl'}
       label={t.filters.type}
       value={type}
       options={[
