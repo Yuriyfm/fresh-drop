@@ -190,6 +190,8 @@ yarn enrich:musicbrainz:artists -- --limit=100 [--dry-run] [--force] [--skip-if-
 - `--dry-run` не пишет изменения в БД;
 - для защиты от параллельных прогонов используется PostgreSQL advisory lock;
 - `--skip-if-locked` завершает запуск без ошибки, если другой enrichment уже выполняется;
+- production scheduler дополнительно использует process-level lock до запуска `yarn`, чтобы cron не порождал новые Node-процессы, пока предыдущий enrichment ещё жив;
+- если process-level lock занят, cron tick завершается без MusicBrainz-запросов;
 - один failing artist не должен валить весь воркер.
 
 ## Backfill Existing Artists

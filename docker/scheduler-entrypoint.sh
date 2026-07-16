@@ -20,13 +20,13 @@ fi
 cat > /tmp/fresh-drop-crontab <<EOF
 SHELL=/bin/sh
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-${CRAWLER_CRON_SCHEDULE} cd /app && TMPDIR=/tmp yarn crawl:scheduled >> /proc/1/fd/1 2>> /proc/1/fd/2
-${CLEANUP_CRON_SCHEDULE} cd /app && TMPDIR=/tmp yarn cleanup:releases >> /proc/1/fd/1 2>> /proc/1/fd/2
+${CRAWLER_CRON_SCHEDULE} cd /app && TMPDIR=/tmp /bin/sh /app/docker/run-cron-command.sh crawler yarn crawl:scheduled >> /proc/1/fd/1 2>> /proc/1/fd/2
+${CLEANUP_CRON_SCHEDULE} cd /app && TMPDIR=/tmp /bin/sh /app/docker/run-cron-command.sh cleanup yarn cleanup:releases >> /proc/1/fd/1 2>> /proc/1/fd/2
 EOF
 
 if [ "${MUSICBRAINZ_ENABLED}" = "true" ]; then
   cat >> /tmp/fresh-drop-crontab <<EOF
-${ENRICH_MUSICBRAINZ_CRON_SCHEDULE} cd /app && TMPDIR=/tmp yarn enrich:musicbrainz:artists --skip-if-locked --limit=${ENRICH_MUSICBRAINZ_LIMIT} >> /proc/1/fd/1 2>> /proc/1/fd/2
+${ENRICH_MUSICBRAINZ_CRON_SCHEDULE} cd /app && TMPDIR=/tmp /bin/sh /app/docker/run-cron-command.sh musicbrainz-enrichment yarn enrich:musicbrainz:artists --skip-if-locked --limit=${ENRICH_MUSICBRAINZ_LIMIT} >> /proc/1/fd/1 2>> /proc/1/fd/2
 EOF
 fi
 

@@ -1,3 +1,15 @@
 {$FRESH_DROP_SITE_ADDRESS::80} {
+	log {
+		output stdout
+		format json
+	}
+
+	@connect method CONNECT
+	respond @connect "CONNECT is not allowed" 405
+
+	request_body {
+		max_size 2MB
+	}
+
 	reverse_proxy app:4173
 }
