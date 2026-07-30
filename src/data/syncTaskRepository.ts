@@ -115,6 +115,7 @@ type SyncTaskRow = {
 };
 
 const FALLBACK_COMPLETED_NEXT_RUN_DELAY_MS = 365 * 24 * 60 * 60 * 1000;
+const STALE_RUNNING_TASK_TIMEOUT_MS = 30 * 60 * 1000;
 
 export class InMemorySyncTaskRepository implements SyncTaskRepository {
   private readonly tasks = new Map<string, SyncTask>();
@@ -167,11 +168,17 @@ export class InMemorySyncTaskRepository implements SyncTaskRepository {
   }
 
   async claimPendingTasks(limit: number, now = new Date()): Promise<SyncTask[]> {
-    reactivateDueTasks(Array.from(this.tasks.values()), now);
+    const tasksForReactivation = Array.from(this.tasks.values());
+    reactivateDueTasks(tasksForReactivation, now);
+    releaseStaleRunningTasks(tasksForReactivation, now);
 
     const tasks = Array.from(this.tasks.values())
       .filter((task) => task.status === 'pending' && (!task.nextRunAt || task.nextRunAt <= now))
-      .sort((a, b) => a.priority - b.priority || Number(a.id) - Number(b.id))
+      .sort((a, b) => {
+        const dueTimeDifference = (a.nextRunAt?.getTime() ?? 0) - (b.nextRunAt?.getTime() ?? 0);
+
+        return dueTimeDifference || b.priority - a.priority || Number(a.id) - Number(b.id);
+      })
       .slice(0, limit);
 
     for (const task of tasks) {
@@ -344,6 +351,21 @@ export class PostgresSyncTaskRepository implements SyncTaskRepository {
       `
         update sync_tasks
         set status = 'pending',
+            next_run_at = $1,
+            error_message = 'Crawler task returned to pending after stale running timeout.',
+            last_error = 'Crawler task returned to pending after stale running timeout.',
+            updated_at = now()
+        where status = 'running'
+          and last_run_at is not null
+          and last_run_at <= $2
+      `,
+      [now, new Date(now.getTime() - STALE_RUNNING_TASK_TIMEOUT_MS)],
+    );
+
+    await this.pool.query(
+      `
+        update sync_tasks
+        set status = 'pending',
             updated_at = now()
         where status in ('completed', 'exhausted', 'rate_limited')
           and next_run_at <= $1
@@ -363,7 +385,7 @@ export class PostgresSyncTaskRepository implements SyncTaskRepository {
           from sync_tasks
           where status = 'pending'
             and next_run_at <= $2
-          order by priority asc, id asc
+          order by next_run_at asc, priority desc, id asc
           limit $1
           for update skip locked
         )
@@ -599,5 +621,19 @@ function reactivateDueTasks(tasks: SyncTask[], now: Date): void {
     ) {
       task.status = 'pending';
     }
+  }
+}
+
+function releaseStaleRunningTasks(tasks: SyncTask[], now: Date): void {
+  const staleBefore = new Date(now.getTime() - STALE_RUNNING_TASK_TIMEOUT_MS);
+
+  for (const task of tasks) {
+    if (task.status !== 'running' || !task.lastRunAt || task.lastRunAt > staleBefore) {
+      continue;
+    }
+
+    task.status = 'pending';
+    task.nextRunAt = now;
+    task.lastError = 'Crawler task returned to pending after stale running timeout.';
   }
 }

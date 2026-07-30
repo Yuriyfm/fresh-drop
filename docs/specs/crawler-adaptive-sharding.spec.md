@@ -114,7 +114,13 @@ Search shard хранится в persistent storage и представляет 
 
 ## Выполнение shard
 
-Worker берёт shard с максимальным `priority`, где `status = pending`.
+Worker берёт только due shard, где `status = pending` и `next_run_at <= now()`.
+
+Порядок claim:
+
+* сначала самый старый `next_run_at`, чтобы backlog не создавал starvation;
+* при одинаковом `next_run_at` — максимальный `priority`;
+* затем минимальный `id` для стабильного порядка.
 
 Параметры запроса:
 
@@ -162,6 +168,8 @@ Worker берёт shard с максимальным `priority`, где `status =
 * recursive split остаётся только для ASCII/digit token-ов текущей стратегии.
 
 После успешного создания child shard-ов родитель помечается как `completed` с флагом `was_split = true`.
+
+Split-parent больше не должен выполнять Spotify-запросы: покрытие передаётся child shard-ам, а `next_run_at` родителя переносится минимум на год. Если такой parent случайно был повторно claimed после старой версии scheduler, worker должен завершить его без Spotify-запросов.
 
 ## Правило exhausted query
 
@@ -218,6 +226,9 @@ priority = 50
 SPOTIFY_SEARCH_LIMIT=10
 SPOTIFY_MAX_SAFE_OFFSET=1000
 SPOTIFY_SPLIT_TOTAL_THRESHOLD=800
+SPOTIFY_CRAWLER_SEARCH_TASK_COOLDOWN_MINUTES=2880
 ```
 
 Crawler должен начинать дробление раньше безопасного потолка offset, чтобы не терять выдачу на краю лимита Spotify Search API.
+
+Production cooldown должен учитывать пропускную способность scheduler. Для текущих markets, batch `10` и запуска раз в `10` минут используется `2880` минут: это не увеличивает число Spotify-запросов и позволяет очереди выйти в устойчивый режим вместо постоянного накопления due shard-ов.

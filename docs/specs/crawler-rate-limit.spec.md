@@ -137,3 +137,9 @@ Crawler не должен продолжать отправлять новые �
 * lock должен быть отдельным от MusicBrainz enrichment и cleanup;
 * skip должен логироваться короткой строкой с именем задачи и причиной;
 * stale lock после аварийного завершения процесса должен очищаться, если сохранённый PID больше не жив.
+* crawler cron должен иметь runtime timeout, после которого зависший процесс завершается;
+* задачи, оставшиеся в `running` после аварийного завершения или timeout, должны автоматически возвращаться в `pending` после stale-running окна;
+* stale-running окно должно быть больше штатного timeout crawler, чтобы не переclaim-ить реально работающий запуск.
+* production cron должен запускать заранее собранный JavaScript через `node`, без runtime `vite-node`, `esbuild` и вложенного `yarn`;
+* scheduler container должен использовать init-reaper, чтобы завершённые дочерние процессы не накапливались как zombie и не исчерпывали PID limit;
+* timeout и PID limit остаются защитными границами, но штатный job не должен порождать runtime compiler process.

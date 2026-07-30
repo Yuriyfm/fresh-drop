@@ -172,6 +172,70 @@ describe('InMemorySyncTaskRepository', () => {
       }),
     ]);
   });
+
+  it('returns stale running tasks to pending before claiming new work', async () => {
+    const tasks = new InMemorySyncTaskRepository();
+    const startedAt = new Date('2026-07-03T12:00:00.000Z');
+
+    await tasks.enqueueTasks([
+      { source: 'search', query: 'tag:new', market: 'TR', family: 'plain', token: '' },
+    ]);
+
+    const [claimed] = await tasks.claimPendingTasks(1, startedAt);
+
+    await expect(tasks.claimPendingTasks(1, new Date('2026-07-03T12:29:59.000Z'))).resolves.toEqual([]);
+    await expect(tasks.claimPendingTasks(1, new Date('2026-07-03T12:30:00.000Z'))).resolves.toEqual([
+      expect.objectContaining({
+        id: claimed.id,
+        query: 'tag:new',
+        attempts: 2,
+        lastError: 'Crawler task returned to pending after stale running timeout.',
+      }),
+    ]);
+  });
+
+  it('claims the oldest due tasks first and uses descending priority as the tie-breaker', async () => {
+    const tasks = new InMemorySyncTaskRepository();
+    const now = new Date('2026-07-03T12:00:00.000Z');
+
+    await tasks.enqueueTasks([
+      {
+        source: 'search',
+        query: 'tag:new newer',
+        market: 'TR',
+        family: 'plain',
+        token: 'newer',
+        priority: 100,
+        nextRunAt: new Date('2026-07-03T11:00:00.000Z'),
+      },
+      {
+        source: 'search',
+        query: 'tag:new older-low',
+        market: 'TR',
+        family: 'plain',
+        token: 'older-low',
+        priority: 10,
+        nextRunAt: new Date('2026-07-03T10:00:00.000Z'),
+      },
+      {
+        source: 'search',
+        query: 'tag:new older-high',
+        market: 'TR',
+        family: 'plain',
+        token: 'older-high',
+        priority: 90,
+        nextRunAt: new Date('2026-07-03T10:00:00.000Z'),
+      },
+    ]);
+
+    const claimed = await tasks.claimPendingTasks(3, now);
+
+    expect(claimed.map((task) => task.query)).toEqual([
+      'tag:new older-high',
+      'tag:new older-low',
+      'tag:new newer',
+    ]);
+  });
 });
 
 describe('PostgresSyncTaskRepository', () => {
@@ -195,5 +259,27 @@ describe('PostgresSyncTaskRepository', () => {
     expect(query).toHaveBeenCalledTimes(1);
     expect(query.mock.calls[0]?.[1]?.[5]).toBeInstanceOf(Date);
     expect((query.mock.calls[0]?.[1]?.[5] as Date).toISOString()).toBe('2027-07-04T16:00:00.000Z');
+  });
+
+  it('returns stale running tasks to pending before claiming tasks', async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({ rowCount: 2 })
+      .mockResolvedValueOnce({ rowCount: 0 })
+      .mockResolvedValueOnce({ rows: [] });
+    const tasks = new PostgresSyncTaskRepository({
+      pool: { query } as never,
+    });
+    const now = new Date('2026-07-03T12:30:00.000Z');
+
+    await tasks.claimPendingTasks(5, now);
+
+    expect(query).toHaveBeenCalledTimes(3);
+    expect(query.mock.calls[0]?.[0]).toContain("where status = 'running'");
+    expect(query.mock.calls[0]?.[1]).toEqual([
+      now,
+      new Date('2026-07-03T12:00:00.000Z'),
+    ]);
+    expect(query.mock.calls[2]?.[0]).toContain('order by next_run_at asc, priority desc, id asc');
   });
 });

@@ -140,6 +140,15 @@ export async function runReleaseCrawler(
   };
 
   for (const task of claimed) {
+    if (task.source === 'search' && task.wasSplit) {
+      const completeInput = buildDormantSplitParentInput(task, currentDate);
+
+      await tasks.completeTask(completeInput);
+      result.taskSummaries.push(buildTaskSummary(task, completeInput, 0));
+      result.tasksSucceeded += 1;
+      continue;
+    }
+
     try {
       const taskResult = task.source === 'search'
         ? await runSearchTask(source, releases, tasks, task, config, currentDate)
@@ -351,12 +360,14 @@ async function runSearchTask(
 
   const duplicateRate = duplicatesSeen / Math.max(itemsSeen, 1);
   const priority = getSearchShardPriority(task.depth, uniqueAdded, duplicateRate, spotifyTotal);
-  const cooldownAt = getCompletedNextRunAt(config, currentDate, duplicateRate >= 0.95 && itemsSeen >= 300);
   const saturated = spotifyTotal !== null && spotifyTotal >= config.splitTotalThreshold;
   const canSplit = saturated
     && task.family !== null
     && task.depth < config.maxShardDepth
     && canSplitSearchShard(task.family, task.token ?? '');
+  const cooldownAt = canSplit
+    ? getDormantSplitParentNextRunAt(currentDate)
+    : getCompletedNextRunAt(config, currentDate, duplicateRate >= 0.95 && itemsSeen >= 300);
   let insertedTasks = 0;
   let wasSplit = false;
 
@@ -648,6 +659,35 @@ function getCompletedNextRunAt(config: ReleaseCrawlerConfig, currentDate: Date, 
     : config.searchTaskCooldownMinutes;
 
   return new Date(currentDate.getTime() + cooldownMinutes * 60 * 1000);
+}
+
+function getDormantSplitParentNextRunAt(currentDate: Date): Date {
+  return new Date(currentDate.getTime() + 365 * 24 * 60 * 60 * 1000);
+}
+
+function buildDormantSplitParentInput(task: SyncTask, currentDate: Date): CompleteSyncTaskInput {
+  return {
+    id: task.id,
+    status: 'completed',
+    itemsFound: 0,
+    itemsSaved: 0,
+    nextRunAt: getDormantSplitParentNextRunAt(currentDate),
+    spotifyTotal: task.spotifyTotal,
+    pagesFetched: task.pagesFetched,
+    itemsSeen: task.itemsSeen,
+    uniqueAdded: task.uniqueAdded,
+    duplicatesSeen: task.duplicatesSeen,
+    emptyPages: task.emptyPages,
+    lastOffset: task.lastOffset,
+    avgLatencyMs: task.avgLatencyMs,
+    rateLimitedCount: task.rateLimitedCount,
+    completedAt: currentDate,
+    priority: task.priority,
+    wasSplit: true,
+    requestCount: 0,
+    artistCacheHits: 0,
+    artistRequestsSaved: 0,
+  };
 }
 
 function isExhaustedShard(itemsSeen: number, uniqueAdded: number, duplicatesSeen: number): boolean {

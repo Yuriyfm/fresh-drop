@@ -289,6 +289,66 @@ describe('runReleaseCrawler', () => {
     ]));
   });
 
+  it('retires an already split parent without making Spotify requests', async () => {
+    const source = {
+      fetchReleaseSearchAlbumsPage: vi.fn(),
+      fetchArtistsByIds: vi.fn(),
+      fetchArtistAlbumsPage: vi.fn(),
+    };
+    const releases = new InMemoryReleaseRepository();
+    const tasks = new InMemorySyncTaskRepository();
+    const initialDate = new Date('2026-07-02T12:00:00.000Z');
+
+    await tasks.enqueueTasks([
+      {
+        source: 'search',
+        query: 'tag:new album:a',
+        market: 'TR',
+        family: 'album',
+        token: 'a',
+        depth: 1,
+        priority: 90,
+      },
+    ]);
+    const [parent] = await tasks.claimPendingTasks(1, initialDate);
+    await tasks.completeTask({
+      id: parent.id,
+      status: 'completed',
+      itemsFound: 300,
+      itemsSaved: 100,
+      nextRunAt: new Date('2026-07-03T12:00:00.000Z'),
+      spotifyTotal: 900,
+      pagesFetched: 6,
+      itemsSeen: 300,
+      uniqueAdded: 100,
+      duplicatesSeen: 200,
+      completedAt: initialDate,
+      priority: 90,
+      wasSplit: true,
+    });
+
+    const result = await runReleaseCrawler(source, releases, tasks, makeConfig({
+      searchSeeds: [{ family: 'album', token: 'a', priority: 90, depth: 1 }],
+    }), new Date('2026-07-03T12:00:00.000Z'));
+
+    expect(result).toMatchObject({
+      tasksClaimed: 1,
+      tasksSucceeded: 1,
+      requestsMade: 0,
+      itemsFound: 0,
+      itemsSaved: 0,
+    });
+    expect(result.taskSummaries).toEqual([
+      expect.objectContaining({
+        query: 'tag:new album:a',
+        wasSplit: true,
+        requestCount: 0,
+      }),
+    ]);
+    expect(source.fetchReleaseSearchAlbumsPage).not.toHaveBeenCalled();
+    await expect(tasks.claimPendingTasks(1, new Date('2026-07-04T12:00:00.000Z'))).resolves.toEqual([]);
+  });
+
   it('marks low-yield shards as exhausted and reruns them later with lower priority', async () => {
     const source = {
       fetchReleaseSearchAlbumsPage: vi
