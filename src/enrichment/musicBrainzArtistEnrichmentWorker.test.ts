@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ArtistEnrichmentRepository } from '../data/artistEnrichmentRepository';
-import { getNextRetryAt } from '../data/postgresArtistEnrichmentRepository';
+import { getEffectiveRetryAt, getNextRetryAt, getRefreshAt } from '../data/postgresArtistEnrichmentRepository';
 import { MusicBrainzApiError, type MusicBrainzClient } from '../integrations/musicbrainz/musicbrainzClient';
 import { runMusicBrainzArtistEnrichmentWorker } from './musicBrainzArtistEnrichmentWorker';
 
@@ -60,6 +60,8 @@ describe('runMusicBrainzArtistEnrichmentWorker', () => {
     });
 
     expect(summary.matched).toBe(1);
+    expect(summary.countriesSaved).toBe(1);
+    expect(summary.countriesMissing).toBe(0);
     expect(repository.markMatched).toHaveBeenCalledWith({
       spotifyArtistId: 'artist-1',
       musicBrainzArtistMbid: 'mbid-1',
@@ -133,6 +135,90 @@ describe('runMusicBrainzArtistEnrichmentWorker', () => {
       now: new Date('2026-07-05T12:00:00.000Z'),
     });
   });
+
+  it('stops artist requests and defers remaining matches after a retryable error', async () => {
+    const repository = makeRepository([
+      makeCandidate('artist-1'),
+      makeCandidate('artist-2'),
+      makeCandidate('artist-3'),
+    ]);
+    const retryableError = new MusicBrainzApiError(
+      'MusicBrainz request failed with status 429.',
+      429,
+      true,
+      30 * 60 * 1000,
+    );
+    const lookupArtistGenres = vi.fn()
+      .mockRejectedValueOnce(retryableError)
+      .mockResolvedValue({
+        musicBrainzArtistMbid: 'mbid-2',
+        musicBrainzArtistName: 'Artist Two',
+        musicBrainzArtistCountry: 'Germany',
+        genres: [],
+      });
+    const client = makeClient({
+      lookupSpotifyArtistUrls: vi.fn().mockResolvedValue(
+        ['artist-1', 'artist-2', 'artist-3'].map((id) => ({
+          spotifyArtistUrl: `https://open.spotify.com/artist/${id}`,
+          status: 'matched',
+          musicBrainzArtistMbid: `mbid-${id.slice(-1)}`,
+        })),
+      ),
+      lookupArtistGenres,
+    });
+    const now = new Date('2026-07-05T12:00:00.000Z');
+
+    const summary = await runMusicBrainzArtistEnrichmentWorker(client, repository, {
+      enabled: true,
+      limit: 10,
+      urlLookupBatchSize: 100,
+      now,
+    });
+
+    expect(lookupArtistGenres).toHaveBeenCalledTimes(1);
+    expect(summary.failed).toBe(3);
+    expect(summary.deferredDueToUpstream).toBe(2);
+    expect(repository.markFailed).toHaveBeenCalledTimes(3);
+    expect(repository.markFailed).toHaveBeenLastCalledWith({
+      spotifyArtistId: 'artist-3',
+      errorMessage: 'MusicBrainz request failed with status 429.',
+      now,
+      retryAt: new Date('2026-07-05T12:30:00.000Z'),
+    });
+  });
+
+  it('preserves an existing matched result when its refresh fails temporarily', async () => {
+    const repository = makeRepository([{
+      ...makeCandidate('artist-1'),
+      matchStatus: 'matched',
+    }]);
+    const client = makeClient({
+      lookupSpotifyArtistUrls: vi.fn().mockResolvedValue([{
+        spotifyArtistUrl: 'https://open.spotify.com/artist/artist-1',
+        status: 'matched',
+        musicBrainzArtistMbid: 'mbid-1',
+      }]),
+      lookupArtistGenres: vi.fn().mockRejectedValue(
+        new MusicBrainzApiError('MusicBrainz request timed out.', null, true),
+      ),
+    });
+    const now = new Date('2026-07-05T12:00:00.000Z');
+
+    await runMusicBrainzArtistEnrichmentWorker(client, repository, {
+      enabled: true,
+      force: true,
+      limit: 10,
+      urlLookupBatchSize: 100,
+      now,
+    });
+
+    expect(repository.markFailed).toHaveBeenCalledWith({
+      spotifyArtistId: 'artist-1',
+      errorMessage: 'MusicBrainz request timed out.',
+      now,
+      preserveMatchedStatus: true,
+    });
+  });
 });
 
 describe('getNextRetryAt', () => {
@@ -144,7 +230,31 @@ describe('getNextRetryAt', () => {
     expect(getNextRetryAt(now, 3).toISOString()).toBe('2026-07-05T18:00:00.000Z');
     expect(getNextRetryAt(now, 4).toISOString()).toBe('2026-07-06T12:00:00.000Z');
   });
+
+  it('does not let Retry-After shorten local backoff', () => {
+    const now = new Date('2026-07-05T12:00:00.000Z');
+
+    expect(getEffectiveRetryAt(now, 1, new Date('2026-07-05T12:01:00.000Z')).toISOString())
+      .toBe('2026-07-05T12:15:00.000Z');
+    expect(getEffectiveRetryAt(now, 1, new Date('2026-07-05T13:00:00.000Z')).toISOString())
+      .toBe('2026-07-05T13:00:00.000Z');
+  });
+
+  it('refreshes missing MusicBrainz data after 30 days', () => {
+    expect(getRefreshAt(new Date('2026-07-05T12:00:00.000Z')).toISOString())
+      .toBe('2026-08-04T12:00:00.000Z');
+  });
 });
+
+function makeCandidate(spotifyArtistId: string): Awaited<ReturnType<ArtistEnrichmentRepository['findArtistsForProcessing']>>[number] {
+  return {
+    spotifyArtistId,
+    spotifyArtistName: spotifyArtistId,
+    spotifyArtistUrl: `https://open.spotify.com/artist/${spotifyArtistId}`,
+    matchStatus: 'pending',
+    retryCount: 0,
+  };
+}
 
 function makeRepository(candidates: Awaited<ReturnType<ArtistEnrichmentRepository['findArtistsForProcessing']>>): ArtistEnrichmentRepository & {
   markMatched: ReturnType<typeof vi.fn>;

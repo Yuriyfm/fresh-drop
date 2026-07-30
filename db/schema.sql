@@ -85,6 +85,14 @@ create table if not exists artist_enrichment (
 
 alter table artist_enrichment add column if not exists musicbrainz_artist_country text;
 
+update artist_enrichment
+set next_retry_at = coalesce(fetched_at, updated_at, created_at) + interval '30 days'
+where next_retry_at is null
+  and (
+    match_status in ('not_found', 'ambiguous')
+    or (match_status = 'matched' and musicbrainz_artist_country is null)
+  );
+
 create table if not exists sync_tasks (
   id bigserial primary key,
   source text not null check (source in ('search', 'artist_albums')),

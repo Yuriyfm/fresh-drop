@@ -1,5 +1,10 @@
-import { describe, expect, it } from 'vitest';
-import { MusicBrainzClient, MusicBrainzApiError, parseMusicBrainzUrlLookupResults } from './musicbrainzClient';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  MusicBrainzClient,
+  MusicBrainzApiError,
+  parseMusicBrainzRetryAfterMs,
+  parseMusicBrainzUrlLookupResults,
+} from './musicbrainzClient';
 
 describe('parseMusicBrainzUrlLookupResults', () => {
   it('parses a matched URL lookup result', () => {
@@ -48,6 +53,34 @@ describe('parseMusicBrainzUrlLookupResults', () => {
 });
 
 describe('MusicBrainzClient', () => {
+  it('sends a contacted user agent and batches Spotify URLs as repeated resources', async () => {
+    const fetchFn = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ urls: [] }),
+    } as Response);
+    const client = new MusicBrainzClient({
+      baseUrl: 'https://musicbrainz.org/ws/2',
+      userAgent: 'FreshDrop/0.1.0 (https://github.com/Yuriyfm/fresh-drop)',
+      rateLimitMs: 1100,
+      fetchFn,
+    });
+    const urls = [
+      'https://open.spotify.com/artist/artist-1',
+      'https://open.spotify.com/artist/artist-2',
+    ];
+
+    await client.lookupSpotifyArtistUrls(urls);
+
+    const [requestUrl, init] = fetchFn.mock.calls[0] as [URL, RequestInit];
+    expect(requestUrl.pathname).toBe('/ws/2/url');
+    expect(requestUrl.searchParams.getAll('resource')).toEqual(urls);
+    expect(init.headers).toMatchObject({
+      'User-Agent': 'FreshDrop/0.1.0 (https://github.com/Yuriyfm/fresh-drop)',
+      Accept: 'application/json',
+    });
+  });
+
   it('looks up artist genres', async () => {
     const client = new MusicBrainzClient({
       baseUrl: 'https://musicbrainz.org/ws/2',
@@ -151,6 +184,7 @@ describe('MusicBrainzClient', () => {
       fetchFn: async () => ({
         ok: false,
         status: 503,
+        headers: new Headers({ 'Retry-After': '120' }),
         json: async () => ({}),
       }) as Response,
     });
@@ -158,6 +192,17 @@ describe('MusicBrainzClient', () => {
     await expect(client.lookupArtistGenres('mbid-1')).rejects.toMatchObject({
       status: 503,
       retryable: true,
+      retryAfterMs: 120_000,
     });
+  });
+});
+
+describe('parseMusicBrainzRetryAfterMs', () => {
+  it('parses seconds and HTTP dates', () => {
+    const now = new Date('2026-07-05T12:00:00.000Z');
+
+    expect(parseMusicBrainzRetryAfterMs('12', now)).toBe(12_000);
+    expect(parseMusicBrainzRetryAfterMs('Sun, 05 Jul 2026 12:02:00 GMT', now)).toBe(120_000);
+    expect(parseMusicBrainzRetryAfterMs('invalid', now)).toBeNull();
   });
 });

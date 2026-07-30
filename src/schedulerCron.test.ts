@@ -20,13 +20,13 @@ describe('production scheduler cron safety', () => {
     const compose = readFileSync('docker-compose.prod.yml', 'utf8');
 
     expect(productionEnvExample).toContain('ENRICH_MUSICBRAINZ_CRON_SCHEDULE=2-52/10 * * * *');
-    expect(productionEnvExample).toContain('ENRICH_MUSICBRAINZ_LIMIT=20');
+    expect(productionEnvExample).toContain('ENRICH_MUSICBRAINZ_LIMIT=100');
     expect(productionEnvExample).toContain('SPOTIFY_CRAWLER_SEARCH_TASK_COOLDOWN_MINUTES=2880');
     expect(productionEnvExample).not.toContain('ENRICH_MUSICBRAINZ_CRON_SCHEDULE=* * * * *');
     expect(productionEnvExample).not.toContain('ENRICH_MUSICBRAINZ_LIMIT=300');
     expect(compose).toContain('init: true');
     expect(compose).toContain('ENRICH_MUSICBRAINZ_CRON_SCHEDULE: ${ENRICH_MUSICBRAINZ_CRON_SCHEDULE:-2-52/10 * * * *}');
-    expect(compose).toContain('ENRICH_MUSICBRAINZ_LIMIT: ${ENRICH_MUSICBRAINZ_LIMIT:-20}');
+    expect(compose).toContain('ENRICH_MUSICBRAINZ_LIMIT: ${ENRICH_MUSICBRAINZ_LIMIT:-100}');
     expect(compose).toContain('SPOTIFY_CRAWLER_SEARCH_TASK_COOLDOWN_MINUTES: ${SPOTIFY_CRAWLER_SEARCH_TASK_COOLDOWN_MINUTES:-2880}');
   });
 

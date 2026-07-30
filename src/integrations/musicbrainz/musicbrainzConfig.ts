@@ -23,11 +23,25 @@ export function getMusicBrainzConfigFromEnv(env: MusicBrainzEnv): MusicBrainzCon
     throw new Error('MUSICBRAINZ_USER_AGENT is required when MUSICBRAINZ_ENABLED=true.');
   }
 
+  if (enabled && !hasContact(userAgent)) {
+    throw new Error('MUSICBRAINZ_USER_AGENT must include a contact URL or email in parentheses.');
+  }
+
+  const rateLimitMs = normalizePositiveInteger(
+    env.MUSICBRAINZ_RATE_LIMIT_MS,
+    DEFAULT_RATE_LIMIT_MS,
+    'MUSICBRAINZ_RATE_LIMIT_MS',
+  );
+
+  if (rateLimitMs < 1000) {
+    throw new Error('MUSICBRAINZ_RATE_LIMIT_MS must be at least 1000.');
+  }
+
   return {
     enabled,
     baseUrl: normalizeBaseUrl(env.MUSICBRAINZ_BASE_URL),
     userAgent,
-    rateLimitMs: normalizePositiveInteger(env.MUSICBRAINZ_RATE_LIMIT_MS, DEFAULT_RATE_LIMIT_MS, 'MUSICBRAINZ_RATE_LIMIT_MS'),
+    rateLimitMs,
     urlLookupBatchSize: normalizePositiveInteger(
       env.MUSICBRAINZ_URL_LOOKUP_BATCH_SIZE,
       DEFAULT_URL_LOOKUP_BATCH_SIZE,
@@ -36,6 +50,11 @@ export function getMusicBrainzConfigFromEnv(env: MusicBrainzEnv): MusicBrainzCon
     ),
     requestTimeoutMs: DEFAULT_REQUEST_TIMEOUT_MS,
   };
+}
+
+function hasContact(userAgent: string): boolean {
+  return /\((?:https?:\/\/[^)\s]+|[^()\s@]+@[^()\s@]+\.[^()\s@]+)\)/i.test(userAgent)
+    && !userAgent.toLowerCase().includes('your-email@example.com');
 }
 
 function normalizeBaseUrl(value: string | undefined): string {

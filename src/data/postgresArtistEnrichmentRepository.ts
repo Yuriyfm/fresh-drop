@@ -85,15 +85,10 @@ export class PostgresArtistEnrichmentRepository implements ArtistEnrichmentRepos
         from artist_enrichment ae
         where ${buildProcessingWhereClause(options.force ?? false)}
         order by
-          case ae.match_status
-            when 'pending' then 0
-            when 'failed' then 1
-            when 'not_found' then 2
-            when 'ambiguous' then 3
-            when 'matched' then 4
-            else 5
+          case
+            when ae.match_status = 'pending' then ae.created_at
+            else coalesce(ae.next_retry_at, ae.created_at)
           end asc,
-          ae.updated_at asc,
           ae.spotify_artist_id asc
         limit $${buildProcessingParams(options.force ?? false, now).length + 1}
       `,
@@ -118,6 +113,7 @@ export class PostgresArtistEnrichmentRepository implements ArtistEnrichmentRepos
     fetchedAt?: Date;
   }): Promise<void> {
     const client = await this.pool.connect();
+    const fetchedAt = input.fetchedAt ?? new Date();
 
     try {
       await client.query('begin');
@@ -132,7 +128,7 @@ export class PostgresArtistEnrichmentRepository implements ArtistEnrichmentRepos
               match_method = 'spotify_url_lookup',
               error_message = null,
               fetched_at = $6,
-              next_retry_at = null,
+              next_retry_at = $7,
               retry_count = 0,
               updated_at = now()
           where spotify_artist_id = $1
@@ -143,7 +139,8 @@ export class PostgresArtistEnrichmentRepository implements ArtistEnrichmentRepos
           input.musicBrainzArtistName ?? null,
           input.musicBrainzArtistCountry ?? null,
           JSON.stringify(input.genres),
-          input.fetchedAt ?? new Date(),
+          fetchedAt,
+          input.musicBrainzArtistCountry ? null : getRefreshAt(fetchedAt),
         ],
       );
       await rebuildReleaseGenresForArtistIds(client, [input.spotifyArtistId]);
@@ -164,7 +161,13 @@ export class PostgresArtistEnrichmentRepository implements ArtistEnrichmentRepos
     await this.updateTerminalStatus(input.spotifyArtistId, 'ambiguous', input.fetchedAt ?? new Date(), input.errorMessage ?? null);
   }
 
-  async markFailed(input: { spotifyArtistId: string; errorMessage: string; now?: Date }): Promise<void> {
+  async markFailed(input: {
+    spotifyArtistId: string;
+    errorMessage: string;
+    now?: Date;
+    retryAt?: Date;
+    preserveMatchedStatus?: boolean;
+  }): Promise<void> {
     const client = await this.pool.connect();
     const now = input.now ?? new Date();
 
@@ -173,17 +176,21 @@ export class PostgresArtistEnrichmentRepository implements ArtistEnrichmentRepos
       const result = await client.query<{ retry_count: number }>(
         `
           update artist_enrichment
-          set match_status = 'failed',
+          set match_status = case
+                when $3::boolean and match_status = 'matched' then 'matched'
+                else 'failed'
+              end,
               error_message = $2,
               retry_count = retry_count + 1,
-              next_retry_at = $3,
+              next_retry_at = null,
               updated_at = now()
           where spotify_artist_id = $1
           returning retry_count
         `,
-        [input.spotifyArtistId, input.errorMessage, getNextRetryAt(now, 1)],
+        [input.spotifyArtistId, input.errorMessage, Boolean(input.preserveMatchedStatus)],
       );
       const retryCount = result.rows[0]?.retry_count ?? 1;
+      const nextRetryAt = getEffectiveRetryAt(now, retryCount, input.retryAt);
 
       await client.query(
         `
@@ -191,9 +198,8 @@ export class PostgresArtistEnrichmentRepository implements ArtistEnrichmentRepos
           set next_retry_at = $2
           where spotify_artist_id = $1
         `,
-        [input.spotifyArtistId, getNextRetryAt(now, retryCount)],
+        [input.spotifyArtistId, nextRetryAt],
       );
-      await rebuildReleaseGenresForArtistIds(client, [input.spotifyArtistId]);
       await client.query('commit');
     } catch (error) {
       await client.query('rollback');
@@ -224,12 +230,12 @@ export class PostgresArtistEnrichmentRepository implements ArtistEnrichmentRepos
               match_method = 'spotify_url_lookup',
               error_message = $3,
               fetched_at = $4,
-              next_retry_at = null,
+              next_retry_at = $5,
               retry_count = 0,
               updated_at = now()
           where spotify_artist_id = $1
         `,
-        [spotifyArtistId, status, errorMessage, fetchedAt],
+        [spotifyArtistId, status, errorMessage, fetchedAt, getRefreshAt(fetchedAt)],
       );
       await rebuildReleaseGenresForArtistIds(client, [spotifyArtistId]);
       await client.query('commit');
@@ -353,12 +359,32 @@ export function getNextRetryAt(now: Date, retryCount: number): Date {
   return new Date(now.getTime() + delayMs);
 }
 
+export function getRefreshAt(fetchedAt: Date): Date {
+  return new Date(fetchedAt.getTime() + 30 * 24 * 60 * 60 * 1000);
+}
+
+export function getEffectiveRetryAt(now: Date, retryCount: number, upstreamRetryAt?: Date): Date {
+  const localRetryAt = getNextRetryAt(now, retryCount);
+
+  return upstreamRetryAt && upstreamRetryAt > localRetryAt
+    ? upstreamRetryAt
+    : localRetryAt;
+}
+
 function buildProcessingWhereClause(force: boolean): string {
   if (force) {
     return "ae.match_status <> 'disabled'";
   }
 
-  return "(ae.match_status = 'pending' or (ae.match_status = 'failed' and (ae.next_retry_at is null or ae.next_retry_at <= $1)))";
+  return `(
+    ae.match_status = 'pending'
+    or (ae.match_status = 'failed' and ae.next_retry_at is null)
+    or (
+      ae.match_status in ('failed', 'not_found', 'ambiguous', 'matched')
+      and ae.next_retry_at is not null
+      and ae.next_retry_at <= $1
+    )
+  )`;
 }
 
 function buildProcessingParams(force: boolean, now: Date): unknown[] {

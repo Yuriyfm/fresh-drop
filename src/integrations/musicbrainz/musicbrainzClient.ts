@@ -38,12 +38,14 @@ type MusicBrainzLookupRelation = {
 export class MusicBrainzApiError extends Error {
   readonly status: number | null;
   readonly retryable: boolean;
+  readonly retryAfterMs: number | null;
 
-  constructor(message: string, status: number | null, retryable: boolean) {
+  constructor(message: string, status: number | null, retryable: boolean, retryAfterMs: number | null = null) {
     super(message);
     this.name = 'MusicBrainzApiError';
     this.status = status;
     this.retryable = retryable;
+    this.retryAfterMs = retryAfterMs;
   }
 }
 
@@ -124,7 +126,7 @@ export class MusicBrainzClient {
         });
 
         if (!response.ok) {
-          throw createMusicBrainzApiError(response.status);
+          throw createMusicBrainzApiError(response);
         }
 
         try {
@@ -243,16 +245,44 @@ function getUrlEntities(payload: Record<string, unknown>): Array<Record<string, 
   throw new MusicBrainzApiError('MusicBrainz URL lookup returned an invalid payload.', null, true);
 }
 
-function createMusicBrainzApiError(status: number): MusicBrainzApiError {
+function createMusicBrainzApiError(response: Response): MusicBrainzApiError {
+  const status = response.status;
+  const retryAfterMs = parseMusicBrainzRetryAfterMs(response.headers?.get?.('retry-after') ?? null);
+
   if (status === 404) {
     return new MusicBrainzApiError('MusicBrainz entity was not found.', status, false);
   }
 
   if (status === 429 || status === 503 || status >= 500) {
-    return new MusicBrainzApiError(`MusicBrainz request failed with status ${status}.`, status, true);
+    return new MusicBrainzApiError(
+      `MusicBrainz request failed with status ${status}.`,
+      status,
+      true,
+      retryAfterMs,
+    );
   }
 
   return new MusicBrainzApiError(`MusicBrainz request failed with status ${status}.`, status, false);
+}
+
+export function parseMusicBrainzRetryAfterMs(value: string | null, now: Date = new Date()): number | null {
+  if (!value) {
+    return null;
+  }
+
+  const seconds = Number(value);
+
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.ceil(seconds * 1000);
+  }
+
+  const retryAtMs = Date.parse(value);
+
+  if (!Number.isFinite(retryAtMs)) {
+    return null;
+  }
+
+  return Math.max(0, retryAtMs - now.getTime());
 }
 
 function parseMusicBrainzArtistCountry(payload: Record<string, unknown>): string | undefined {

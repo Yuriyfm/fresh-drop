@@ -55,17 +55,18 @@ Spotify sync и crawler не должны ждать MusicBrainz и не дол�
 ```env
 MUSICBRAINZ_ENABLED=true
 MUSICBRAINZ_BASE_URL=https://musicbrainz.org/ws/2
-MUSICBRAINZ_USER_AGENT=FreshDrop/0.1.0 (your-email@example.com)
+MUSICBRAINZ_USER_AGENT=FreshDrop/0.1.0 (https://github.com/Yuriyfm/fresh-drop)
 MUSICBRAINZ_RATE_LIMIT_MS=1100
 MUSICBRAINZ_URL_LOOKUP_BATCH_SIZE=100
 ```
 
 Правила:
 
-- `MUSICBRAINZ_USER_AGENT` обязателен, если `MUSICBRAINZ_ENABLED=true`;
+- `MUSICBRAINZ_USER_AGENT` обязателен, если `MUSICBRAINZ_ENABLED=true`, и должен содержать реальный contact URL или email, а не placeholder;
 - все MusicBrainz запросы отправляются с `User-Agent` и `Accept: application/json`;
 - rate limit общий для всех MusicBrainz запросов;
-- `MUSICBRAINZ_RATE_LIMIT_MS` по умолчанию `1100`.
+- `MUSICBRAINZ_RATE_LIMIT_MS` по умолчанию `1100`, то есть запросы начинаются реже официального ограничения в один запрос в секунду;
+- URL lookup объединяет до `100` Spotify URL в один официальный batch request.
 
 ## artist_enrichment
 
@@ -185,7 +186,7 @@ yarn enrich:musicbrainz:artists -- --limit=100 [--dry-run] [--force] [--skip-if-
 Правила:
 
 - `--limit` ограничивает число артистов за запуск;
-- без `--force` берутся только `pending` и `failed` c `next_retry_at <= now()`;
+- без `--force` берутся `pending`, готовые к повтору `failed` и записи без результата/страны с `next_retry_at <= now()`;
 - c `--force` можно заново обработать `matched`, `not_found` и `ambiguous`;
 - `--dry-run` не пишет изменения в БД;
 - для защиты от параллельных прогонов используется PostgreSQL advisory lock;
@@ -195,9 +196,13 @@ yarn enrich:musicbrainz:artists -- --limit=100 [--dry-run] [--force] [--skip-if-
 - production scheduler не должен запускать MusicBrainz enrichment, пока активен crawler lock, чтобы enrichment не конкурировал с загрузкой релизов за процессы и память;
 - production cron schedule для MusicBrainz должен быть сдвинут относительно crawler schedule, чтобы оба job не стартовали в одну и ту же минуту;
 - production enrichment запускается не чаще одного раза в 10 минут; при текущем batch этого достаточно для backlog и снижает число короткоживущих процессов;
+- production `--limit=100`: URL lookup выполняется одним batch request, а artist lookup остаётся последовательным через общий limiter;
 - MusicBrainz cron должен иметь runtime timeout, после которого зависший worker завершается;
 - production worker запускается как заранее собранный JavaScript через `node`, без runtime `vite-node`/`esbuild`;
 - один failing artist не должен валить весь воркер.
+- eligible-задачи выбираются по времени готовности, поэтому due `failed` не могут бесконечно голодать за новыми `pending`;
+- после retryable `429`, `503`, `5xx`, timeout или network error worker прекращает новые artist HTTP lookup в текущем запуске и переносит оставшиеся matched-кандидаты на retry;
+- `Retry-After` учитывается, но не сокращает консервативный локальный backoff.
 
 ## Backfill Existing Artists
 
@@ -214,7 +219,7 @@ yarn backfill:musicbrainz -- [--batch-size=100] [--max-artists=1000] [--dry-run]
 - backfill берёт артистов из таблицы `artists`, у которых ещё нет строки в `artist_enrichment`;
 - для таких артистов создаётся запись со статусом `pending`, если enrichment включён, и `disabled`, если enrichment выключен;
 - затем команда запускает существующий MusicBrainz worker батчами;
-- без `--force` повторно обрабатываются только `pending` и `failed`, как и у обычного worker;
+- без `--force` обрабатываются те же готовые записи, что и у обычного worker;
 - с `--force` разрешено заново обработать уже существующие `matched`, `not_found` и `ambiguous`;
 - `--batch-size` ограничивает размер одного запуска worker;
 - `--max-artists` ограничивает общее число артистов, которое команда попытается обработать за один запуск;
@@ -257,6 +262,19 @@ Backoff:
 - invalid JSON
 - invalid response shape
 
+`not_found`, `ambiguous` и `matched` без страны перепроверяются не чаще одного раза в 30 дней. Это позволяет подобрать добавленные позднее MusicBrainz URL/country данные без постоянной нагрузки на API. `matched` со страной повторно не запрашиваются.
+
+## Observability
+
+Worker обязан логировать:
+
+- число eligible/processed артистов;
+- matched/not_found/ambiguous/failed;
+- число сохранённых и отсутствующих стран;
+- число кандидатов, отложенных circuit breaker-ом;
+- причину открытия circuit breaker и значение `Retry-After`, если оно было;
+- фактическое число HTTP-запросов и длительность запуска.
+
 ## Release Genres
 
 Release API должен объединять жанры из двух источников:
@@ -277,6 +295,7 @@ release genres =
 
 - `artist.country` использует MusicBrainz country при `match_status=matched`, если оно сохранено;
 - если MusicBrainz country нет, остаётся исходное значение артиста.
+- `release.country` использует страну primary artist через тот же enrichment join; физическое поле `releases.country` может оставаться `unknown`.
 
 ## Acceptance
 

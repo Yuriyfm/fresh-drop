@@ -30,7 +30,13 @@ export type ArtistEnrichmentRepository = {
   }): Promise<void>;
   markNotFound(input: { spotifyArtistId: string; fetchedAt?: Date }): Promise<void>;
   markAmbiguous(input: { spotifyArtistId: string; fetchedAt?: Date; errorMessage?: string }): Promise<void>;
-  markFailed(input: { spotifyArtistId: string; errorMessage: string; now?: Date }): Promise<void>;
+  markFailed(input: {
+    spotifyArtistId: string;
+    errorMessage: string;
+    now?: Date;
+    retryAt?: Date;
+    preserveMatchedStatus?: boolean;
+  }): Promise<void>;
 };
 
 export type ArtistEnrichmentQueueWriter = {

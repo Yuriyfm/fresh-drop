@@ -12,7 +12,7 @@ export type MusicBrainzArtistEnrichmentWorkerOptions = {
 };
 
 export type MusicBrainzArtistEnrichmentWorkerSummary = {
-  pendingArtists: number;
+  eligibleArtists: number;
   processedArtists: number;
   dryRun: boolean;
   force: boolean;
@@ -24,8 +24,11 @@ export type MusicBrainzArtistEnrichmentWorkerSummary = {
   notFound: number;
   ambiguous: number;
   failed: number;
+  deferredDueToUpstream: number;
   artistGenresFetched: number;
   artistGenresEmpty: number;
+  countriesSaved: number;
+  countriesMissing: number;
   requestsTotal: number;
   durationMs: number;
 };
@@ -43,7 +46,7 @@ export async function runMusicBrainzArtistEnrichmentWorker(
     logger.info('MusicBrainz enrichment disabled.');
 
     return {
-      pendingArtists: 0,
+      eligibleArtists: 0,
       processedArtists: 0,
       dryRun: Boolean(options.dryRun),
       force: Boolean(options.force),
@@ -55,17 +58,20 @@ export async function runMusicBrainzArtistEnrichmentWorker(
       notFound: 0,
       ambiguous: 0,
       failed: 0,
+      deferredDueToUpstream: 0,
       artistGenresFetched: 0,
       artistGenresEmpty: 0,
+      countriesSaved: 0,
+      countriesMissing: 0,
       requestsTotal: 0,
       durationMs: 0,
     };
   }
 
-  const pendingArtists = await repository.countArtistsForProcessing({ force: options.force, now });
+  const eligibleArtists = await repository.countArtistsForProcessing({ force: options.force, now });
   const artists = await repository.findArtistsForProcessing({ limit: options.limit, force: options.force, now });
   const summary: MusicBrainzArtistEnrichmentWorkerSummary = {
-    pendingArtists,
+    eligibleArtists,
     processedArtists: artists.length,
     dryRun: Boolean(options.dryRun),
     force: Boolean(options.force),
@@ -77,14 +83,17 @@ export async function runMusicBrainzArtistEnrichmentWorker(
     notFound: 0,
     ambiguous: 0,
     failed: 0,
+    deferredDueToUpstream: 0,
     artistGenresFetched: 0,
     artistGenresEmpty: 0,
+    countriesSaved: 0,
+    countriesMissing: 0,
     requestsTotal: 0,
     durationMs: 0,
   };
 
   logger.info(
-    `MusicBrainz enrichment started: pendingArtists=${pendingArtists}` +
+    `MusicBrainz enrichment started: eligibleArtists=${eligibleArtists}` +
       ` limit=${options.limit}` +
       ` dryRun=${Boolean(options.dryRun)}` +
       ` force=${Boolean(options.force)}`,
@@ -92,8 +101,28 @@ export async function runMusicBrainzArtistEnrichmentWorker(
 
   const lookupResultsByUrl = new Map<string, Awaited<ReturnType<MusicBrainzClient['lookupSpotifyArtistUrls']>>[number]>();
   const failedArtistIds = new Set<string>();
+  let upstreamFailure: unknown = null;
 
   for (const batch of chunk(artists, options.urlLookupBatchSize)) {
+    if (upstreamFailure) {
+      for (const artist of batch) {
+        failedArtistIds.add(artist.spotifyArtistId);
+        summary.failed += 1;
+        summary.deferredDueToUpstream += 1;
+
+        if (!options.dryRun) {
+          await repository.markFailed(buildFailureInput(
+            artist.spotifyArtistId,
+            upstreamFailure,
+            now,
+            artist.matchStatus === 'matched',
+          ));
+        }
+      }
+
+      continue;
+    }
+
     try {
       const lookupResults = await client.lookupSpotifyArtistUrls(batch.map((artist) => artist.spotifyArtistUrl));
 
@@ -114,12 +143,18 @@ export async function runMusicBrainzArtistEnrichmentWorker(
         summary.failed += 1;
 
         if (!options.dryRun) {
-          await repository.markFailed({
-            spotifyArtistId: artist.spotifyArtistId,
-            errorMessage: formatMusicBrainzError(error),
+          await repository.markFailed(buildFailureInput(
+            artist.spotifyArtistId,
+            error,
             now,
-          });
+            artist.matchStatus === 'matched',
+          ));
         }
+      }
+
+      if (isRetryableMusicBrainzError(error)) {
+        upstreamFailure = error;
+        logCircuitBreaker(logger, error);
       }
     }
   }
@@ -155,6 +190,22 @@ export async function runMusicBrainzArtistEnrichmentWorker(
       continue;
     }
 
+    if (upstreamFailure) {
+      summary.failed += 1;
+      summary.deferredDueToUpstream += 1;
+
+      if (!options.dryRun) {
+        await repository.markFailed(buildFailureInput(
+          artist.spotifyArtistId,
+          upstreamFailure,
+          now,
+          artist.matchStatus === 'matched',
+        ));
+      }
+
+      continue;
+    }
+
     try {
       const artistGenres = await client.lookupArtistGenres(lookup.musicBrainzArtistMbid);
 
@@ -163,6 +214,12 @@ export async function runMusicBrainzArtistEnrichmentWorker(
 
       if (artistGenres.genres.length === 0) {
         summary.artistGenresEmpty += 1;
+      }
+
+      if (artistGenres.musicBrainzArtistCountry) {
+        summary.countriesSaved += 1;
+      } else {
+        summary.countriesMissing += 1;
       }
 
       if (!options.dryRun) {
@@ -189,11 +246,17 @@ export async function runMusicBrainzArtistEnrichmentWorker(
       summary.failed += 1;
 
       if (!options.dryRun) {
-        await repository.markFailed({
-          spotifyArtistId: artist.spotifyArtistId,
-          errorMessage: formatMusicBrainzError(error),
+        await repository.markFailed(buildFailureInput(
+          artist.spotifyArtistId,
+          error,
           now,
-        });
+          artist.matchStatus === 'matched',
+        ));
+      }
+
+      if (isRetryableMusicBrainzError(error)) {
+        upstreamFailure = error;
+        logCircuitBreaker(logger, error);
       }
     }
   }
@@ -208,8 +271,11 @@ export async function runMusicBrainzArtistEnrichmentWorker(
         ` notFoundArtists=${summary.notFound}` +
         ` ambiguousArtists=${summary.ambiguous}` +
         ` failedArtists=${summary.failed}` +
+        ` deferredDueToUpstream=${summary.deferredDueToUpstream}` +
         ` genresFetched=${summary.artistGenresFetched}` +
-        ` emptyGenrePayloads=${summary.artistGenresEmpty}`,
+        ` emptyGenrePayloads=${summary.artistGenresEmpty}` +
+        ` countriesSaved=${summary.countriesSaved}` +
+        ` countriesMissing=${summary.countriesMissing}`,
     );
   }
 
@@ -223,8 +289,11 @@ export async function runMusicBrainzArtistEnrichmentWorker(
       ` notFound=${summary.notFound}` +
       ` ambiguous=${summary.ambiguous}` +
       ` failed=${summary.failed}` +
+      ` deferredDueToUpstream=${summary.deferredDueToUpstream}` +
       ` artistGenresFetched=${summary.artistGenresFetched}` +
       ` artistGenresEmpty=${summary.artistGenresEmpty}` +
+      ` countriesSaved=${summary.countriesSaved}` +
+      ` countriesMissing=${summary.countriesMissing}` +
       ` requests=${summary.requestsTotal}` +
       ` durationMs=${summary.durationMs}`,
   );
@@ -248,4 +317,41 @@ function formatMusicBrainzError(error: unknown): string {
   }
 
   return 'MusicBrainz request failed.';
+}
+
+function isRetryableMusicBrainzError(error: unknown): boolean {
+  return !(error instanceof MusicBrainzApiError) || error.retryable;
+}
+
+function buildFailureInput(
+  spotifyArtistId: string,
+  error: unknown,
+  now: Date,
+  preserveMatchedStatus: boolean,
+): {
+  spotifyArtistId: string;
+  errorMessage: string;
+  now: Date;
+  retryAt?: Date;
+  preserveMatchedStatus?: boolean;
+} {
+  const retryAfterMs = error instanceof MusicBrainzApiError ? error.retryAfterMs : null;
+
+  return {
+    spotifyArtistId,
+    errorMessage: formatMusicBrainzError(error),
+    now,
+    ...(retryAfterMs === null ? {} : { retryAt: new Date(now.getTime() + retryAfterMs) }),
+    ...(preserveMatchedStatus ? { preserveMatchedStatus: true } : {}),
+  };
+}
+
+function logCircuitBreaker(logger: Pick<Console, 'warn'>, error: unknown): void {
+  const retryAfterMs = error instanceof MusicBrainzApiError ? error.retryAfterMs : null;
+
+  logger.warn(
+    `MusicBrainz upstream circuit opened:` +
+      ` error=${formatMusicBrainzError(error)}` +
+      ` retryAfterMs=${retryAfterMs ?? 'none'}`,
+  );
 }
