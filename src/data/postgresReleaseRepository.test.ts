@@ -115,6 +115,24 @@ describeWithPostgres('PostgresReleaseRepository', () => {
     await expect(repository.findExistingReleaseIds(['spotify-2', 'missing', 'spotify-2'])).resolves.toEqual(new Set(['spotify-2']));
   });
 
+  it('filters releases between both custom period boundaries', async () => {
+    await repository.saveReleases([
+      makeRelease({ id: 'too-new', releaseDate: '2026-06-27' }),
+      makeRelease({ id: 'near-boundary', releaseDate: '2026-06-26' }),
+      makeRelease({ id: 'far-boundary', releaseDate: '2026-06-19' }),
+      makeRelease({ id: 'too-old', releaseDate: '2026-06-18' }),
+    ]);
+
+    const result = await repository.findReleases({
+      period: '5-12d',
+      type: 'all',
+      sort: 'newest',
+      currentDate: new Date('2026-07-01T12:00:00.000Z'),
+    });
+
+    expect(result.items.map((release) => release.id)).toEqual(['near-boundary', 'far-boundary']);
+  });
+
   it('queues unique artists for enrichment without resetting matched status', async () => {
     const artist = makeArtist({ id: 'artist-queue', name: 'First Name' });
 

@@ -71,7 +71,7 @@ Last 7 days
 
 ## Фильтры MVP
 
-* period: `Today / 7 days / 14 days / Month`;
+* period: quick options `Today / 7 days / 14 days / Month` plus a custom two-sided `0–30 days ago` picker;
 * genres;
 * excluded genres;
 * release type: `album / single / compilation`;
@@ -86,14 +86,16 @@ Last 7 days
 * первый экран должен как можно быстрее показывать список релизов, а не крупные filter-panels;
 * сверху остаётся compact discovery-header: `Fresh Drop`, period segmented control, один trigger `Filters`, count результатов и chips активных фильтров;
 * `How it works` остаётся доступным через компактный secondary action и не занимает постоянное место в ленте;
-* period использует segmented control `Today / 7 days / 14 days / Month`;
+* period использует segmented control `Today / 7 days / 14 days / Month` и компактную кнопку пользовательского периода;
+* пользовательский период открывается как bottom sheet с двумя границами на шкале `0–30` дней назад и явным подтверждением;
 * inline-раскрытие большого genre list на search page не используется;
 * выбранные жанры на search page показываются только как compact chips в summary active filters;
 * если выбраны жанры, рядом с filters summary доступно компактное действие `Reset`;
 * большой список релизов должен начинаться на первом экране без длинного скролла через панели управления;
 * основной вход в фильтры на мобильном ровно один;
 * период остаётся доступен прямо на search page, остальные фильтры открываются через bottom sheet;
-* genre search, selected genres, search country и type живут внутри общего filters bottom sheet;
+* genre search, selected genres, search country, popularity и type живут внутри общего filters bottom sheet;
+* popularity открывается из кнопки `Popularity`; границы `Minimum` и `Maximum` показаны как два явно подписанных ползунка `0–100`, чтобы пользователь не мог перепутать нижнюю и верхнюю границу; на мобильном это отдельный верхний bottom sheet над общей панелью фильтров;
 * исключение жанров находится в компактном раскрываемом блоке `Exclude genres` под основным genre selector, а не в отдельном постоянно видимом большом списке;
 * один жанр не может быть одновременно выбран как include и exclude; если жанр уже выбран в одном списке, во втором он показывается как недоступный;
 * исключённые жанры в active filter chips визуально отличаются от обычных жанров и показываются с минусом;
@@ -131,6 +133,7 @@ Last 7 days
 * внутри sidebar фильтры складываются вертикально и занимают всю доступную ширину, а не пытаются повторять широкую двухколоночную desktop-сетку;
 * `Genre search` в sidebar не должен сжиматься второй колонкой; `Type` может использовать компактную сетку `2x2`, если это нужно для узкой панели;
 * `Type` в sidebar расположен сразу под `Period`, выше genre/country фильтров;
+* `Popularity` в sidebar показывается компактной кнопкой и открывает диалог с двухсторонней шкалой `0–100`;
 * desktop sidebar не ограничивается по высоте внутренним scroll; если фильтров больше высоты экрана, пользователь скроллит всю страницу;
 * summary и sorting справа собираются в компактный raised header-panel, чтобы правая колонка начиналась с той же визуальной линии и плотности, что и sidebar;
 * sorting находится над списком справа, рядом с summary выдачи, а не внутри общей панели фильтров;

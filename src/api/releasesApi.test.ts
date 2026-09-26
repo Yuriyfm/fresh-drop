@@ -81,6 +81,46 @@ describe('getReleasesApiResponse', () => {
     });
   });
 
+  it('accepts a custom period from 1 through 30 days', async () => {
+    const repository: ReleaseRepository = {
+      saveReleases: vi.fn(),
+      findExistingReleaseIds: vi.fn().mockResolvedValue(new Set()),
+      findCachedArtists: vi.fn().mockResolvedValue(new Map()),
+      saveReleaseMarkets: vi.fn(),
+      cleanupOldReleases: vi.fn(),
+      listActiveGenres: vi.fn().mockResolvedValue([]),
+      listActiveCountries: vi.fn().mockResolvedValue([]),
+      findReleases: vi.fn().mockResolvedValue({
+        items: [],
+        pagination: { page: 1, limit: 20, total: 0, hasNextPage: false },
+      }),
+    };
+
+    await getReleasesApiResponse(repository, { period: '23d' });
+
+    expect(repository.findReleases).toHaveBeenCalledWith(expect.objectContaining({ period: '23d' }));
+  });
+
+  it('accepts a two-sided custom period range', async () => {
+    const repository: ReleaseRepository = {
+      saveReleases: vi.fn(),
+      findExistingReleaseIds: vi.fn().mockResolvedValue(new Set()),
+      findCachedArtists: vi.fn().mockResolvedValue(new Map()),
+      saveReleaseMarkets: vi.fn(),
+      cleanupOldReleases: vi.fn(),
+      listActiveGenres: vi.fn().mockResolvedValue([]),
+      listActiveCountries: vi.fn().mockResolvedValue([]),
+      findReleases: vi.fn().mockResolvedValue({
+        items: [],
+        pagination: { page: 1, limit: 20, total: 0, hasNextPage: false },
+      }),
+    };
+
+    await getReleasesApiResponse(repository, { period: '5-12d' });
+
+    expect(repository.findReleases).toHaveBeenCalledWith(expect.objectContaining({ period: '5-12d' }));
+  });
+
   it('filters and paginates through ReleaseRepository', async () => {
     const repository = new InMemoryReleaseRepository();
 
@@ -145,7 +185,8 @@ describe('getReleasesApiResponse', () => {
   });
 
   it.each([
-    ['period', { period: '30d' }],
+    ['period', { period: '31d' }],
+    ['reversed period range', { period: '12-5d' }],
     ['type', { period: '7d', type: 'ep' }],
     ['sort', { period: '7d', sort: 'viral' }],
     ['page', { period: '7d', page: '0' }],

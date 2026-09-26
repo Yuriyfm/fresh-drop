@@ -546,6 +546,220 @@ input[type="search"]:focus-visible {
   box-shadow: 0 8px 16px rgba(30, 215, 96, 0.22);
 }
 
+.periodFilter {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.periodFilter .segmentedControl {
+  border-radius: 14px 14px 0 0;
+}
+
+.customPeriodButton {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 40px;
+  padding: 0 12px;
+  border-top: 0;
+  border-color: var(--color-border-strong);
+  border-radius: 0 0 14px 14px;
+  background: var(--color-surface-raised);
+  color: var(--color-text-primary);
+  font-size: 12px;
+}
+
+.customPeriodButton.isActive {
+  border-color: var(--color-accent);
+  background: var(--color-accent-surface);
+  color: #dffce7;
+}
+
+.customPeriodButtonValue {
+  margin-left: auto;
+  color: var(--color-text-secondary);
+  font-weight: 700;
+}
+
+.popularityFilterButton {
+  position: relative;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 14px;
+  border-color: var(--color-border-strong);
+  background: var(--color-surface-raised);
+  color: var(--color-text-primary);
+  font-size: 13px;
+  justify-content: center;
+  text-align: center;
+}
+
+.popularityFilterButton.isActive {
+  border-color: var(--color-accent);
+  background: var(--color-accent-surface);
+  color: #dffce7;
+}
+
+.popularityFilterButtonLabel {
+  text-align: center;
+}
+
+.popularityFilterButton .customPeriodButtonValue {
+  position: absolute;
+  right: 14px;
+}
+
+.popularityRangeFields {
+  display: grid;
+  gap: 8px;
+}
+
+.popularityRangeField {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.popularityRangeField strong {
+  color: var(--color-text-primary);
+  font-size: 15px;
+}
+
+.popularityRangeInput {
+  width: 100%;
+  height: 28px;
+  margin: 0 0 6px;
+  accent-color: var(--color-accent);
+  cursor: pointer;
+}
+
+.popularityRangeInput:focus-visible {
+  outline: 2px solid rgba(30, 215, 96, 0.42);
+  outline-offset: 2px;
+}
+
+.customPeriodLayer {
+  z-index: 100;
+}
+
+.customPeriodPicker {
+  width: min(460px, calc(100% - 32px));
+}
+
+.bottomSheet.customPeriodPicker {
+  width: 100%;
+}
+
+.customPeriodBody {
+  display: grid;
+  gap: 14px;
+  padding: 14px 2px 6px;
+}
+
+.customPeriodOutput {
+  color: var(--color-text-primary);
+  font-size: 28px;
+  font-weight: 900;
+  text-align: center;
+}
+
+.customPeriodRangeControl {
+  position: relative;
+  height: 32px;
+}
+
+.customPeriodRangeTrack {
+  position: absolute;
+  top: 13px;
+  right: 8px;
+  left: 8px;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--color-border-strong);
+}
+
+.customPeriodRangeSelection {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: inherit;
+  background: var(--color-accent);
+}
+
+.customPeriodRange {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 32px;
+  margin: 0;
+  appearance: none;
+  background: transparent;
+  accent-color: var(--color-accent);
+  pointer-events: none;
+}
+
+.customPeriodRange::-webkit-slider-runnable-track {
+  height: 6px;
+  background: transparent;
+}
+
+.customPeriodRange::-webkit-slider-thumb {
+  width: 24px;
+  height: 24px;
+  margin-top: -9px;
+  appearance: none;
+  border: 3px solid #0f1712;
+  border-radius: 50%;
+  background: var(--color-accent);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+  cursor: grab;
+  pointer-events: auto;
+}
+
+.customPeriodRange::-moz-range-track {
+  height: 6px;
+  background: transparent;
+}
+
+.customPeriodRange::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border: 3px solid #0f1712;
+  border-radius: 50%;
+  background: var(--color-accent);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+  cursor: grab;
+  pointer-events: auto;
+}
+
+.customPeriodRange:focus-visible {
+  outline: 2px solid rgba(30, 215, 96, 0.42);
+  outline-offset: 4px;
+}
+
+.customPeriodScale {
+  display: flex;
+  justify-content: space-between;
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.customPeriodActions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  gap: 10px;
+}
+
 select:disabled {
   color: var(--color-text-tertiary);
   opacity: 1;

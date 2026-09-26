@@ -57,7 +57,9 @@ export function matchesPeriod(release: Release, period: ReleasePeriod, currentDa
     return false;
   }
 
-  return ageInDays <= getPeriodDays(period);
+  const range = getPeriodRange(period);
+
+  return ageInDays >= range.startDays && ageInDays <= range.endDays;
 }
 
 export function matchesGenre(release: Release, genre?: string): boolean {
@@ -130,20 +132,29 @@ export function matchesPopularity(release: Release, min?: number, max?: number):
   return max === undefined || release.popularity <= max;
 }
 
-function getPeriodDays(period: ReleasePeriod): number {
+export function getPeriodDays(period: ReleasePeriod): number {
+  return getPeriodRange(period).endDays;
+}
+
+export function getPeriodRange(period: ReleasePeriod): { startDays: number; endDays: number } {
   if (period === 'today') {
-    return 0;
+    return { startDays: 0, endDays: 0 };
   }
 
-  if (period === '7d') {
-    return 7;
+  if (period === '1m') {
+    return { startDays: 0, endDays: 31 };
   }
 
-  if (period === '14d') {
-    return 14;
+  const rangeMatch = /^(\d+)-(\d+)d$/.exec(period);
+
+  if (rangeMatch) {
+    return {
+      startDays: Number.parseInt(rangeMatch[1], 10),
+      endDays: Number.parseInt(rangeMatch[2], 10),
+    };
   }
 
-  return 31;
+  return { startDays: 0, endDays: Number.parseInt(period, 10) };
 }
 
 function parseDateOnly(value: string): Date | null {

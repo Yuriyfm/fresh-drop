@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import './App.css';
 import type { CountryOption, GenreOption } from './api/releasesApi';
 import type { InsightListItem, InsightsData, InsightsPeriod, InsightsType } from './domain/insights';
@@ -474,7 +475,7 @@ function App() {
         ...excludedGenres.map((excludedGenre) => t.filters.excludeGenreSummary(getGenreLabel(excludedGenre, t))),
         getPeriodLabel(period, t),
         ...getCompactCountrySummary(countries),
-        getPopularitySummary(popularityMin, popularityMax),
+        getPopularitySummary(popularityMin, popularityMax, t),
         type === 'all' ? undefined : getReleaseTypeFilterLabel(type, t),
       ].filter(isPresent),
     [countries, excludedGenres, genres, period, popularityMax, popularityMin, t, type],
@@ -490,7 +491,7 @@ function App() {
   );
   const mobileResultsCountText = isInitialLoading ? t.results.loading : getResultsCountText(pagination.total, t);
   const hasActiveSearchFilters = hasActiveFilters(period, genres, excludedGenres, countries, popularityMin, popularityMax, type);
-  const hasActiveSheetFilters = genres.length > 0 || excludedGenres.length > 0 || countries.length > 0 || type !== 'all';
+  const hasActiveSheetFilters = genres.length > 0 || excludedGenres.length > 0 || countries.length > 0 || popularityMin !== undefined || popularityMax !== undefined || type !== 'all';
   const virtualRange = getVirtualReleaseRange(releases.length, scrollPosition, releaseListRef.current);
   const visibleReleases = releases.slice(virtualRange.startIndex, virtualRange.endIndex);
 
@@ -592,7 +593,7 @@ function App() {
             <section className="mobileDiscoveryHeader" aria-label={t.filters.aria} ref={filterPanelRef}>
               <div className="mobileDiscoveryControls">
                 <div className="mobileDiscoveryPeriod">
-                  <PeriodFilter period={period} t={t} onChange={updatePeriod} />
+                  <PeriodFilter isMobile={isMobile} period={period} t={t} onChange={updatePeriod} />
                 </div>
                 <div className="mobileDiscoveryActions">
                   <button
@@ -635,8 +636,15 @@ function App() {
               </div>
 
               <div className="primaryFilters">
-                <PeriodFilter period={period} t={t} onChange={updatePeriod} />
+                <PeriodFilter isMobile={isMobile} period={period} t={t} onChange={updatePeriod} />
                 <TypeFilter type={type} t={t} onChange={updateType} />
+                <PopularityFilter
+                  isMobile={isMobile}
+                  popularityMin={popularityMin}
+                  popularityMax={popularityMax}
+                  t={t}
+                  onChange={updatePopularity}
+                />
                 <GenreFilter
                   isMobile={false}
                   selectedGenres={genres}
@@ -762,6 +770,8 @@ function App() {
         genreOptions={genreOptions}
         countries={countries}
         countryOptions={countryOptions}
+        popularityMin={popularityMin}
+        popularityMax={popularityMax}
         type={type}
         hasActiveFilters={hasActiveSheetFilters}
         t={t}
@@ -769,6 +779,7 @@ function App() {
         onGenresChange={updateGenres}
         onExcludedGenresChange={updateExcludedGenres}
         onCountriesChange={updateCountries}
+        onPopularityChange={updatePopularity}
         onTypeChange={updateType}
         onReset={resetFiltersInSheet}
       />
@@ -819,6 +830,12 @@ function App() {
     resetResults();
   }
 
+  function updatePopularity(nextMin?: number, nextMax?: number): void {
+    setPopularityMin(nextMin);
+    setPopularityMax(nextMax);
+    resetResults();
+  }
+
   function updateSort(nextSort: ReleaseSort): void {
     setSort(nextSort);
     resetResults();
@@ -848,6 +865,8 @@ function App() {
     setGenres(DEFAULT_SEARCH_STATE.genres);
     setExcludedGenres(DEFAULT_SEARCH_STATE.excludedGenres);
     setCountries(DEFAULT_SEARCH_STATE.countries);
+    setPopularityMin(DEFAULT_SEARCH_STATE.popularityMin);
+    setPopularityMax(DEFAULT_SEARCH_STATE.popularityMax);
     setType(DEFAULT_SEARCH_STATE.type);
     window.localStorage.setItem(
       RELEASE_SEARCH_STORAGE_KEY,
@@ -856,6 +875,8 @@ function App() {
         genres: DEFAULT_SEARCH_STATE.genres,
         excludedGenres: DEFAULT_SEARCH_STATE.excludedGenres,
         countries: DEFAULT_SEARCH_STATE.countries,
+        popularityMin: DEFAULT_SEARCH_STATE.popularityMin,
+        popularityMax: DEFAULT_SEARCH_STATE.popularityMax,
         type: DEFAULT_SEARCH_STATE.type,
         sort,
       }),
@@ -1288,25 +1309,290 @@ function InsightsSkeleton() {
 }
 
 type PeriodFilterProps = {
+  isMobile: boolean;
   period: ReleasePeriod;
   t: Translation;
   onChange: (period: ReleasePeriod) => void;
 };
 
-function PeriodFilter({ period, t, onChange }: PeriodFilterProps) {
+function PeriodFilter({ isMobile, period, t, onChange }: PeriodFilterProps) {
+  const [isPickerOpen, setIsPickerOpen] = useState(false);
+  const initialRange = getPeriodPickerRange(period);
+  const [draftStartDays, setDraftStartDays] = useState(initialRange.startDays);
+  const [draftEndDays, setDraftEndDays] = useState(initialRange.endDays);
+  const customRange = getCustomPeriodRange(period);
+
+  useEffect(() => {
+    if (!isPickerOpen) {
+      return undefined;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    function closeOnEscape(event: KeyboardEvent): void {
+      if (event.key === 'Escape') {
+        setIsPickerOpen(false);
+      }
+    }
+
+    window.addEventListener('keydown', closeOnEscape);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [isPickerOpen]);
+
+  function openPicker(): void {
+    const nextRange = getPeriodPickerRange(period);
+
+    setDraftStartDays(nextRange.startDays);
+    setDraftEndDays(nextRange.endDays);
+    setIsPickerOpen(true);
+  }
+
+  function applyCustomPeriod(): void {
+    if (draftStartDays === 0 && draftEndDays === 0) {
+      onChange('today');
+    } else if (draftStartDays === 0) {
+      onChange(`${draftEndDays}d`);
+    } else {
+      onChange(`${draftStartDays}-${draftEndDays}d`);
+    }
+
+    setIsPickerOpen(false);
+  }
+
   return (
-    <SegmentedControl
-      className="isPeriodControl"
-      label={t.filters.period}
-      value={period}
-      options={[
-        { value: 'today', label: t.filters.periodOptions.today },
-        { value: '7d', label: t.filters.periodOptions['7d'] },
-        { value: '14d', label: t.filters.periodOptions['14d'] },
-        { value: '1m', label: t.filters.periodOptions['1m'] },
-      ]}
-      onChange={onChange}
-    />
+    <>
+      <div className="periodFilter">
+        <SegmentedControl
+          className="isPeriodControl"
+          label={t.filters.period}
+          value={period}
+          options={[
+            { value: 'today', label: t.filters.periodOptions.today },
+            { value: '7d', label: t.filters.periodOptions['7d'] },
+            { value: '14d', label: t.filters.periodOptions['14d'] },
+            { value: '1m', label: t.filters.periodOptions['1m'] },
+          ]}
+          onChange={onChange}
+        />
+        <button
+          type="button"
+          className={customRange ? 'customPeriodButton isActive' : 'customPeriodButton'}
+          aria-haspopup="dialog"
+          aria-expanded={isPickerOpen}
+          onClick={openPicker}
+        >
+          <span>{t.filters.customPeriod}</span>
+          {customRange && (
+            <span className="customPeriodButtonValue">
+              {t.filters.customPeriodValue(customRange.startDays, customRange.endDays)}
+            </span>
+          )}
+        </button>
+      </div>
+      {isPickerOpen && createPortal(
+        <div className="sheetLayer customPeriodLayer">
+          <button type="button" className="sheetBackdrop" aria-label={t.filters.customPeriodClose} onClick={() => setIsPickerOpen(false)} />
+          <section
+            className={isMobile ? 'bottomSheet customPeriodPicker' : 'dialogPanel customPeriodPicker'}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="custom-period-title"
+          >
+            <div className="sheetHeader">
+              <h2 id="custom-period-title">{t.filters.customPeriodTitle}</h2>
+              <SheetCloseButton label={t.filters.customPeriodClose} onClick={() => setIsPickerOpen(false)} />
+            </div>
+            <div className="customPeriodBody">
+              <output className="customPeriodOutput" htmlFor="custom-period-start custom-period-end">
+                {t.filters.customPeriodValue(draftStartDays, draftEndDays)}
+              </output>
+              <div className="customPeriodRangeControl">
+                <div className="customPeriodRangeTrack" aria-hidden="true">
+                  <span
+                    className="customPeriodRangeSelection"
+                    style={{ left: `${(draftStartDays / 30) * 100}%`, right: `${100 - (draftEndDays / 30) * 100}%` }}
+                  />
+                </div>
+                <label className="srOnly" htmlFor="custom-period-start">{t.filters.customPeriodStart}</label>
+                <input
+                  id="custom-period-start"
+                  className="customPeriodRange customPeriodRangeStart"
+                  type="range"
+                  min="0"
+                  max="30"
+                  step="1"
+                  value={draftStartDays}
+                  style={{ zIndex: draftStartDays === draftEndDays && draftEndDays === 30 ? 4 : 2 }}
+                  onChange={(event) => {
+                    const nextStart = Number(event.target.value);
+                    setDraftStartDays(nextStart);
+                    setDraftEndDays((current) => Math.max(current, nextStart));
+                  }}
+                />
+                <label className="srOnly" htmlFor="custom-period-end">{t.filters.customPeriodEnd}</label>
+                <input
+                  id="custom-period-end"
+                  className="customPeriodRange customPeriodRangeEnd"
+                  type="range"
+                  min="0"
+                  max="30"
+                  step="1"
+                  value={draftEndDays}
+                  style={{ zIndex: 3 }}
+                  onChange={(event) => {
+                    const nextEnd = Number(event.target.value);
+                    setDraftEndDays(nextEnd);
+                    setDraftStartDays((current) => Math.min(current, nextEnd));
+                  }}
+                />
+              </div>
+              <div className="customPeriodScale" aria-hidden="true">
+                <span>0</span>
+                <span>7</span>
+                <span>14</span>
+                <span>21</span>
+                <span>30</span>
+              </div>
+            </div>
+            <div className="customPeriodActions">
+              <button type="button" className="ghostButton" onClick={() => setIsPickerOpen(false)}>{t.filters.customPeriodCancel}</button>
+              <button type="button" onClick={applyCustomPeriod}>{t.filters.customPeriodApply}</button>
+            </div>
+          </section>
+        </div>,
+        document.body,
+      )}
+    </>
+  );
+}
+
+type PopularityFilterProps = {
+  isMobile: boolean;
+  popularityMin?: number;
+  popularityMax?: number;
+  t: Translation;
+  onChange: (min?: number, max?: number) => void;
+};
+
+function PopularityFilter({ isMobile, popularityMin, popularityMax, t, onChange }: PopularityFilterProps) {
+  const [isPickerOpen, setIsPickerOpen] = useState(false);
+  const [draftMin, setDraftMin] = useState(popularityMin ?? 0);
+  const [draftMax, setDraftMax] = useState(popularityMax ?? 100);
+  const isActive = popularityMin !== undefined || popularityMax !== undefined;
+
+  useEffect(() => {
+    if (!isPickerOpen) {
+      return undefined;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    function closeOnEscape(event: KeyboardEvent): void {
+      if (event.key === 'Escape') {
+        setIsPickerOpen(false);
+      }
+    }
+
+    window.addEventListener('keydown', closeOnEscape);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [isPickerOpen]);
+
+  function openPicker(): void {
+    setDraftMin(popularityMin ?? 0);
+    setDraftMax(popularityMax ?? 100);
+    setIsPickerOpen(true);
+  }
+
+  function applyPopularity(): void {
+    onChange(draftMin === 0 ? undefined : draftMin, draftMax === 100 ? undefined : draftMax);
+    setIsPickerOpen(false);
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        className={isActive ? 'popularityFilterButton isActive' : 'popularityFilterButton'}
+        aria-haspopup="dialog"
+        aria-expanded={isPickerOpen}
+        onClick={openPicker}
+      >
+        <span className="popularityFilterButtonLabel">{t.filters.popularity}</span>
+        {isActive && (
+          <span className="customPeriodButtonValue">
+            {t.filters.popularityValue(popularityMin ?? 0, popularityMax ?? 100)}
+          </span>
+        )}
+      </button>
+      {isPickerOpen && createPortal(
+        <div className="sheetLayer customPeriodLayer">
+          <button type="button" className="sheetBackdrop" aria-label={t.filters.popularityClose} onClick={() => setIsPickerOpen(false)} />
+          <section
+            className={isMobile ? 'bottomSheet customPeriodPicker' : 'dialogPanel customPeriodPicker'}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="popularity-title"
+          >
+            <div className="sheetHeader">
+              <h2 id="popularity-title">{t.filters.popularityTitle}</h2>
+              <SheetCloseButton label={t.filters.popularityClose} onClick={() => setIsPickerOpen(false)} />
+            </div>
+            <div className="customPeriodBody">
+              <output className="customPeriodOutput" htmlFor="popularity-min popularity-max">
+                {t.filters.popularityValue(draftMin, draftMax)}
+              </output>
+              <div className="popularityRangeFields">
+                <label className="popularityRangeField" htmlFor="popularity-min">
+                  <span>{t.filters.popularityMinShort}</span>
+                  <strong>{draftMin}</strong>
+                </label>
+                <input
+                  id="popularity-min"
+                  aria-label={t.filters.popularityMin}
+                  className="popularityRangeInput"
+                  type="range"
+                  min="0"
+                  max={draftMax}
+                  step="1"
+                  value={draftMin}
+                  onChange={(event) => setDraftMin(Number(event.target.value))}
+                />
+                <label className="popularityRangeField" htmlFor="popularity-max">
+                  <span>{t.filters.popularityMaxShort}</span>
+                  <strong>{draftMax}</strong>
+                </label>
+                <input
+                  id="popularity-max"
+                  aria-label={t.filters.popularityMax}
+                  className="popularityRangeInput"
+                  type="range"
+                  min={draftMin}
+                  max="100"
+                  step="1"
+                  value={draftMax}
+                  onChange={(event) => setDraftMax(Number(event.target.value))}
+                />
+              </div>
+            </div>
+            <div className="customPeriodActions">
+              <button type="button" className="ghostButton" onClick={() => setIsPickerOpen(false)}>{t.filters.customPeriodCancel}</button>
+              <button type="button" onClick={applyPopularity}>{t.filters.customPeriodApply}</button>
+            </div>
+          </section>
+        </div>,
+        document.body,
+      )}
+    </>
   );
 }
 
@@ -1706,6 +1992,8 @@ type MobileFiltersSheetProps = {
   genreOptions: GenreOption[];
   countries: string[];
   countryOptions: CountryOption[];
+  popularityMin?: number;
+  popularityMax?: number;
   type: ReleaseTypeFilter;
   t: Translation;
   hasActiveFilters: boolean;
@@ -1713,6 +2001,7 @@ type MobileFiltersSheetProps = {
   onGenresChange: (genres: string[]) => void;
   onExcludedGenresChange: (genres: string[]) => void;
   onCountriesChange: (countries: string[]) => void;
+  onPopularityChange: (min?: number, max?: number) => void;
   onTypeChange: (type: ReleaseTypeFilter) => void;
   onReset: () => void;
 };
@@ -1724,6 +2013,8 @@ function MobileFiltersSheet({
   genreOptions,
   countries,
   countryOptions,
+  popularityMin,
+  popularityMax,
   type,
   hasActiveFilters,
   t,
@@ -1731,6 +2022,7 @@ function MobileFiltersSheet({
   onGenresChange,
   onExcludedGenresChange,
   onCountriesChange,
+  onPopularityChange,
   onTypeChange,
   onReset,
 }: MobileFiltersSheetProps) {
@@ -1759,6 +2051,13 @@ function MobileFiltersSheet({
             />
             <CountryFilter selectedCountries={countries} options={countryOptions} t={t} onChange={onCountriesChange} />
             <TypeFilter type={type} t={t} layout="sheet" onChange={onTypeChange} />
+            <PopularityFilter
+              isMobile
+              popularityMin={popularityMin}
+              popularityMax={popularityMax}
+              t={t}
+              onChange={onPopularityChange}
+            />
           </div>
         </div>
         <div className="sheetFooter">
@@ -2399,7 +2698,27 @@ function getInsightsCacheKey(filters: InsightsFilters): string {
 }
 
 function getPeriodLabel(period: ReleasePeriod, t: Translation): string {
-  return t.periods[period];
+  if (period === 'today') {
+    return t.periods.today;
+  }
+
+  if (period === '7d') {
+    return t.periods['7d'];
+  }
+
+  if (period === '14d') {
+    return t.periods['14d'];
+  }
+
+  if (period === '1m') {
+    return t.periods['1m'];
+  }
+
+  const range = getCustomPeriodRange(period);
+
+  return range
+    ? t.filters.customPeriodValue(range.startDays, range.endDays)
+    : t.periods.custom(Number.parseInt(period, 10));
 }
 
 function getReleaseTypeLabel(type: ReleaseTypeFilter | Release['type'], t: Translation): string {
@@ -2414,17 +2733,17 @@ function getReleaseSortLabel(sort: ReleaseSort, t: Translation): string {
   return t.sorts[sort === 'less-popular' ? 'lessPopular' : sort];
 }
 
-function getPopularitySummary(popularityMin?: number, popularityMax?: number): string | undefined {
+function getPopularitySummary(popularityMin: number | undefined, popularityMax: number | undefined, t: Translation): string | undefined {
   if (popularityMin !== undefined && popularityMax !== undefined) {
-    return `Popularity ${popularityMin}-${popularityMax}`;
+    return `${t.filters.popularity} ${popularityMin}–${popularityMax}`;
   }
 
   if (popularityMin !== undefined) {
-    return `Popularity ${popularityMin}+`;
+    return `${t.filters.popularity} ${popularityMin}+`;
   }
 
   if (popularityMax !== undefined) {
-    return `Popularity <= ${popularityMax}`;
+    return `${t.filters.popularity} ≤ ${popularityMax}`;
   }
 
   return undefined;
@@ -2461,7 +2780,7 @@ function getMobileSummaryChips(
     ...genres.map((genre) => ({ label: getGenreLabel(genre, t) })),
     ...excludedGenres.map((genre) => ({ label: `- ${getGenreLabel(genre, t)}`, variant: 'exclude' as const })),
     ...countries.map((country) => ({ label: country })),
-    getPopularitySummary(popularityMin, popularityMax) ? { label: getPopularitySummary(popularityMin, popularityMax) as string } : undefined,
+    getPopularitySummary(popularityMin, popularityMax, t) ? { label: getPopularitySummary(popularityMin, popularityMax, t) as string } : undefined,
     type === 'all' ? undefined : { label: getReleaseTypeFilterLabel(type, t) },
   ].filter(isPresent);
 }
@@ -2660,7 +2979,62 @@ function getUrlCountries(searchParams: URLSearchParams): string[] | undefined {
 }
 
 function isReleasePeriod(value: unknown): value is ReleasePeriod {
-  return value === 'today' || value === '7d' || value === '14d' || value === '1m';
+  if (value === 'today' || value === '1m') {
+    return true;
+  }
+
+  if (typeof value !== 'string') {
+    return false;
+  }
+
+  const rangeMatch = /^(\d+)-(\d+)d$/.exec(value);
+
+  if (rangeMatch) {
+    const startDays = Number.parseInt(rangeMatch[1], 10);
+    const endDays = Number.parseInt(rangeMatch[2], 10);
+
+    return startDays >= 0
+      && startDays <= endDays
+      && endDays <= 30
+      && value === `${startDays}-${endDays}d`;
+  }
+
+  if (!/^\d+d$/.test(value)) {
+    return false;
+  }
+
+  const days = Number.parseInt(value, 10);
+
+  return days >= 1 && days <= 30 && value === `${days}d`;
+}
+
+function getCustomPeriodRange(period: ReleasePeriod): { startDays: number; endDays: number } | undefined {
+  if (period === 'today' || period === '7d' || period === '14d' || period === '1m') {
+    return undefined;
+  }
+
+  const rangeMatch = /^(\d+)-(\d+)d$/.exec(period);
+
+  if (rangeMatch) {
+    return {
+      startDays: Number.parseInt(rangeMatch[1], 10),
+      endDays: Number.parseInt(rangeMatch[2], 10),
+    };
+  }
+
+  return { startDays: 0, endDays: Number.parseInt(period, 10) };
+}
+
+function getPeriodPickerRange(period: ReleasePeriod): { startDays: number; endDays: number } {
+  if (period === 'today') {
+    return { startDays: 0, endDays: 0 };
+  }
+
+  if (period === '1m') {
+    return { startDays: 0, endDays: 30 };
+  }
+
+  return getCustomPeriodRange(period) ?? { startDays: 0, endDays: Number.parseInt(period, 10) };
 }
 
 function isReleaseTypeFilter(value: unknown): value is ReleaseTypeFilter {

@@ -23,7 +23,7 @@ Returns normalized releases from the application database.
 ### Query parameters
 
 ```text
-period=7d | 14d | 1m
+period=today | 1d..30d | 0-30d | 1m
 genre=string
 type=all | single | album | compilation
 popularityMin=number
@@ -37,6 +37,8 @@ limit=number
 Rules:
 
 * `period` is required and defaults to `7d` if omitted by the client.
+* custom daily periods use the `Nd` form, where `N` is an integer from `1` through `30`.
+* bounded ranges use the `N-Md` form, where both bounds are integer day offsets and `0 <= N <= M <= 30`.
 * `type` defaults to `all`.
 * `popularityMin` and `popularityMax` are optional inclusive bounds from `0` to `100`; releases with `null` popularity do not match bounded popularity filters.
 * `sort` defaults to `newest`.

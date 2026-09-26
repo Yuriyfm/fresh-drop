@@ -66,6 +66,22 @@ export const ru = {
       '14d': '14 дней',
       '1m': 'Месяц',
     },
+    customPeriod: 'Свой период',
+    customPeriodTitle: 'Выберите период',
+    customPeriodStart: 'Ближняя граница в днях назад',
+    customPeriodEnd: 'Дальняя граница в днях назад',
+    customPeriodValue: (startDays: number, endDays: number) => formatRuDayRange(startDays, endDays),
+    customPeriodApply: 'Применить',
+    customPeriodCancel: 'Отмена',
+    customPeriodClose: 'Закрыть выбор периода',
+    popularity: 'Популярность',
+    popularityTitle: 'Популярность артиста',
+    popularityMin: 'Минимальная популярность артиста',
+    popularityMax: 'Максимальная популярность артиста',
+    popularityMinShort: 'Минимум',
+    popularityMaxShort: 'Максимум',
+    popularityValue: (min: number, max: number) => `${min}–${max}`,
+    popularityClose: 'Закрыть выбор популярности',
     typeOptions: {
       all: 'Все',
       single: 'Синглы',
@@ -84,6 +100,7 @@ export const ru = {
     '7d': 'Последние 7 дней',
     '14d': 'Последние 14 дней',
     '1m': 'Месяц',
+    custom: (days: number) => `Последние ${days} ${formatRuDays(days)}`,
   },
   releaseTypes: {
     all: 'Все',
@@ -325,4 +342,27 @@ function formatRuReleasesShort(count: number): string {
   }
 
   return 'релизов';
+}
+
+function formatRuDays(count: number): string {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+
+  if (mod10 === 1 && mod100 !== 11) {
+    return 'день';
+  }
+
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) {
+    return 'дня';
+  }
+
+  return 'дней';
+}
+
+function formatRuDayRange(startDays: number, endDays: number): string {
+  if (startDays === endDays) {
+    return startDays === 0 ? 'Сегодня' : `${startDays} ${formatRuDays(startDays)} назад`;
+  }
+
+  return `${startDays === 0 ? 'Сегодня' : startDays}–${endDays} дней назад`;
 }

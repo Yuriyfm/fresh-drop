@@ -54,7 +54,7 @@ describe('handleGetReleasesRoute', () => {
   it('returns invalid_query for invalid route query parameters', async () => {
     const repository = makeRepository();
 
-    const response = await handleGetReleasesRoute(repository, '?period=30d&page=3&limit=10');
+    const response = await handleGetReleasesRoute(repository, '?period=31d&page=3&limit=10');
 
     expect(response).toEqual({
       items: [],

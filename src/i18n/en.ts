@@ -66,6 +66,22 @@ export const en = {
       '14d': '14 days',
       '1m': 'Month',
     },
+    customPeriod: 'Custom period',
+    customPeriodTitle: 'Choose period',
+    customPeriodStart: 'Nearest boundary in days ago',
+    customPeriodEnd: 'Farthest boundary in days ago',
+    customPeriodValue: (startDays: number, endDays: number) => formatDayRange(startDays, endDays),
+    customPeriodApply: 'Apply',
+    customPeriodCancel: 'Cancel',
+    customPeriodClose: 'Close period picker',
+    popularity: 'Popularity',
+    popularityTitle: 'Artist popularity',
+    popularityMin: 'Minimum artist popularity',
+    popularityMax: 'Maximum artist popularity',
+    popularityMinShort: 'Minimum',
+    popularityMaxShort: 'Maximum',
+    popularityValue: (min: number, max: number) => `${min}–${max}`,
+    popularityClose: 'Close popularity picker',
     typeOptions: {
       all: 'All',
       single: 'Singles',
@@ -84,6 +100,7 @@ export const en = {
     '7d': 'Last 7 days',
     '14d': 'Last 14 days',
     '1m': 'Month',
+    custom: (days: number) => `Last ${days} ${days === 1 ? 'day' : 'days'}`,
   },
   releaseTypes: {
     all: 'All',
@@ -239,4 +256,12 @@ export const en = {
 
 function summaryCount(count: number): string {
   return `${count} ${count === 1 ? 'release' : 'releases'} found`;
+}
+
+function formatDayRange(startDays: number, endDays: number): string {
+  if (startDays === endDays) {
+    return startDays === 0 ? 'Today' : `${startDays} ${startDays === 1 ? 'day' : 'days'} ago`;
+  }
+
+  return `${startDays === 0 ? 'Today' : startDays}–${endDays} days ago`;
 }

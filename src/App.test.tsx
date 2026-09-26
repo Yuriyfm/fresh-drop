@@ -257,6 +257,36 @@ describe('App', () => {
     expect(container.querySelector('.mobileDiscoveryPeriod .segmentedControl.isPeriodControl')).not.toBeNull();
   });
 
+  it('applies a two-sided custom day-precision period from the mobile picker', async () => {
+    setViewportWidth(390);
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      makeResponse({
+        items: [makeRelease()],
+        pagination: { page: 1, limit: 20, total: 1, hasNextPage: false },
+        error: null,
+      }),
+    );
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /Custom period/ }));
+    expect(screen.getByRole('dialog', { name: 'Choose period' })).toHaveClass('bottomSheet');
+
+    fireEvent.change(screen.getByRole('slider', { name: 'Nearest boundary in days ago' }), { target: { value: '5' } });
+    fireEvent.change(screen.getByRole('slider', { name: 'Farthest boundary in days ago' }), { target: { value: '12' } });
+    expect(screen.getByText('5–12 days ago')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+
+    await waitFor(() => {
+      expect(fetchSpy).toHaveBeenLastCalledWith(
+        '/api/releases?period=5-12d&type=all&sort=newest&page=1&limit=20',
+        expect.any(Object),
+      );
+    });
+    expect(window.location.search).toBe('?period=5-12d&type=all&sort=newest');
+    expect(screen.getAllByText('5–12 days ago').length).toBeGreaterThan(0);
+  });
+
   it('sends selected countries to the API', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.resolve(
       makeResponse({
@@ -279,6 +309,61 @@ describe('App', () => {
     await waitFor(() => {
       expect(fetchSpy).toHaveBeenLastCalledWith(
         expect.stringContaining('&country=United+States'),
+        expect.any(Object),
+      );
+    });
+  });
+
+  it('filters releases by a two-sided artist popularity range on mobile', async () => {
+    setViewportWidth(390);
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      makeResponse({
+        items: [makeRelease({ popularity: 60 })],
+        pagination: { page: 1, limit: 20, total: 1, hasNextPage: false },
+        error: null,
+      }),
+    );
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Filters' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Popularity' }));
+    expect(screen.getByRole('dialog', { name: 'Artist popularity' })).toHaveClass('bottomSheet');
+
+    fireEvent.change(screen.getByRole('slider', { name: 'Minimum artist popularity' }), { target: { value: '25' } });
+    fireEvent.change(screen.getByRole('slider', { name: 'Maximum artist popularity' }), { target: { value: '75' } });
+    expect(screen.getByText('25–75')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+
+    await waitFor(() => {
+      expect(fetchSpy).toHaveBeenLastCalledWith(
+        '/api/releases?period=7d&type=all&sort=newest&page=1&limit=20&popularityMin=25&popularityMax=75',
+        expect.any(Object),
+      );
+    });
+    expect(window.location.search).toBe('?period=7d&type=all&sort=newest&popularityMin=25&popularityMax=75');
+  });
+
+  it('applies only the maximum artist popularity when the upper slider changes', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      makeResponse({
+        items: [makeRelease({ popularity: 60 })],
+        pagination: { page: 1, limit: 20, total: 1, hasNextPage: false },
+        error: null,
+      }),
+    );
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Popularity' }));
+    fireEvent.change(screen.getByRole('slider', { name: 'Maximum artist popularity' }), { target: { value: '69' } });
+    expect(screen.getByText('Maximum')).toBeInTheDocument();
+    expect(screen.getAllByText('69').length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+
+    await waitFor(() => {
+      expect(fetchSpy).toHaveBeenLastCalledWith(
+        '/api/releases?period=7d&type=all&sort=newest&page=1&limit=20&popularityMax=69',
         expect.any(Object),
       );
     });

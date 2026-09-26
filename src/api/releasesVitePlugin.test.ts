@@ -53,7 +53,7 @@ describe('createReleasesApiMiddleware', () => {
     const response = makeResponse();
     const middleware = createReleasesApiMiddleware(makeRepository());
 
-    middleware(makeRequest('/api/releases?period=30d'), response.nodeResponse, vi.fn());
+    middleware(makeRequest('/api/releases?period=31d'), response.nodeResponse, vi.fn());
     await response.finished;
 
     expect(response.nodeResponse.statusCode).toBe(400);

@@ -56,7 +56,6 @@ const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 50;
 
-const allowedPeriods = ['today', '7d', '14d', '1m'] as const;
 const allowedTypes = ['all', 'single', 'album', 'compilation'] as const;
 const allowedSorts = ['newest', 'oldest', 'popular', 'less-popular'] as const;
 
@@ -121,7 +120,7 @@ function normalizeReleasesQuery(query: ReleasesApiQuery, currentDate?: Date): No
   const type = getSingleQueryValue(query.type) ?? DEFAULT_TYPE;
   const sort = getSingleQueryValue(query.sort) ?? DEFAULT_SORT;
 
-  if (!isAllowedValue(period, allowedPeriods)) {
+  if (!isReleasePeriod(period)) {
     return createInvalidQueryResult(page.value, limit.value, 'Invalid period query parameter.');
   }
 
@@ -253,11 +252,40 @@ function normalizeOptionalBoundedNumber(value: string | string[] | number | unde
   return Math.min(Math.max(Math.trunc(normalized), 0), 100);
 }
 
-function isAllowedValue(value: string | number, allowed: readonly ReleasePeriod[]): value is ReleasePeriod;
 function isAllowedValue(value: string | number, allowed: readonly ReleaseTypeFilter[]): value is ReleaseTypeFilter;
 function isAllowedValue(value: string | number, allowed: readonly ReleaseSort[]): value is ReleaseSort;
 function isAllowedValue(value: string | number, allowed: readonly string[]): boolean {
   return typeof value === 'string' && allowed.includes(value);
+}
+
+function isReleasePeriod(value: string | number): value is ReleasePeriod {
+  if (value === 'today' || value === '1m') {
+    return true;
+  }
+
+  if (typeof value !== 'string') {
+    return false;
+  }
+
+  const rangeMatch = /^(\d+)-(\d+)d$/.exec(value);
+
+  if (rangeMatch) {
+    const startDays = Number.parseInt(rangeMatch[1], 10);
+    const endDays = Number.parseInt(rangeMatch[2], 10);
+
+    return startDays >= 0
+      && startDays <= endDays
+      && endDays <= 30
+      && value === `${startDays}-${endDays}d`;
+  }
+
+  if (!/^\d+d$/.test(value)) {
+    return false;
+  }
+
+  const days = Number.parseInt(value, 10);
+
+  return days >= 1 && days <= 30 && value === `${days}d`;
 }
 
 function getSingleQueryValue(value: string | string[] | number | undefined): string | number | undefined {

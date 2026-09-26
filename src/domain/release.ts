@@ -2,7 +2,7 @@ export type ReleaseType = 'single' | 'album' | 'compilation' | 'unknown';
 
 export type ReleaseDatePrecision = 'year' | 'month' | 'day' | 'unknown';
 
-export type ReleasePeriod = 'today' | '7d' | '14d' | '1m';
+export type ReleasePeriod = 'today' | '1m' | `${number}d` | `${number}-${number}d`;
 
 export type ReleaseTypeFilter = 'all' | 'single' | 'album' | 'compilation';
 

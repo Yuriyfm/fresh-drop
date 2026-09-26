@@ -3,10 +3,10 @@ import type {
   ArtistSummary,
   Release,
   ReleaseDatePrecision,
-  ReleasePeriod,
   ReleaseSort,
   ReleaseType,
 } from '../domain/release';
+import { getPeriodRange } from '../domain/releaseFilters';
 import {
   isNoGenreFilter,
   NO_GENRE_FILTER,
@@ -582,12 +582,13 @@ export class PostgresReleaseRepository implements ReleaseRepository {
 
 function buildSqlFilter(query: ReleaseQuery): SqlFilter {
   const currentDate = startOfUtcDay(query.currentDate ?? new Date());
-  const params: unknown[] = [toDateOnlyString(currentDate), getPeriodDays(query.period)];
+  const periodRange = getPeriodRange(query.period);
+  const params: unknown[] = [toDateOnlyString(currentDate), periodRange.startDays, periodRange.endDays];
   const where = [
     "r.release_date_precision = 'day'",
     'r.release_date is not null',
-    'r.release_date >= ($1::date - $2::integer)',
-    'r.release_date <= $1::date',
+    'r.release_date >= ($1::date - $3::integer)',
+    'r.release_date <= ($1::date - $2::integer)',
   ];
   const genres = normalizeGenreFilters(query.genres ?? (query.genre ? [query.genre] : []));
   const excludedGenres = normalizeGenreFilters(query.excludedGenres ?? []);
@@ -787,22 +788,6 @@ async function upsertReleaseMarket(client: PoolClient, releaseId: string, market
 
 function getDatabaseReleaseDate(release: Release): string | null {
   return release.releaseDatePrecision === 'day' ? release.releaseDate : null;
-}
-
-function getPeriodDays(period: ReleasePeriod): number {
-  if (period === 'today') {
-    return 0;
-  }
-
-  if (period === '7d') {
-    return 7;
-  }
-
-  if (period === '14d') {
-    return 14;
-  }
-
-  return 31;
 }
 
 function formatReleaseDate(value: ReleaseRow['release_date']): string {

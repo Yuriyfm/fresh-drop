@@ -47,6 +47,40 @@ describe('filterReleases', () => {
     expect(result.map((release) => release.id)).toEqual(['fresh']);
   });
 
+  it('filters releases by a custom day-precision period', () => {
+    const releases = [
+      makeRelease({ id: 'inside', releaseDate: '2026-06-05' }),
+      makeRelease({ id: 'outside', releaseDate: '2026-06-04' }),
+    ];
+
+    const result = filterReleases(releases, {
+      period: '23d',
+      type: 'all',
+      sort: 'newest',
+      currentDate,
+    });
+
+    expect(result.map((release) => release.id)).toEqual(['inside']);
+  });
+
+  it('filters releases between both custom period boundaries', () => {
+    const releases = [
+      makeRelease({ id: 'too-new', releaseDate: '2026-06-24' }),
+      makeRelease({ id: 'near-boundary', releaseDate: '2026-06-23' }),
+      makeRelease({ id: 'far-boundary', releaseDate: '2026-06-16' }),
+      makeRelease({ id: 'too-old', releaseDate: '2026-06-15' }),
+    ];
+
+    const result = filterReleases(releases, {
+      period: '5-12d',
+      type: 'all',
+      sort: 'newest',
+      currentDate,
+    });
+
+    expect(result.map((release) => release.id)).toEqual(['near-boundary', 'far-boundary']);
+  });
+
   it('excludes imprecise dates from period filters', () => {
     const result = filterReleases(
       [makeRelease({ releaseDate: '2026-06', releaseDatePrecision: 'month' })],
