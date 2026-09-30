@@ -11,12 +11,14 @@ import { handleGetInsightsRoute } from '../api/insightsRoute';
 import { handleGetReleasesRoute } from '../api/releasesRoute';
 import type { ReleasesApiHandlerOptions } from '../api/releasesApi';
 import { getLatestSyncRunApiResponse } from '../api/syncRunsApi';
+import { createApiRateLimiter, getApiRateLimitOptions, type ApiRateLimitOptions } from './apiRateLimiter';
 
 type ProductionRequestHandlerOptions = {
   repository: ReleaseRepository;
   syncRunRepository?: Pick<SyncRunRepository, 'getLatestSyncRun'>;
   publicDir?: string;
   handlerOptions?: ReleasesApiHandlerOptions;
+  rateLimitOptions?: ApiRateLimitOptions;
 };
 
 type ProductionServerOptions = {
@@ -27,6 +29,7 @@ type ProductionServerOptions = {
   repository?: ReleaseRepository;
   syncRunRepository?: Pick<SyncRunRepository, 'getLatestSyncRun'>;
   handlerOptions?: ReleasesApiHandlerOptions;
+  rateLimitOptions?: ApiRateLimitOptions;
 };
 
 const DEFAULT_PORT = 4173;
@@ -34,13 +37,32 @@ const DEFAULT_HOST = '0.0.0.0';
 
 export function createProductionRequestHandler(options: ProductionRequestHandlerOptions) {
   const publicDir = resolve(options.publicDir ?? getDefaultPublicDir());
+  const admit = createApiRateLimiter(options.rateLimitOptions ?? getApiRateLimitOptions());
 
   return (request: IncomingMessage, response: ServerResponse): void => {
+    const pathname = new URL(request.url ?? '/', 'http://fresh-drop.local').pathname;
+    const admission = pathname === '/api' || pathname.startsWith('/api/') ? admit(request) : undefined;
+    if (admission && !admission.allowed) {
+      response.setHeader('Retry-After', String(admission.retryAfterSeconds));
+      response.setHeader('Cache-Control', 'no-store');
+      writeJsonResponse(response, {
+        error: { code: 'rate_limited', message: 'Too many requests. Please try again shortly.' },
+      }, 429);
+      return;
+    }
     void handleProductionRequest(request, response, {
       repository: options.repository,
       syncRunRepository: options.syncRunRepository,
       publicDir,
       handlerOptions: options.handlerOptions,
+    }).catch(() => {
+      if (!response.headersSent) {
+        writeJsonResponse(response, createInternalErrorResponse(), 500);
+      } else {
+        response.end();
+      }
+    }).finally(() => {
+      if (admission?.allowed) admission.release();
     });
   };
 }
@@ -55,6 +77,7 @@ export function createProductionServer(options: ProductionServerOptions = {}): S
       syncRunRepository,
       publicDir: options.publicDir,
       handlerOptions: options.handlerOptions,
+      rateLimitOptions: options.rateLimitOptions,
     }),
   );
 

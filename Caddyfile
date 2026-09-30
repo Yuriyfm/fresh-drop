@@ -1,4 +1,14 @@
-{$FRESH_DROP_SITE_ADDRESS::80} {
+{
+	default_sni {$FRESH_DROP_SITE_ADDRESS}
+}
+
+{$FRESH_DROP_SITE_ADDRESS} {
+	tls {
+		issuer acme {
+			profile shortlived
+		}
+	}
+
 	log {
 		output stdout
 		format json
@@ -11,5 +21,11 @@
 		max_size 2MB
 	}
 
-	reverse_proxy app:4173
+	reverse_proxy app:4173 {
+		header_up X-Fresh-Drop-Client-IP {remote_host}
+	}
+}
+
+http://:80 {
+	redir https://{$FRESH_DROP_SITE_ADDRESS}{uri} 308
 }

@@ -7,6 +7,60 @@ import type { ReleasePage, ReleaseRepository } from '../data/releaseRepository';
 import { createProductionRequestHandler, getProductionDatabasePoolConfig } from './productionServer';
 
 describe('createProductionRequestHandler', () => {
+  it('rejects excess API requests before database access and leaves static files available', async () => {
+    const repository = makeRepository();
+    const handler = createProductionRequestHandler({
+      repository,
+      publicDir: '/nonexistent-fresh-drop-build',
+      rateLimitOptions: { perIp: 1, global: 10, maxConcurrent: 8, trustProxyHeader: false },
+    });
+    const first = makeResponse();
+    handler(makeRequest('/api/releases'), first.nodeResponse);
+    await first.finished;
+    const blocked = makeResponse();
+    handler(makeRequest('/api/insights'), blocked.nodeResponse);
+    await blocked.finished;
+    expect(blocked.nodeResponse.statusCode).toBe(429);
+    expect(Number(blocked.headers.get('Retry-After'))).toBeGreaterThan(0);
+    expect(blocked.headers.get('Cache-Control')).toBe('no-store');
+    expect(JSON.parse(blocked.body).error.code).toBe('rate_limited');
+    expect(repository.findReleases).toHaveBeenCalledTimes(1);
+    const staticResponse = makeResponse();
+    handler(makeRequest('/'), staticResponse.nodeResponse);
+    await staticResponse.finished;
+    expect(staticResponse.nodeResponse.statusCode).toBe(404);
+  });
+
+  it('holds a slot for a running handler and releases it after a database failure', async () => {
+    const repository = makeRepository();
+    let failQuery: (error: Error) => void = () => undefined;
+    vi.mocked(repository.findReleases).mockImplementationOnce(() => new Promise((_, reject) => {
+      failQuery = reject;
+    }));
+    const handler = createProductionRequestHandler({
+      repository,
+      rateLimitOptions: { perIp: 60, global: 300, maxConcurrent: 1, trustProxyHeader: false },
+    });
+    const running = makeResponse();
+    handler(makeRequest('/api/releases'), running.nodeResponse);
+    await vi.waitFor(() => expect(repository.findReleases).toHaveBeenCalledTimes(1));
+    const blocked = makeResponse();
+    handler(makeRequest('/api/releases'), blocked.nodeResponse);
+    await blocked.finished;
+    expect(blocked.nodeResponse.statusCode).toBe(429);
+    expect(blocked.headers.get('Retry-After')).toBe('1');
+    expect(repository.findReleases).toHaveBeenCalledTimes(1);
+    failQuery(new Error('Database unavailable'));
+    await running.finished;
+    expect(running.nodeResponse.statusCode).toBe(500);
+    // Let the request handler's promise settle and release the admission slot.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const recovered = makeResponse();
+    handler(makeRequest('/api/releases'), recovered.nodeResponse);
+    await recovered.finished;
+    expect(recovered.nodeResponse.statusCode).toBe(200);
+  });
+
   it('serves GET /api/releases through the shared releases route', async () => {
     const repository = makeRepository();
     const currentDate = new Date('2026-07-01T12:00:00.000Z');

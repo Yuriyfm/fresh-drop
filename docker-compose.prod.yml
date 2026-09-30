@@ -48,6 +48,10 @@ services:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
       HOST: 0.0.0.0
       PORT: 4173
+      API_RATE_LIMIT_PER_IP: ${API_RATE_LIMIT_PER_IP:-60}
+      API_RATE_LIMIT_GLOBAL: ${API_RATE_LIMIT_GLOBAL:-300}
+      API_MAX_CONCURRENT_REQUESTS: ${API_MAX_CONCURRENT_REQUESTS:-8}
+      API_TRUST_PROXY_HEADER: "true"
     depends_on:
       db:
         condition: service_healthy
@@ -112,7 +116,10 @@ services:
     environment:
       FRESH_DROP_SITE_ADDRESS: ${FRESH_DROP_SITE_ADDRESS:-:80}
     ports:
+      - "80:80"
       - "8081:80"
+      - "443:443"
+      - "443:443/udp"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data

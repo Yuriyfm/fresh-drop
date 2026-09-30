@@ -105,16 +105,20 @@ docker compose -f docker-compose.prod.yml --env-file .env logs --tail=100 schedu
 Если сервер слушает локально через Caddy:
 
 ```bash
-curl -I http://127.0.0.1
+curl -I http://127.0.0.1:8081
 ```
 
-Если известен production-домен, дополнительно:
+Ожидается `308` с `Location: https://<FRESH_DROP_SITE_ADDRESS>/`.
+Проверить HTTPS по production-адресу (IP или домен), без отключения проверки сертификата:
 
 ```bash
-curl -I https://<production-domain>
+curl --fail -I https://<FRESH_DROP_SITE_ADDRESS>/
+curl --fail 'https://<FRESH_DROP_SITE_ADDRESS>/api/releases?limit=1'
 ```
 
-Ожидаемо: HTTP `200`, `301` или `302`. Ошибки `5xx` требуют проверки логов и остановки rollout.
+Ожидается `200`. Ошибки сертификата или `5xx` требуют проверки логов и остановки rollout.
+Для автоматического выпуска и продления сертификата порты 80 и 443 должны быть
+доступны снаружи; `caddy_data` хранит сертификаты и ACME account между перезапусками.
 
 ## Минимальная post-deploy проверка
 

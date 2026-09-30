@@ -88,6 +88,40 @@ type ReleasesApiErrorResponse = {
 };
 ```
 
+## Production HTTPS
+
+Production traffic is encrypted with HTTPS terminated by Caddy. Ports 80 and the
+legacy HTTP port 8081 redirect to the canonical HTTPS address on port 443,
+preserving the request path and query. Caddy manages public Let's Encrypt
+certificates and renewal, using the `shortlived` ACME profile to support public IP
+addresses as well as domains. Certificate state persists in `caddy_data`.
+`FRESH_DROP_SITE_ADDRESS` must contain the public IP or domain, without a scheme
+or port. The app and PostgreSQL remain reachable only inside the Compose network.
+
+## Production overload protection
+
+* All `/api` and `/api/*` requests share an in-memory fixed 60-second window:
+  at most 60 admitted requests per client IP and 300 admitted requests in total.
+* At most 8 API handlers run concurrently. Excess requests are rejected immediately,
+  before database access, without queueing. Slots are released when handlers settle,
+  including failures; disconnecting a client does not release a still-running query.
+* Rejected requests return HTTP `429`, `Cache-Control: no-store`, `Retry-After`
+  (whole seconds until the window resets, or 1 second for concurrency exhaustion),
+  and `{ error: { code: 'rate_limited', message: string } }`.
+  This common overload response takes precedence over endpoint-specific shapes.
+* Static frontend files are not counted. The development Vite server is unaffected.
+* `API_RATE_LIMIT_PER_IP`, `API_RATE_LIMIT_GLOBAL`, and `API_MAX_CONCURRENT_REQUESTS`
+  override defaults with positive integers. Invalid configuration fails startup.
+* Client identity defaults to the socket IP. Production Compose enables
+  `API_TRUST_PROXY_HEADER=true`: Caddy overwrites `X-Fresh-Drop-Client-IP` with
+  the connection's remote IP, and the app port is not published. User-supplied
+  `X-Forwarded-For` is never used. Do not enable this mode on a directly exposed app.
+* Counters reset on process restart and each window boundary. The IP map stores
+  only admitted clients and therefore has at most the global limit's entry count.
+  These limits apply to one app process; a multi-instance deployment needs shared state.
+* This protects API/database capacity during traffic bursts, not network bandwidth
+  against a volumetric DDoS. Multiple people behind one public IP share its limit.
+
 ## Responsibilities
 
 Backend API:
